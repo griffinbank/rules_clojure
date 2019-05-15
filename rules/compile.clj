@@ -2,7 +2,7 @@
 (import (java.io File BufferedReader PushbackReader InputStreamReader))
 ; *read-eval* -Dclojure.read.eval=false
 
-;(def aot (-> (or (System/getProperty "clojure.compile.aot")) (.split ",") seq))
+(def aot (filter (fn [s] (not (empty? s))) (-> (or (System/getProperty "clojure.compile.aot")) (.split ",") seq)))
 
 (def sources (map io/file *command-line-args*))
 
@@ -22,5 +22,5 @@
 (doseq [source sources]
        (io/copy source (target source)))
 
-;(doseq [n aot]
-;       (-> n symbol compile))
+(doseq [n aot]
+       (-> n symbol compile))
