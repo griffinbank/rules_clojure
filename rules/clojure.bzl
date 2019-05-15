@@ -16,40 +16,35 @@ def clojure_repositories():
     )
 
 def _clojure_library_impl(ctx):
-    output = ctx.actions.declare_directory("%s-out" % ctx.label.name)
-    zipout = ctx.actions.declare_file("%s-zip" % ctx.label.name)
+    output = ctx.actions.declare_directory("%s-output" % ctx.label.name)
+    zipargs = ctx.actions.declare_file("%s-zipargs" % ctx.label.name)
     manifest = ctx.actions.declare_file("%s-MANIFEST.MF" % ctx.label.name)
 
-    c = """
+    cmd = """
         set -e;
+        rm -rf {output}
+        mkdir -p {output}
+        {java} -cp {classpath} -Dclojure.compile.path={output} -Dclojure.compile.aot={aot} clojure.main {compiler} {sources}
+        echo \"Manifest-Version: 1.0\" > {manifest}
+        echo \"META-INF/MANIFEST.MF={manifest}\" > {zipargs}
+        find {output} -name '*.*' | awk '{{print $1\"=\"$1}}' | sed 's:^{output}/::' >> {zipargs}
+        {zip} c {jarout} @{zipargs}
     """.format(
-
+        output = output.path,
+        java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
+        classpath = ":".join([f.path for f in ctx.files._clojure + ctx.files.deps + [output]]),
+        aot = ",".join(ctx.attr.aot),
+        compiler = ctx.file._compile.path,
+        sources = " ".join([f.path for f in ctx.files.srcs]),
+        manifest = manifest.path,
+        zipargs = zipargs.path,
+        zip = ctx.executable._zipper.path,
+        jarout = ctx.outputs.jar.path
     )
-
-    cmd = "set -e;\n"
-    cmd += "rm -rf %s\n" % output.path
-    cmd += "mkdir -p %s\n" % output.path
-
-    java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path
-    classpath = ":".join([f.path for f in ctx.files._clojure + ctx.files.deps + [output]])
-    sources = " ".join([f.path for f in ctx.files.srcs])
-    cmd += """%s -cp %s -Dclojure.compile.path=%s -Dclojure.compile.aot=%s clojure.main %s %s\n""" % (
-        java,
-        classpath,
-        output.path,
-        ",".join(ctx.attr.aot),
-        ctx.file._compile.path,
-        sources
-    )
-
-    cmd += "echo \"Manifest-Version: 1.0\" > %s\n" % (manifest.path)
-    cmd += "echo \"META-INF/MANIFEST.MF=%s\" > %s\n" % (manifest.path, zipout.path)
-    cmd += "find %s -name '*.*' | awk '{print $1\"=\"$1}' | sed 's:^%s/::' >> %s\n" % (output.path, output.path, zipout.path)
-    cmd += "%s c %s @%s" % (ctx.executable._zipper.path, ctx.outputs.jar.path, zipout.path)
 
     ctx.actions.run_shell(
         command = cmd,
-        outputs = [output, zipout, manifest, ctx.outputs.jar],
+        outputs = [output, zipargs, manifest, ctx.outputs.jar],
         inputs = ctx.files.srcs + ctx.files.deps + ctx.files._clojure + ctx.files._compile + ctx.files._jdk,
         tools = [ctx.executable._zipper],
         mnemonic = "ClojureLibrary",
