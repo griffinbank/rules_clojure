@@ -18,7 +18,13 @@ def clojure_repositories():
 def _clojure_library_impl(ctx):
     output = ctx.actions.declare_directory("%s-out" % ctx.label.name)
     zipout = ctx.actions.declare_file("%s-zip" % ctx.label.name)
-    manifest = ctx.actions.declare_file("MANIFEST.MF")
+    manifest = ctx.actions.declare_file("%s-MANIFEST.MF" % ctx.label.name)
+
+    c = """
+        set -e;
+    """.format(
+
+    )
 
     cmd = "set -e;\n"
     cmd += "rm -rf %s\n" % output.path
