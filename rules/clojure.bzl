@@ -18,6 +18,7 @@ def clojure_repositories():
 def _clojure_library_impl(ctx):
     output = ctx.actions.declare_directory("%s-out" % ctx.label.name)
     zipout = ctx.actions.declare_file("%s-zip" % ctx.label.name)
+    manifest = ctx.actions.declare_file("MANIFEST.MF")
 
     cmd = "set -e;\n"
     cmd += "rm -rf %s\n" % output.path
@@ -35,14 +36,14 @@ def _clojure_library_impl(ctx):
         sources
     )
 
-    cmd += "echo \"Manifest-Version: 1.0\" > %s/MANIFEST.MF\n" % (output.path)
-    cmd += "echo \"META-INF/MANIFEST.MF=%s/MANIFEST.MF\" > %s\n" % (output.path, zipout.path)
+    cmd += "echo \"Manifest-Version: 1.0\" > %s\n" % (manifest.path)
+    cmd += "echo \"META-INF/MANIFEST.MF=%s\" > %s\n" % (manifest.path, zipout.path)
     cmd += "find %s -name '*.*' | awk '{print $1\"=\"$1}' | sed 's:^%s/::' >> %s\n" % (output.path, output.path, zipout.path)
     cmd += "%s c %s @%s" % (ctx.executable._zipper.path, ctx.outputs.jar.path, zipout.path)
 
     ctx.actions.run_shell(
         command = cmd,
-        outputs = [output, zipout, ctx.outputs.jar],
+        outputs = [output, zipout, manifest, ctx.outputs.jar],
         inputs = ctx.files.srcs + ctx.files.deps + ctx.files._clojure + ctx.files._compile + ctx.files._jdk,
         tools = [ctx.executable._zipper],
         mnemonic = "ClojureLibrary",
