@@ -6,7 +6,14 @@ def _providers_test_impl(ctx):
 
   target_under_test = analysistest.target_under_test(env)
 
-  asserts.equals(env, ["liblibrary_under_test.jar"], [f.basename for f in target_under_test[DefaultInfo].files])
+  libjar = "liblibrary_under_test.jar"
+
+  asserts.equals(env, [libjar], [f.basename for f in target_under_test[DefaultInfo].files])
+  asserts.equals(env, [libjar], [f.class_jar.basename for f in target_under_test[JavaInfo].outputs.jars])
+  asserts.equals(env, [libjar], [f.basename for f in target_under_test[JavaInfo].runtime_output_jars])
+  asserts.equals(env, [libjar], [f.basename for f in target_under_test[JavaInfo].compile_jars])
+  asserts.equals(env, [libjar], [f.basename for f in target_under_test[JavaInfo].full_compile_jars])
+  asserts.equals(env, [libjar], [f.basename for f in target_under_test[JavaInfo].source_jars])
 
   return analysistest.end(env)
 
