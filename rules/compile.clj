@@ -20,7 +20,9 @@
       (io/file *compile-path* (str (-> file namespace-of path) ".clj")))
 
 (doseq [source sources]
-       (io/copy source (target source)))
+       (let [target (target source)]
+            (io/make-parents target)
+            (io/copy source target)))
 
 (doseq [namespace aot]
        (-> namespace symbol compile))

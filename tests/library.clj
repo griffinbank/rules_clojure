@@ -1,1 +1,1 @@
-(ns library)
+(ns tests.library)
