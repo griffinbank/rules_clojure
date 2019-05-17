@@ -1,6 +1,3 @@
-load("//rules:clojure.bzl", "clojure_library")
+load(":suite.bzl", "library_providers_test_suite")
 
-clojure_library(
-    name = "empty",
-    srcs = ["empty.clj"],
-)
+library_providers_test_suite()

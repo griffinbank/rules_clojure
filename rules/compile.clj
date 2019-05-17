@@ -6,7 +6,7 @@
 
 (def sources (map io/file *command-line-args*))
 
-(defn namespace [file]
+(defn namespace-of [file]
       (with-open [reader (PushbackReader. (io/reader file))]
                  (loop [form (read reader false ::done)]
                        (if (and (list? form) (= 'ns (first form)))
@@ -17,7 +17,7 @@
       (-> namespace second str (.replace \- \_) (.replace \. \/)))
 
 (defn target [file]
-      (io/file *compile-path* (str (-> file namespace path) ".clj")))
+      (io/file *compile-path* (str (-> file namespace-of path) ".clj")))
 
 (doseq [source sources]
        (io/copy source (target source)))
