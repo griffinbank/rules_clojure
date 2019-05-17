@@ -1,3 +1,3 @@
-load(":suite.bzl", "library_providers_test_suite")
+load(":library.bzl", library_test_suite = "test_suite")
 
-library_providers_test_suite()
+library_test_suite()

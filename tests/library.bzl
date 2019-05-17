@@ -1,7 +1,7 @@
-load("//rules:clojure.bzl", "clojure_library")
+load("//rules:library.bzl", "clojure_library")
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 
-def _library_providers_test_impl(ctx):
+def _providers_test_impl(ctx):
   env = analysistest.begin(ctx)
 
   target_under_test = analysistest.target_under_test(env)
@@ -10,17 +10,17 @@ def _library_providers_test_impl(ctx):
 
   return analysistest.end(env)
 
-library_providers_test = analysistest.make(_library_providers_test_impl)
+providers_test = analysistest.make(_providers_test_impl)
 
-def library_providers_test_suite():
+def test_suite():
     clojure_library(
         name = "library_under_test",
         srcs = ["empty.clj"],
     )
 
-    library_providers_test(name = "library_providers_test", target_under_test = ":library_under_test")
+    providers_test(name = "providers_test", target_under_test = ":library_under_test")
 
     native.test_suite(
-        name = "library_providers_test_suite",
-        tests = [":library_providers_test",],
+        name = "library_test_suite",
+        tests = [":providers_test",],
     )
