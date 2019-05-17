@@ -26,7 +26,7 @@ providers_test = analysistest.make(_providers_test_impl)
 def test_suite():
     clojure_library(
         name = "library_under_test",
-        srcs = ["empty.clj"],
+        srcs = ["library.clj"],
     )
 
     providers_test(name = "library_providers_test", target_under_test = ":library_under_test")
