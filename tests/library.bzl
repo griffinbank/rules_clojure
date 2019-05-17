@@ -18,9 +18,9 @@ def test_suite():
         srcs = ["empty.clj"],
     )
 
-    providers_test(name = "providers_test", target_under_test = ":library_under_test")
+    providers_test(name = "library_providers_test", target_under_test = ":library_under_test")
 
     native.test_suite(
         name = "library_test_suite",
-        tests = [":providers_test",],
+        tests = [":library_providers_test",],
     )
