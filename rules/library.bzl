@@ -34,18 +34,11 @@ def _clojure_library_impl(ctx):
         progress_message = "Building clojure library for %s" % ctx.label,
     )
 
-    return struct(
-        providers = [
-            DefaultInfo(
-                files = depset([ctx.outputs.jar]),
-            ),
-            JavaInfo(
-                output_jar = ctx.outputs.jar,
-                compile_jar = ctx.outputs.jar,
-                source_jar = ctx.outputs.jar,
-                deps = [dep[JavaInfo] for dep in ctx.attr._clojure + ctx.attr.deps],
-            ),
-        ],
+    return JavaInfo(
+        output_jar = ctx.outputs.jar,
+        compile_jar = ctx.outputs.jar,
+        source_jar = ctx.outputs.jar,
+        deps = [dep[JavaInfo] for dep in ctx.attr._clojure + ctx.attr.deps],
     )
 
 clojure_library = rule(
