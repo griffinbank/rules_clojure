@@ -35,3 +35,10 @@ def test_suite():
         name = "library_test_suite",
         tests = [":library_providers_test",],
     )
+
+    native.sh_test(
+        name = "library_output_test",
+        srcs = ["library.sh"],
+        args = ["$(location :liblibrary_under_test.jar)", "tests/library.clj"],
+        data = [":liblibrary_under_test.jar"],
+    )
