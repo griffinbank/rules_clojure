@@ -7,7 +7,7 @@ def _clojure_library_impl(ctx):
         set -e;
         rm -rf {output}
         mkdir -p {output}
-        {java} -cp {classpath} -Dclojure.compile.path={output} -Dclojure.compile.aot={aot} clojure.main {compiler} {sources}
+        {java} -cp {classpath} -Dclojure.compile.path={output} -Dclojure.compile.aot={aot} clojure.main scripts/compile.clj {sources}
         echo \"Manifest-Version: 1.0\" > {manifest}
         echo \"META-INF/MANIFEST.MF={manifest}\" > {zipargs}
         find {output} -name '*.*' | awk '{{print $1\"=\"$1}}' | sed 's:^{output}/::' >> {zipargs}
@@ -17,7 +17,6 @@ def _clojure_library_impl(ctx):
         java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
         classpath = ":".join([f.path for f in ctx.files._runtime + ctx.files.deps + [output]]),
         aot = ",".join(ctx.attr.aot),
-        compiler = ctx.file._compile.path,
         sources = " ".join([f.path for f in ctx.files.srcs]),
         manifest = manifest.path,
         zip = ctx.executable._zip.path,
@@ -28,7 +27,7 @@ def _clojure_library_impl(ctx):
     ctx.actions.run_shell(
         command = cmd,
         outputs = [output, zipargs, manifest, ctx.outputs.jar],
-        inputs = ctx.files.srcs + ctx.files.deps + ctx.files._runtime + ctx.files._compile + ctx.files._jdk,
+        inputs = ctx.files.srcs + ctx.files.deps + ctx.files._runtime + ctx.files._scripts + ctx.files._jdk,
         tools = [ctx.executable._zip],
         mnemonic = "ClojureLibrary",
         progress_message = "Building clojure library for %s" % ctx.label,
@@ -52,9 +51,8 @@ clojure_library = rule(
             "@org_clojure_spec_alpha//jar",
             "@org_clojure_core_specs_alpha//jar",
         ]),
-        "_compile": attr.label(
-            default = "//rules:compile.clj",
-            allow_single_file = True,
+        "_scripts": attr.label(
+            default = "//scripts",
         ),
         "_jdk": attr.label(
             default = "@bazel_tools//tools/jdk:current_java_runtime",
