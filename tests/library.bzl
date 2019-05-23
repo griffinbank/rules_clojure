@@ -27,6 +27,7 @@ def test_suite():
     clojure_library(
         name = "library_under_test",
         srcs = ["library.clj"],
+        aot = ["tests.library"]
     )
 
     providers_test(name = "library_providers_test", target_under_test = ":library_under_test")
@@ -43,6 +44,7 @@ def test_suite():
         args = [
             "$(location :liblibrary_under_test.jar)",
             "META-INF/MANIFEST.MF",
-            "tests/library.clj"
+            "tests/library.clj",
+            "aot/Library.class",
         ],
     )
