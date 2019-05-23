@@ -1,6 +1,5 @@
 (require '[clojure.java.io :as io])
 (import (java.io File BufferedReader PushbackReader InputStreamReader))
-; *read-eval* -Dclojure.read.eval=false
 
 (def aot (filter (fn [s] (not (empty? s))) (-> (or (System/getProperty "clojure.compile.aot")) (.split ",") seq)))
 
