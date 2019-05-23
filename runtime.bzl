@@ -1,4 +1,4 @@
-def clojure_repositories():
+def clojure_runtime():
     native.maven_jar(
         name = "org_clojure",
         artifact = "org.clojure:clojure:1.10.0",
