@@ -38,7 +38,11 @@ def test_suite():
 
     native.sh_test(
         name = "library_output_test",
-        srcs = ["library.sh"],
-        args = ["$(location :liblibrary_under_test.jar)", "tests/library.clj"],
+        srcs = [":library.sh"],
         data = [":liblibrary_under_test.jar"],
+        args = [
+            "$(location :liblibrary_under_test.jar)",
+            "META-INF/MANIFEST.MF",
+            "tests/library.clj"
+        ],
     )

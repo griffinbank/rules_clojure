@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-if [[ `zipinfo -1 $1 | grep $2` ]]; then
-  echo "Passed: $1 contains $2"
-  exit 0
-else
-  echo "Failed: $1 does not contain $2"
-  exit 1
-fi
+OUTPUT="$(zipinfo -1 "$1")"
+ITEMS=${@:2}
+for i in $ITEMS; do
+    if ! grep -q "$i" <<< "$OUTPUT"; then
+        echo "$1 does not contain $i"
+        echo "$OUTPUT"
+        exit 1
+    fi
+done
+exit 0
