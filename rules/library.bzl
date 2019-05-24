@@ -1,13 +1,13 @@
 def _clojure_library_impl(ctx):
-    output = ctx.actions.declare_directory("%s-output" % ctx.label.name)
-    zipargs = ctx.actions.declare_file("%s-zipargs" % ctx.label.name)
-    manifest = ctx.actions.declare_file("%s-MANIFEST.MF" % ctx.label.name)
+    output = ctx.actions.declare_directory("%s.library" % ctx.label.name)
+    entries = ctx.actions.declare_file("%s.library-entries" % ctx.label.name)
+    manifest = ctx.actions.declare_file("%s.library-manifest" % ctx.label.name)
 
     cmd = """
         set -e;
         rm -rf {output}
         mkdir -p {output}
-        {java} -cp {classpath} -Dclojure.compile.path={output} -Dclojure.compile.aot={aot} clojure.main scripts/compile.clj {sources}
+        {java} -cp {classpath} -Dclojure.compile.path={output} -Dclojure.compile.aot={aot} clojure.main scripts/library.clj {sources}
         echo \"Manifest-Version: 1.0\" > {manifest}
         echo \"META-INF/MANIFEST.MF={manifest}\" > {zipargs}
         find {output} -name '*.*' | awk '{{print $1\"=\"$1}}' | sed 's:^{output}/::' >> {zipargs}
@@ -21,12 +21,12 @@ def _clojure_library_impl(ctx):
         manifest = manifest.path,
         zip = ctx.executable._zip.path,
         zipout = ctx.outputs.jar.path,
-        zipargs = zipargs.path
+        zipargs = entries.path
     )
 
     ctx.actions.run_shell(
         command = cmd,
-        outputs = [output, zipargs, manifest, ctx.outputs.jar],
+        outputs = [output, entries, manifest, ctx.outputs.jar],
         inputs = ctx.files.srcs + ctx.files.deps + ctx.files._runtime + ctx.files._scripts + ctx.files._jdk,
         tools = [ctx.executable._zip],
         mnemonic = "ClojureLibrary",
