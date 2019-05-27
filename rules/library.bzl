@@ -68,4 +68,5 @@ clojure_library = rule(
     outputs = {
         "jar": "lib%{name}.jar",
     },
+    provides = [JavaInfo]
 )
