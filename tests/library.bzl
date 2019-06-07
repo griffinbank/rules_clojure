@@ -15,7 +15,7 @@ def _providers_test_impl(ctx):
   asserts.equals(env, [libjar], [f.basename for f in target_under_test[JavaInfo].full_compile_jars])
   asserts.equals(env, [libjar], [f.basename for f in target_under_test[JavaInfo].source_jars])
   asserts.equals(env,
-      [libjar, "clojure-1.10.0.jar", "spec.alpha-0.2.176.jar", "core.specs.alpha-0.2.44.jar"],
+      [libjar, "clojure-1.10.1.jar", "spec.alpha-0.2.176.jar", "core.specs.alpha-0.2.44.jar"],
       [f.basename for f in target_under_test[JavaInfo].transitive_runtime_deps]
   )
 

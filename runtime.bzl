@@ -1,7 +1,7 @@
 def clojure_runtime():
     native.maven_jar(
         name = "org_clojure",
-        artifact = "org.clojure:clojure:1.10.0",
+        artifact = "org.clojure:clojure:1.10.1",
     )
 
     native.maven_jar(
