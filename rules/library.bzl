@@ -1,34 +1,24 @@
 def _clojure_library_impl(ctx):
     output = ctx.actions.declare_directory("%s.library" % ctx.label.name)
-    entries = ctx.actions.declare_file("%s.library-entries" % ctx.label.name)
-    manifest = ctx.actions.declare_file("%s.library-manifest" % ctx.label.name)
 
     cmd = """
         set -e;
         rm -rf {output}
         mkdir -p {output}
-        {java} -cp {classpath} -Dclojure.compile.path={output} -Dclojure.compile.aot={aot} clojure.main scripts/library.clj {sources}
-        echo \"Manifest-Version: 1.0\" > {manifest}
-        echo \"META-INF/MANIFEST.MF={manifest}\" > {zipargs}
-        find {output} -name '*.*' | awk '{{print $1\"=\"$1}}' | sed 's:^{output}/::' >> {zipargs}
-        {zip} c {zipout} @{zipargs}
+        {java} -cp {classpath} -Dclojure.compile.path={output} -Dclojure.compile.jar={jar} -Dclojure.compile.aot={aot} clojure.main scripts/library.clj {sources}
     """.format(
-        output = output.path,
         java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
         classpath = ":".join([f.path for f in ctx.files._runtime + ctx.files.deps + [output]]),
+        output = output.path,
+        jar = ctx.outputs.jar.path,
         aot = ",".join(ctx.attr.aot),
         sources = " ".join([f.path for f in ctx.files.srcs]),
-        manifest = manifest.path,
-        zip = ctx.executable._zip.path,
-        zipout = ctx.outputs.jar.path,
-        zipargs = entries.path
     )
 
     ctx.actions.run_shell(
         command = cmd,
-        outputs = [output, entries, manifest, ctx.outputs.jar],
+        outputs = [output, ctx.outputs.jar],
         inputs = ctx.files.srcs + ctx.files.deps + ctx.files._runtime + ctx.files._scripts + ctx.files._jdk,
-        tools = [ctx.executable._zip],
         mnemonic = "ClojureLibrary",
         progress_message = "Building clojure library for %s" % ctx.label,
     )
@@ -57,12 +47,6 @@ clojure_library = rule(
         "_jdk": attr.label(
             default = "@bazel_tools//tools/jdk:current_java_runtime",
             providers = [java_common.JavaRuntimeInfo],
-        ),
-        "_zip": attr.label(
-            default = "@bazel_tools//tools/zip:zipper",
-            executable = True,
-            single_file = True,
-            cfg = "host",
         ),
     },
     outputs = {
