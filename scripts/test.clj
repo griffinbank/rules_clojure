@@ -18,4 +18,3 @@
 
 (let [{:keys [fail error]} (apply test/run-tests nses)]
   (if-not (= 0 fail error) (System/exit 1)))
-
