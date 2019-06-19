@@ -45,6 +45,6 @@ def test_suite():
             "$(location :liblibrary_under_test.jar)",
             "META-INF/MANIFEST.MF",
             "tests/library.clj",
-            "aot/Library.class",
+            "tests/library.class",
         ],
     )
