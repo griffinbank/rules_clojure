@@ -1,5 +1,4 @@
-(ns tests.test)
-(use 'clojure.test)
+(ns tests.test (:use clojure.test))
 
 (deftest example
   (is (= 4 (+ 2 2)))
