@@ -6,7 +6,7 @@ load(":library.bzl", library_test_suite = "test_suite")
 clojure_library(
     name = "library",
     srcs = ["library.clj"],
-    aot = ["tests.library"]
+    aots = ["tests.library"]
 )
 
 clojure_test(

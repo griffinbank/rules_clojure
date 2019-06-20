@@ -11,7 +11,7 @@ def _clojure_library_impl(ctx):
         classpath = ":".join([f.path for f in ctx.files._runtime + ctx.files.deps + [output]]),
         output = output.path,
         jar = ctx.outputs.jar.path,
-        aot = ",".join(ctx.attr.aot),
+        aot = ",".join(ctx.attr.aots),
         sources = " ".join([f.path for f in ctx.files.srcs]),
     )
 
@@ -35,7 +35,7 @@ clojure_library = rule(
     attrs = {
         "srcs": attr.label_list(default = [], allow_files = [".clj"]),
         "deps": attr.label_list(default = [], providers = [JavaInfo]),
-        "aot": attr.string_list(default = []),
+        "aots": attr.string_list(default = []),
         "_runtime": attr.label_list(default = [
             "@org_clojure//jar",
             "@org_clojure_spec_alpha//jar",
