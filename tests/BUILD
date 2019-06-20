@@ -21,4 +21,10 @@ clojure_repl(
     ns = "tests.library"
 )
 
+java_binary(
+    name = "binary",
+    main_class = "tests.library",
+    runtime_deps = [":library"]
+)
+
 library_test_suite()
