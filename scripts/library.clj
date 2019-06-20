@@ -10,18 +10,18 @@
 
 (def sources (map io/file *command-line-args*))
 
-(defn namespace-of [file]
+(defn ns-symbol [file]
   (with-open [reader (PushbackReader. (io/reader file))]
     (loop [form (read reader false ::done)]
       (if (and (list? form) (= 'ns (first form)))
-        form
+        (second form)
         (when-not (= ::done form) (recur reader))))))
 
-(defn path [namespace]
-  (-> namespace second str (.replace \- \_) (.replace \. \/)))
+(defn ns-path [namespace]
+  (-> namespace name (.replace \- \_) (.replace \. \/)))
 
 (defn target [file]
-  (io/file *compile-path* (str (-> file namespace-of path) ".clj")))
+  (io/file *compile-path* (str (-> file ns-symbol ns-path) ".clj")))
 
 (doseq [source sources]
   (let [target (target source)]
