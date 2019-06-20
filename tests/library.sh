@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-OUTPUT="$(zipinfo -1 "$1")"
-ITEMS=${@:2}
-for i in $ITEMS; do
-    if ! grep -q "$i" <<< "$OUTPUT"; then
+ACTUAL="$(zipinfo -1 "$1")"
+EXPECTED=${@:2}
+for i in $EXPECTED; do
+    if ! grep -q "$i" <<< "$ACTUAL"; then
         echo "$1 does not contain $i"
-        echo "$OUTPUT"
+        echo "$ACTUAL"
         exit 1
     fi
 done
