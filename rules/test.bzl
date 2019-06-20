@@ -3,7 +3,7 @@ def _clojure_test_impl(ctx):
         output = ctx.outputs.executable,
         content = "{java} -cp {classpath} clojure.main scripts/test.clj {sources}".format(
             java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
-            classpath = ":".join([f.path for f in ctx.files._runtime + ctx.files.deps]),
+            classpath = ":".join([f.path for f in ctx.files._runtime] + [f.short_path for f in ctx.files.deps]),
             sources = " ".join([f.path for f in ctx.files.srcs]),
         ),
     )

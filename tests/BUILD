@@ -1,20 +1,24 @@
-load(":library.bzl", library_test_suite = "test_suite")
+load("//rules:library.bzl", "clojure_library")
 load("//rules:repl.bzl", "clojure_repl")
 load("//rules:test.bzl", "clojure_test")
+load(":library.bzl", library_test_suite = "test_suite")
 
-library_test_suite()
+clojure_library(
+    name = "library",
+    srcs = ["library.clj"],
+    aot = ["tests.library"]
+)
 
 clojure_test(
-    name = "example_test",
-    srcs = ["test.clj"]
+    name = "test",
+    srcs = ["test.clj"],
+    deps = [":library"]
 )
 
 clojure_repl(
-    name = "repl"
-)
-
-clojure_repl(
-    name = "repl-in-ns",
-    deps = [":library_under_test"],
+    name = "repl",
+    deps = [":library"],
     ns = "tests.library"
 )
+
+library_test_suite()

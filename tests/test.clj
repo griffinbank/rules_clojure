@@ -1,5 +1,6 @@
-(ns tests.test (:use clojure.test))
+(ns tests.test
+  (:require [tests.library :as lib])
+  (:use clojure.test))
 
-(deftest example
-  (is (= 4 (+ 2 2)))
-  (is (= 7 (+ 3 4))))
+(deftest library
+  (is (= "test" (lib/echo "test"))))

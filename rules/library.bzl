@@ -50,7 +50,7 @@ clojure_library = rule(
         ),
     },
     outputs = {
-        "jar": "lib%{name}.jar",
+        "jar": "%{name}.jar",
     },
     provides = [JavaInfo]
 )

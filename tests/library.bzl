@@ -6,7 +6,7 @@ def _providers_test_impl(ctx):
 
   target_under_test = analysistest.target_under_test(env)
 
-  libjar = "liblibrary_under_test.jar"
+  libjar = "library.jar"
 
   asserts.equals(env, [libjar], [f.basename for f in target_under_test[DefaultInfo].files])
   asserts.equals(env, [libjar], [f.class_jar.basename for f in target_under_test[JavaInfo].outputs.jars])
@@ -24,13 +24,7 @@ def _providers_test_impl(ctx):
 providers_test = analysistest.make(_providers_test_impl)
 
 def test_suite():
-    clojure_library(
-        name = "library_under_test",
-        srcs = ["library.clj"],
-        aot = ["tests.library"]
-    )
-
-    providers_test(name = "library_providers_test", target_under_test = ":library_under_test")
+    providers_test(name = "library_providers_test", target_under_test = ":library")
 
     native.test_suite(
         name = "library_test_suite",
@@ -40,9 +34,9 @@ def test_suite():
     native.sh_test(
         name = "library_output_test",
         srcs = [":library.sh"],
-        data = [":liblibrary_under_test.jar"],
+        data = [":library.jar"],
         args = [
-            "$(location :liblibrary_under_test.jar)",
+            "$(location :library.jar)",
             "META-INF/MANIFEST.MF",
             "tests/library.clj",
             "tests/library.class",
