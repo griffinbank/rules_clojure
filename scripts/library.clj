@@ -1,5 +1,5 @@
 (require '[clojure.java.io :as io])
-(import (java.io PushbackReader BufferedOutputStream FileOutputStream ByteArrayInputStream))
+(import (java.io PushbackReader BufferedOutputStream FileOutputStream))
 (import (java.util.jar Manifest JarEntry JarFile JarOutputStream))
 
 (def output (-> "clojure.compile.path" (System/getProperty) (io/file)))
@@ -31,14 +31,22 @@
 (doseq [namespace aot]
   (-> namespace symbol compile))
 
+(def manifest
+  (let [m (Manifest.)]
+    (doto (.getMainAttributes m)
+      (.putValue "Manifest-Version" "1.0"))
+    m))
+
 (defn put-next-entry! [target name]
   (.putNextEntry target (doto (JarEntry. name) (.setTime 0))))
 
 (with-open [jar-os (-> jar FileOutputStream. BufferedOutputStream. JarOutputStream.)]
   (put-next-entry! jar-os JarFile/MANIFEST_NAME)
-  (-> "Manifest-Version: 1.0" (.getBytes) (ByteArrayInputStream.) (Manifest.) (.write jar-os))
+  (.write manifest jar-os)
+  (.closeEntry jar-os)
   (doseq [file (file-seq output)
           :when (.isFile file)
           :let [name (.replaceFirst (str file) (str output "/") "")]]
     (put-next-entry! jar-os name)
-    (io/copy file jar-os)))
+    (io/copy file jar-os)
+    (.closeEntry jar-os)))
