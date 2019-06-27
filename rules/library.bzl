@@ -1,4 +1,4 @@
-def _implementation(ctx):
+def _clojure_library_impl(ctx):
     output = ctx.actions.declare_directory("%s.library" % ctx.label.name)
 
     cmd = """
@@ -31,7 +31,7 @@ def _implementation(ctx):
     )
 
 clojure_library = rule(
-    implementation = _implementation,
+    implementation = _clojure_library_impl,
     attrs = {
         "srcs": attr.label_list(default = [], allow_files = [".clj"]),
         "deps": attr.label_list(default = [], providers = [JavaInfo]),

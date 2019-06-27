@@ -1,4 +1,4 @@
-def _implementation(ctx):
+def _clojure_test_impl(ctx):
     ctx.actions.write(
         output = ctx.outputs.executable,
         content = "{java} -cp {classpath} clojure.main scripts/test.clj {sources}".format(
@@ -13,7 +13,7 @@ def _implementation(ctx):
     )
 
 clojure_test = rule(
-    implementation = _implementation,
+    implementation = _clojure_test_impl,
     attrs = {
         "srcs": attr.label_list(default = [], allow_files = [".clj"]),
         "deps": attr.label_list(default = [], providers = [JavaInfo]),
