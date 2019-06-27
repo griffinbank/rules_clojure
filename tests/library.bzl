@@ -32,7 +32,7 @@ def test_suite():
     )
 
     native.sh_test(
-        name = "library_output_test",
+        name = "library_content_test",
         srcs = [":library.sh"],
         data = [":library.jar"],
         args = [

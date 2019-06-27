@@ -2,4 +2,4 @@
 
 (defn echo [message] message)
 
-(defn -main [& args] (println args))
+(defn -main [& args] (println (apply str args)))
