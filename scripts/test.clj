@@ -1,20 +1,11 @@
-(require '[clojure.java.io :as io])
 (require '[clojure.test :as test])
-(import (java.io PushbackReader))
+
+(load-file "scripts/ns.clj")
 
 (def sources (map io/file *command-line-args*))
-
-(defn ns-symbol [file]
-  (with-open [reader (PushbackReader. (io/reader file))]
-    (loop [form (read reader false ::done)]
-      (if (and (list? form) (= 'ns (first form)))
-        (second form)
-        (when-not (= ::done form) (recur reader))))))
 
 (doseq [source sources]
   (load-file (.getCanonicalPath source)))
 
-(def nses (map ns-symbol sources))
-
-(let [{:keys [fail error]} (apply test/run-tests nses)]
+(let [{:keys [fail error]} (apply test/run-tests (map ns-symbol sources))]
   (if-not (= 0 fail error) (System/exit 1)))

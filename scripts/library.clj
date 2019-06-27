@@ -1,34 +1,21 @@
 (require '[clojure.java.io :as io])
-(import (java.io PushbackReader BufferedOutputStream FileOutputStream))
+(import (java.io BufferedOutputStream FileOutputStream))
 (import (java.util.jar Manifest JarEntry JarFile JarOutputStream))
 
-(def output (-> "clojure.compile.path" (System/getProperty) (io/file)))
+(load-file "scripts/ns.clj")
 
-(def jar (-> "clojure.compile.jar" (System/getProperty) (io/file)))
-
-(def aot (filter (fn [s] (not (empty? s))) (-> (or (System/getProperty "clojure.compile.aot")) (.split ",") seq)))
+(def compile-dir (-> "clojure.compile.path" (System/getProperty) (io/file)))
+(def compile-jar (-> "clojure.compile.jar" (System/getProperty) (io/file)))
+(def compile-aot (filter (fn [s] (not (empty? s))) (-> (or (System/getProperty "clojure.compile.aot")) (.split ",") seq)))
 
 (def sources (map io/file *command-line-args*))
 
-(defn ns-symbol [file]
-  (with-open [reader (PushbackReader. (io/reader file))]
-    (loop [form (read reader false ::done)]
-      (if (and (list? form) (= 'ns (first form)))
-        (second form)
-        (when-not (= ::done form) (recur reader))))))
-
-(defn ns-path [namespace]
-  (-> namespace name (.replace \- \_) (.replace \. \/)))
-
-(defn target [file]
-  (io/file *compile-path* (str (-> file ns-symbol ns-path) ".clj")))
-
 (doseq [source sources]
-  (let [target (target source)]
+  (let [target (io/file compile-dir (ns-path source))]
     (io/make-parents target)
     (io/copy source target)))
 
-(doseq [namespace aot]
+(doseq [namespace compile-aot]
   (-> namespace symbol compile))
 
 (def manifest
@@ -40,13 +27,13 @@
 (defn put-next-entry! [target name]
   (.putNextEntry target (doto (JarEntry. name) (.setTime 0))))
 
-(with-open [jar-os (-> jar FileOutputStream. BufferedOutputStream. JarOutputStream.)]
+(with-open [jar-os (-> compile-jar FileOutputStream. BufferedOutputStream. JarOutputStream.)]
   (put-next-entry! jar-os JarFile/MANIFEST_NAME)
   (.write manifest jar-os)
   (.closeEntry jar-os)
-  (doseq [file (file-seq output)
+  (doseq [file (file-seq compile-dir)
           :when (.isFile file)
-          :let [name (.replaceFirst (str file) (str output "/") "")]]
+          :let [name (.replaceFirst (str file) (str compile-dir "/") "")]]
     (put-next-entry! jar-os name)
     (io/copy file jar-os)
     (.closeEntry jar-os)))
