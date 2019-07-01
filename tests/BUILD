@@ -1,6 +1,4 @@
-load("//rules:library.bzl", "clojure_library")
-load("//rules:repl.bzl", "clojure_repl")
-load("//rules:test.bzl", "clojure_test")
+load("//:rules.bzl", "clojure_library", "clojure_test", "clojure_repl")
 load(":library.bzl", library_test_suite = "test_suite")
 load(":binary.bzl", binary_test_suite = "test_suite")
 
