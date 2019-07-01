@@ -1,9 +1,10 @@
 def _clojure_test_impl(ctx):
     ctx.actions.write(
         output = ctx.outputs.executable,
-        content = "{java} -cp {classpath} clojure.main scripts/test.clj {sources}".format(
+        content = "{java} -cp {classpath} clojure.main {script} {sources}".format(
             java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
             classpath = ":".join([f.short_path for f in ctx.files._runtime + ctx.files.deps]),
+            script = [f for f in ctx.files._scripts if f.basename == "test.clj"][0].path,
             sources = " ".join([f.path for f in ctx.files.srcs]),
         ),
     )

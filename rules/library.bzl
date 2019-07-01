@@ -5,13 +5,14 @@ def _clojure_library_impl(ctx):
         set -e;
         rm -rf {output}
         mkdir -p {output}
-        {java} -cp {classpath} -Dclojure.compile.path={output} -Dclojure.compile.jar={jar} -Dclojure.compile.aot={aot} clojure.main scripts/library.clj {sources}
+        {java} -cp {classpath} -Dclojure.compile.path={output} -Dclojure.compile.jar={jar} -Dclojure.compile.aot={aot} clojure.main {script} {sources}
     """.format(
         java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
         classpath = ":".join([f.path for f in ctx.files._runtime + ctx.files.deps + [output]]),
         output = output.path,
         jar = ctx.outputs.jar.path,
         aot = ",".join(ctx.attr.aots),
+        script = [f for f in ctx.files._scripts if f.basename == "library.clj"][0].path,
         sources = " ".join([f.path for f in ctx.files.srcs]),
     )
 

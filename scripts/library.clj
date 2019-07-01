@@ -1,8 +1,16 @@
 (require '[clojure.java.io :as io])
-(import (java.io BufferedOutputStream FileOutputStream))
+(import (java.io PushbackReader BufferedOutputStream FileOutputStream))
 (import (java.util.jar Manifest JarEntry JarFile JarOutputStream))
 
-(load-file "scripts/ns.clj")
+(defn ns-symbol [file]
+  (with-open [reader (PushbackReader. (io/reader file))]
+    (loop [form (read reader false ::done)]
+      (if (and (list? form) (= 'ns (first form)))
+        (second form)
+        (when-not (= ::done form) (recur reader))))))
+
+(defn ns-path [file]
+  (-> file ns-symbol name (.replace \- \_) (.replace \. \/) (str ".clj")))
 
 (def compile-dir (-> "clojure.compile.path" System/getProperty io/file))
 (def compile-jar (-> "clojure.compile.jar" System/getProperty io/file))
