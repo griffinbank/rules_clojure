@@ -1,4 +1,4 @@
-def _clojure_library_impl(ctx):
+def clojure_library_impl(ctx):
     toolchain = ctx.toolchains["//rules:toolchain_type"]
 
     output = ctx.actions.declare_directory("%s.library" % ctx.label.name)
@@ -32,17 +32,3 @@ def _clojure_library_impl(ctx):
         source_jar = ctx.outputs.jar,
         deps = [dep[JavaInfo] for dep in toolchain.runtime + ctx.attr.deps],
     )
-
-clojure_library = rule(
-    implementation = _clojure_library_impl,
-    attrs = {
-        "srcs": attr.label_list(default = [], allow_files = [".clj"]),
-        "deps": attr.label_list(default = [], providers = [JavaInfo]),
-        "aots": attr.string_list(default = []),
-    },
-    outputs = {
-        "jar": "%{name}.jar",
-    },
-    provides = [JavaInfo],
-    toolchains = ["//rules:toolchain_type"]
-)

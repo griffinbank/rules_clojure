@@ -1,4 +1,4 @@
-def _clojure_test_impl(ctx):
+def clojure_test_impl(ctx):
     toolchain = ctx.toolchains["//rules:toolchain_type"]
 
     ctx.actions.write(
@@ -14,13 +14,3 @@ def _clojure_test_impl(ctx):
     return DefaultInfo(
         runfiles = ctx.runfiles(files = ctx.files.srcs + ctx.files.deps + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk)
     )
-
-clojure_test = rule(
-    implementation = _clojure_test_impl,
-    attrs = {
-        "srcs": attr.label_list(default = [], allow_files = [".clj"]),
-        "deps": attr.label_list(default = [], providers = [JavaInfo]),
-    },
-    toolchains = ["//rules:toolchain_type"],
-    test = True
-)

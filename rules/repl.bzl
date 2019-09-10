@@ -1,4 +1,4 @@
-def _clojure_repl_impl(ctx):
+def clojure_repl_impl(ctx):
     toolchain = ctx.toolchains["//rules:toolchain_type"]
 
     ctx.actions.write(
@@ -13,13 +13,3 @@ def _clojure_repl_impl(ctx):
     return DefaultInfo(
         runfiles = ctx.runfiles(files = ctx.files.deps + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk)
     )
-
-clojure_repl = rule(
-    implementation = _clojure_repl_impl,
-    attrs = {
-        "deps": attr.label_list(default = [], providers = [JavaInfo]),
-        "ns": attr.string(mandatory = False),
-    },
-    toolchains = ["//rules:toolchain_type"],
-    executable = True
-)

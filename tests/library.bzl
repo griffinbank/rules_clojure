@@ -1,4 +1,3 @@
-load("//rules:library.bzl", "clojure_library")
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 
 def _providers_test_impl(ctx):
