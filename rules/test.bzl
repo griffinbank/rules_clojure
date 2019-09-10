@@ -1,16 +1,18 @@
 def _clojure_test_impl(ctx):
+    toolchain = ctx.toolchains["//rules:toolchain_type"]
+
     ctx.actions.write(
         output = ctx.outputs.executable,
         content = "{java} -cp {classpath} clojure.main {script} {sources}".format(
-            java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
-            classpath = ":".join([f.short_path for f in ctx.files._runtime + ctx.files.deps]),
-            script = [f for f in ctx.files._scripts if f.basename == "test.clj"][0].path,
+            java = toolchain.java,
+            classpath = ":".join([f.short_path for f in toolchain.files.runtime + ctx.files.deps]),
+            script = [f for f in toolchain.files.scripts if f.basename == "test.clj"][0].path,
             sources = " ".join([f.path for f in ctx.files.srcs]),
         ),
     )
 
     return DefaultInfo(
-        runfiles = ctx.runfiles(files = ctx.files.srcs + ctx.files.deps + ctx.files._runtime + ctx.files._scripts + ctx.files._jdk)
+        runfiles = ctx.runfiles(files = ctx.files.srcs + ctx.files.deps + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk)
     )
 
 clojure_test = rule(
@@ -18,18 +20,7 @@ clojure_test = rule(
     attrs = {
         "srcs": attr.label_list(default = [], allow_files = [".clj"]),
         "deps": attr.label_list(default = [], providers = [JavaInfo]),
-        "_runtime": attr.label_list(default = [
-            "@org_clojure//jar",
-            "@org_clojure_spec_alpha//jar",
-            "@org_clojure_core_specs_alpha//jar",
-        ]),
-        "_scripts": attr.label(
-            default = "//scripts",
-        ),
-        "_jdk": attr.label(
-            default = "@bazel_tools//tools/jdk:current_java_runtime",
-            providers = [java_common.JavaRuntimeInfo],
-        ),
     },
+    toolchains = ["//rules:toolchain_type"],
     test = True
 )

@@ -13,3 +13,7 @@ def clojure_runtime():
         name = "org_clojure_core_specs_alpha",
         artifact = "org.clojure:core.specs.alpha:0.2.44",
     )
+
+    native.register_toolchains(
+        "//rules:clojure_toolchain",
+    )

@@ -1,11 +1,25 @@
-def clojure_repl(name, deps = [], ns = None):
-    native.java_binary(
-      name = name,
-      main_class = "clojure.main",
-      args = ["-e", """\"(require '[{ns}]) (in-ns '{ns}) (clojure.main/repl)\"""".format(ns = ns)] if ns else [],
-      runtime_deps = deps + [
-       "@org_clojure//jar",
-       "@org_clojure_spec_alpha//jar",
-       "@org_clojure_core_specs_alpha//jar",
-       ],
+def _clojure_repl_impl(ctx):
+    toolchain = ctx.toolchains["//rules:toolchain_type"]
+
+    ctx.actions.write(
+        output = ctx.outputs.executable,
+        content = "{java} -cp {classpath} clojure.main {args}".format(
+            java = toolchain.java,
+            classpath = ":".join([f.short_path for f in toolchain.files.runtime + ctx.files.deps]),
+            args = " ".join(["-e", """\"(require '[{ns}]) (in-ns '{ns}) (clojure.main/repl)\"""".format(ns = ctx.attr.ns)] if ctx.attr.ns else []),
+        ),
     )
+
+    return DefaultInfo(
+        runfiles = ctx.runfiles(files = ctx.files.deps + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk)
+    )
+
+clojure_repl = rule(
+    implementation = _clojure_repl_impl,
+    attrs = {
+        "deps": attr.label_list(default = [], providers = [JavaInfo]),
+        "ns": attr.string(mandatory = False),
+    },
+    toolchains = ["//rules:toolchain_type"],
+    executable = True
+)
