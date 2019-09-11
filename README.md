@@ -161,7 +161,7 @@ Runs clojure.test for given sources.
 
 ## clojure_binary
 
-There is no such rule but you can use clojure_library with aots and java_binary.
+There is no such rule but same effect might be achieved with combination of clojure_library with aots and java_binary.
 
 ```build
 clojure_library(
