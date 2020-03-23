@@ -1,4 +1,4 @@
-load("//:rules.bzl", "clojure_library", "clojure_test", "clojure_repl")
+load("@rules_clojure//:rules.bzl", "clojure_library", "clojure_test", "clojure_repl")
 
 clojure_library(
     name = "library",

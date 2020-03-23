@@ -1,5 +1,5 @@
 def clojure_repl_impl(ctx):
-    toolchain = ctx.toolchains["//rules:toolchain_type"]
+    toolchain = ctx.toolchains["@rules_clojure//rules:toolchain_type"]
 
     ctx.actions.write(
         output = ctx.outputs.executable,

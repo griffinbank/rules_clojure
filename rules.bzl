@@ -1,6 +1,6 @@
-load("//rules:library.bzl", _clojure_library_impl = "clojure_library_impl")
-load("//rules:repl.bzl", _clojure_repl_impl = "clojure_repl_impl")
-load("//rules:test.bzl", _clojure_test_impl = "clojure_test_impl")
+load("@rules_clojure//rules:library.bzl", _clojure_library_impl = "clojure_library_impl")
+load("@rules_clojure//rules:repl.bzl", _clojure_repl_impl = "clojure_repl_impl")
+load("@rules_clojure//rules:test.bzl", _clojure_test_impl = "clojure_test_impl")
 
 clojure_library = rule(
     doc = "Builds a jar for given sources with ahead-of-time compilation.",
@@ -13,7 +13,7 @@ clojure_library = rule(
         "jar": "%{name}.jar",
     },
     provides = [JavaInfo],
-    toolchains = ["//rules:toolchain_type"],
+    toolchains = ["@rules_clojure//rules:toolchain_type"],
     implementation = _clojure_library_impl
 )
 
@@ -24,7 +24,7 @@ clojure_repl = rule(
         "ns": attr.string(mandatory = False, doc = "Namespace to start REPL in."),
     },
     executable = True,
-    toolchains = ["//rules:toolchain_type"],
+    toolchains = ["@rules_clojure//rules:toolchain_type"],
     implementation = _clojure_repl_impl
 )
 
@@ -35,6 +35,6 @@ clojure_test = rule(
         "deps": attr.label_list(default = [], providers = [JavaInfo], doc = "Libraries to link into this library."),
     },
     test = True,
-    toolchains = ["//rules:toolchain_type"],
+    toolchains = ["@rules_clojure//rules:toolchain_type"],
     implementation = _clojure_test_impl
 )

@@ -23,5 +23,5 @@ def clojure_runtime():
     )
 
     native.register_toolchains(
-        "//rules:clojure_toolchain",
+        "@rules_clojure//rules:clojure_toolchain",
     )

@@ -1,4 +1,4 @@
-load("//:rules.bzl", _library = "clojure_library", _repl = "clojure_repl")
+load("@rules_clojure//:rules.bzl", _library = "clojure_library", _repl = "clojure_repl")
 
 def clojure_binary(name, srcs, aots, main_class, deps = []):
     lib = "_lib_%" % name
