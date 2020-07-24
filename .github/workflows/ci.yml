@@ -4,7 +4,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
     - name: Mount bazel cache
       uses: actions/cache@v1
       with:
@@ -19,6 +19,3 @@ jobs:
     - name: Test
       run: |
         "${GITHUB_WORKSPACE}/bin/bazel" test //...
-    - name: Build
-      run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" build //...
