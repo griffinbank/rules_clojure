@@ -4,6 +4,7 @@ def _clojure_toolchain_impl(ctx):
         scripts = ctx.attr._scripts,
         jdk = ctx.attr._jdk,
         java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
+        java_runfiles = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_runfiles_path,
         files = struct(
             runtime = ctx.files._runtime,
             scripts = ctx.files._scripts,
