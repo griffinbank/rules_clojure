@@ -7,7 +7,7 @@ def clojure_binary(name, srcs, aots, main_class, deps = []):
         name = lib,
         srcs = srcs,
         aots = aots,
-        deps = deps
+        deps = deps,
     )
 
     native.java_binary(
@@ -22,11 +22,11 @@ def clojure_repl(name, srcs, ns, deps = []):
     _library(
         name = lib,
         srcs = srcs,
-        deps = deps
+        deps = deps,
     )
 
     _repl(
         name = name,
         deps = [lib],
-        ns = ns
+        ns = ns,
     )

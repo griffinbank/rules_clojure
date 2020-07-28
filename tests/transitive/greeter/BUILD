@@ -8,6 +8,6 @@ java_library(
 clojure_library(
     name = "greeter",
     srcs = ["hello.clj"],
-    deps = [":greeter_java"],
     visibility = ["//visibility:public"],
+    deps = [":greeter_java"],
 )

@@ -14,7 +14,7 @@ clojure_library = rule(
     },
     provides = [JavaInfo],
     toolchains = ["@rules_clojure//rules:toolchain_type"],
-    implementation = _clojure_library_impl
+    implementation = _clojure_library_impl,
 )
 
 clojure_repl = rule(
@@ -25,7 +25,7 @@ clojure_repl = rule(
     },
     executable = True,
     toolchains = ["@rules_clojure//rules:toolchain_type"],
-    implementation = _clojure_repl_impl
+    implementation = _clojure_repl_impl,
 )
 
 clojure_test = rule(
@@ -36,5 +36,5 @@ clojure_test = rule(
     },
     test = True,
     toolchains = ["@rules_clojure//rules:toolchain_type"],
-    implementation = _clojure_test_impl
+    implementation = _clojure_test_impl,
 )

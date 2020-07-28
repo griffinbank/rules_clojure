@@ -8,8 +8,8 @@ def _clojure_toolchain_impl(ctx):
         files = struct(
             runtime = ctx.files._runtime,
             scripts = ctx.files._scripts,
-            jdk = ctx.files._jdk
-        )
+            jdk = ctx.files._jdk,
+        ),
     )]
 
 clojure_toolchain = rule(
@@ -27,5 +27,5 @@ clojure_toolchain = rule(
             default = "@bazel_tools//tools/jdk:current_java_runtime",
             providers = [java_common.JavaRuntimeInfo],
         ),
-    }
+    },
 )

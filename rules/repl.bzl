@@ -11,5 +11,5 @@ def clojure_repl_impl(ctx):
     )
 
     return DefaultInfo(
-        runfiles = ctx.runfiles(files = ctx.files.deps + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk)
+        runfiles = ctx.runfiles(files = ctx.files.deps + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk),
     )
