@@ -3,6 +3,8 @@ def clojure_library_impl(ctx):
 
     output = ctx.actions.declare_directory("%s.library" % ctx.label.name)
 
+    transitive_runtime_deps = depset(transitive = [dep[JavaInfo].transitive_runtime_deps for dep in ctx.attr.deps])
+
     cmd = """
         set -e;
         rm -rf {output}
@@ -10,7 +12,7 @@ def clojure_library_impl(ctx):
         {java} -cp {classpath} -Dclojure.compile.path={output} -Dclojure.compile.jar={jar} -Dclojure.compile.aot={aot} clojure.main {script} {sources}
     """.format(
         java = toolchain.java,
-        classpath = ":".join([f.path for f in toolchain.files.runtime + ctx.files.deps + [output]]),
+        classpath = ":".join([f.path for f in toolchain.files.runtime + transitive_runtime_deps.to_list() + [output]]),
         output = output.path,
         jar = ctx.outputs.jar.path,
         aot = ",".join(ctx.attr.aots),
@@ -21,7 +23,7 @@ def clojure_library_impl(ctx):
     ctx.actions.run_shell(
         command = cmd,
         outputs = [output, ctx.outputs.jar],
-        inputs = ctx.files.srcs + ctx.files.deps + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk,
+        inputs = ctx.files.srcs + transitive_runtime_deps.to_list() + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk,
         mnemonic = "ClojureLibrary",
         progress_message = "Building clojure library for %s" % ctx.label,
     )
