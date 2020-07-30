@@ -1,6 +1,6 @@
-toolchain_type(name = "toolchain_type")
-
 load("@rules_clojure//:toolchain.bzl", "clojure_toolchain")
+
+toolchain_type(name = "toolchain_type")
 
 clojure_toolchain(
     name = "clojure_10_toolchain",

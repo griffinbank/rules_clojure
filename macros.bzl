@@ -1,3 +1,4 @@
+load("@rules_java//java:defs.bzl", "java_binary")
 load("@rules_clojure//:rules.bzl", _library = "clojure_library", _repl = "clojure_repl")
 
 def clojure_binary(name, srcs, aots, main_class, deps = []):
@@ -9,8 +10,7 @@ def clojure_binary(name, srcs, aots, main_class, deps = []):
         aots = aots,
         deps = deps,
     )
-
-    native.java_binary(
+    java_binary(
         name = name,
         main_class = main_class,
         runtime_deps = [lib],
