@@ -9,9 +9,6 @@ clojure_library = rule(
         "deps": attr.label_list(default = [], providers = [JavaInfo], doc = "Libraries to link into this library."),
         "aots": attr.string_list(default = [], doc = "Namespaces to be compiled."),
     },
-    outputs = {
-        "jar": "%{name}.jar",
-    },
     provides = [JavaInfo],
     toolchains = ["@rules_clojure//rules:toolchain_type"],
     implementation = _clojure_library_impl,

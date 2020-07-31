@@ -2,6 +2,7 @@ def clojure_library_impl(ctx):
     toolchain = ctx.toolchains["@rules_clojure//rules:toolchain_type"]
 
     output = ctx.actions.declare_directory("%s.library" % ctx.label.name)
+    jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
 
     transitive_runtime_deps = depset(transitive = [dep[JavaInfo].transitive_runtime_deps for dep in ctx.attr.deps])
 
@@ -14,7 +15,7 @@ def clojure_library_impl(ctx):
         java = toolchain.java,
         classpath = ":".join([f.path for f in toolchain.files.runtime + transitive_runtime_deps.to_list() + [output]]),
         output = output.path,
-        jar = ctx.outputs.jar.path,
+        jar = jar.path,
         aot = ",".join(ctx.attr.aots),
         script = [f for f in toolchain.files.scripts if f.basename == "library.clj"][0].path,
         sources = " ".join([f.path for f in ctx.files.srcs]),
@@ -22,15 +23,21 @@ def clojure_library_impl(ctx):
 
     ctx.actions.run_shell(
         command = cmd,
-        outputs = [output, ctx.outputs.jar],
+        outputs = [output, jar],
         inputs = ctx.files.srcs + transitive_runtime_deps.to_list() + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk,
         mnemonic = "ClojureLibrary",
         progress_message = "Building clojure library for %s" % ctx.label,
     )
 
-    return JavaInfo(
-        output_jar = ctx.outputs.jar,
-        compile_jar = ctx.outputs.jar,
-        source_jar = ctx.outputs.jar,
-        deps = [dep[JavaInfo] for dep in toolchain.runtime + ctx.attr.deps],
-    )
+    return [
+        DefaultInfo(
+            files = depset([jar]),
+            runfiles = ctx.runfiles([jar]), # TODO: This is needed only for //tests:library_content_test because :library.jar is not available anymore
+        ),
+        JavaInfo(
+            output_jar = jar,
+            compile_jar = jar,
+            source_jar = jar,
+            deps = [dep[JavaInfo] for dep in toolchain.runtime + ctx.attr.deps],
+        ),
+    ]

@@ -34,9 +34,9 @@ def test_suite():
     native.sh_test(
         name = "library_content_test",
         srcs = [":library.sh"],
-        data = [":library.jar"],
+        data = [":library"],
         args = [
-            "$(location :library.jar)",
+            "$(location :library)",
             "META-INF/MANIFEST.MF",
             "tests/library.clj",
             "tests/library.class",
