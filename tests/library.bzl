@@ -24,7 +24,11 @@ def _providers_test_impl(ctx):
 providers_test = analysistest.make(_providers_test_impl)
 
 def test_suite():
-    providers_test(name = "library_providers_test", target_under_test = ":library")
+    providers_test(
+        name = "library_providers_test",
+        target_under_test = ":library",
+        size = "small",
+    )
 
     native.test_suite(
         name = "library_test_suite",
@@ -41,4 +45,5 @@ def test_suite():
             "tests/library.clj",
             "tests/library.class",
         ],
+        size = "small",
     )

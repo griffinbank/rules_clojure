@@ -4,4 +4,5 @@ def test_suite():
         srcs = [":binary.sh"],
         data = [":binary"],
         args = ["$(location :binary)", "test", "test"],
+        size = "small",
     )

@@ -11,6 +11,7 @@ clojure_library(
 
 clojure_test(
     name = "test",
+    size = "small",
     srcs = ["test.clj"],
     deps = [":library"],
 )
