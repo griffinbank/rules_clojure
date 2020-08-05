@@ -17,7 +17,7 @@ def clojure_library_impl(ctx):
         output = output.path,
         jar = jar.path,
         aot = ",".join(ctx.attr.aots),
-        script = [f for f in toolchain.files.scripts if f.basename == "library.clj"][0].path,
+        script = toolchain.scripts["library.clj"].path,
         sources = " ".join([f.path for f in ctx.files.srcs]),
     )
 
@@ -32,7 +32,7 @@ def clojure_library_impl(ctx):
     return [
         DefaultInfo(
             files = depset([jar]),
-            runfiles = ctx.runfiles([jar]), # TODO: This is needed only for //tests:library_content_test because :library.jar is not available anymore
+            runfiles = ctx.runfiles([jar]),  # TODO: This is needed only for //tests:library_content_test because :library.jar is not available anymore
         ),
         JavaInfo(
             output_jar = jar,

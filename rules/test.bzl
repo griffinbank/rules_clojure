@@ -8,7 +8,7 @@ def clojure_test_impl(ctx):
         content = "{java} -cp {classpath} clojure.main {script} {sources}".format(
             java = toolchain.java_runfiles,
             classpath = ":".join([f.short_path for f in toolchain.files.runtime + ctx.files.deps + transitive_runtime_deps.to_list()]),
-            script = [f for f in toolchain.files.scripts if f.basename == "test.clj"][0].path,
+            script = toolchain.scripts["test.clj"].path,
             sources = " ".join([f.path for f in ctx.files.srcs]),
         ),
     )

@@ -1,7 +1,7 @@
 def _clojure_toolchain_impl(ctx):
     return [platform_common.ToolchainInfo(
         runtime = ctx.attr._runtime,
-        scripts = ctx.attr._scripts,
+        scripts = {s.basename: s for s in ctx.files._scripts},
         jdk = ctx.attr._jdk,
         java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
         java_runfiles = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_runfiles_path,
