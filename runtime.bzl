@@ -21,3 +21,5 @@ def clojure_runtime():
         artifact_sha256 = "3b1ec4d6f0e8e41bf76842709083beb3b56adf3c82f9a4f174c3da74774b381c",
         server_urls = ["https://repo1.maven.org/maven2/"],
     )
+
+    native.register_toolchains("@rules_clojure//rules:clojure_toolchain")

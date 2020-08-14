@@ -4,8 +4,6 @@ load("@rules_clojure//:runtime.bzl", "clojure_runtime")
 
 clojure_runtime()
 
-register_toolchains("@rules_clojure//rules:clojure_toolchain")
-
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
