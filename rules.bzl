@@ -10,7 +10,7 @@ clojure_library = rule(
         "aots": attr.string_list(default = [], doc = "Namespaces to be compiled."),
     },
     provides = [JavaInfo],
-    toolchains = ["@rules_clojure//rules:toolchain_type"],
+    toolchains = ["@rules_clojure//:toolchain"],
     implementation = _clojure_library_impl,
 )
 
@@ -21,7 +21,7 @@ clojure_repl = rule(
         "ns": attr.string(mandatory = False, doc = "Namespace to start REPL in."),
     },
     executable = True,
-    toolchains = ["@rules_clojure//rules:toolchain_type"],
+    toolchains = ["@rules_clojure//:toolchain"],
     implementation = _clojure_repl_impl,
 )
 
@@ -32,6 +32,6 @@ clojure_test = rule(
         "deps": attr.label_list(default = [], providers = [JavaInfo], doc = "Libraries to link into this library."),
     },
     test = True,
-    toolchains = ["@rules_clojure//rules:toolchain_type"],
+    toolchains = ["@rules_clojure//:toolchain"],
     implementation = _clojure_test_impl,
 )

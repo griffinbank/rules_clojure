@@ -1,5 +1,5 @@
 def clojure_test_impl(ctx):
-    toolchain = ctx.toolchains["@rules_clojure//rules:toolchain_type"]
+    toolchain = ctx.toolchains["@rules_clojure//:toolchain"]
 
     transitive_runtime_deps = depset(transitive = [dep[JavaInfo].transitive_runtime_deps for dep in ctx.attr.deps])
 

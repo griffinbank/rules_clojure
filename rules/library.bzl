@@ -1,5 +1,5 @@
 def clojure_library_impl(ctx):
-    toolchain = ctx.toolchains["@rules_clojure//rules:toolchain_type"]
+    toolchain = ctx.toolchains["@rules_clojure//:toolchain"]
 
     output = ctx.actions.declare_directory("%s.library" % ctx.label.name)
     jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)

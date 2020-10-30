@@ -1,12 +1,12 @@
 def _clojure_toolchain_impl(ctx):
     return [platform_common.ToolchainInfo(
-        runtime = ctx.attr._runtime,
+        runtime = ctx.attr.classpath,
         scripts = {s.basename: s for s in ctx.files._scripts},
         jdk = ctx.attr._jdk,
         java = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
         java_runfiles = ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_runfiles_path,
         files = struct(
-            runtime = ctx.files._runtime,
+            runtime = ctx.files.classpath,
             scripts = ctx.files._scripts,
             jdk = ctx.files._jdk,
         ),
@@ -15,11 +15,10 @@ def _clojure_toolchain_impl(ctx):
 clojure_toolchain = rule(
     implementation = _clojure_toolchain_impl,
     attrs = {
-        "_runtime": attr.label_list(default = [
-            "@org_clojure//jar",
-            "@org_clojure_spec_alpha//jar",
-            "@org_clojure_core_specs_alpha//jar",
-        ]),
+        "classpath": attr.label_list(
+            doc = "List of JavaInfo dependencies which will be implictly added to library/repl/test/binary classpath. Must contain clojure.jar",
+            providers = [JavaInfo],
+        ),
         "_scripts": attr.label(
             default = "//scripts",
         ),
@@ -28,4 +27,5 @@ clojure_toolchain = rule(
             providers = [java_common.JavaRuntimeInfo],
         ),
     },
+    provides = [platform_common.ToolchainInfo],
 )
