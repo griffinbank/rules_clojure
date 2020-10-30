@@ -1,4 +1,28 @@
-# [Bazel](https://bazel.build) rules for [Clojure](https://clojure.org) programming language
+# [Clojure](https://clojure.org) rules for [Bazel](https://bazel.build)
+
+## WORKSPACE
+
+```skylark
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "rules_clojure",
+    sha256 = "26b11fe38e3c3981d211d2405556c9262f584a6d1fa6559acc4c325ee730560c",
+    strip_prefix = "rules_clojure-62c1ee4fb398a473d178831a83c9a032707efd15",
+    urls = ["https://github.com/simuons/rules_clojure/archive/62c1ee4fb398a473d178831a83c9a032707efd15.tar.gz"],
+)
+
+load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies", "rules_clojure_toolchains")
+
+rules_clojure_dependencies()
+
+rules_clojure_toolchains()
+```
+
+Note: update commit and sha256 as needed.
+
+By default `rules_clojure` loads `clojure` jars with `jvm_maven_import_external`.
+If you need to use different loader like `rules_jvm_external` please see [example](examples/setup/custom). 
 
 <!-- Generated with Stardoc: http://skydoc.bazel.build -->
 
