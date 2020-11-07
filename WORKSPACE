@@ -1,8 +1,10 @@
 workspace(name = "rules_clojure")
 
-load("@rules_clojure//:runtime.bzl", "clojure_runtime")
+load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies", "rules_clojure_toolchains")
 
-clojure_runtime()
+rules_clojure_dependencies()
+
+rules_clojure_toolchains()
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 

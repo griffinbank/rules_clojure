@@ -1,4 +1,4 @@
-def _clojure_toolchain_impl(ctx):
+def _clojure_toolchain(ctx):
     return [platform_common.ToolchainInfo(
         runtime = ctx.attr.classpath,
         scripts = {s.basename: s for s in ctx.files._scripts},
@@ -13,7 +13,7 @@ def _clojure_toolchain_impl(ctx):
     )]
 
 clojure_toolchain = rule(
-    implementation = _clojure_toolchain_impl,
+    implementation = _clojure_toolchain,
     attrs = {
         "classpath": attr.label_list(
             doc = "List of JavaInfo dependencies which will be implictly added to library/repl/test/binary classpath. Must contain clojure.jar",
