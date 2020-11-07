@@ -24,7 +24,3 @@ def rules_clojure_dependencies():
 
 def rules_clojure_toolchains():
     native.register_toolchains("@rules_clojure//:clojure_toolchain")
-
-def rules_clojure_setup():
-    rules_clojure_dependencies()
-    rules_clojure_toolchains()

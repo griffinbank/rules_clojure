@@ -1,5 +1,5 @@
-load("@rules_clojure//:toolchain.bzl", "clojure_toolchain")
 load("@rules_clojure//:rules.bzl", "clojure_library")
+load("@rules_clojure//:toolchains.bzl", "clojure_toolchain")
 
 clojure_toolchain(
     name = "custom_toolchain_def",
