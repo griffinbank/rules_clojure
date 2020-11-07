@@ -5,7 +5,7 @@ load("@rules_clojure//rules:test.bzl", _clojure_test_impl = "clojure_test_impl")
 clojure_library = rule(
     doc = "Builds a jar for given sources with ahead-of-time compilation.",
     attrs = {
-        "srcs": attr.label_list(default = [], allow_files = [".clj"], doc = "clj source files."),
+        "srcs": attr.label_list(mandatory = True, allow_empty = False, allow_files = [".clj"], doc = "clj source files."),
         "deps": attr.label_list(default = [], providers = [JavaInfo], doc = "Libraries to link into this library."),
         "aots": attr.string_list(default = [], doc = "Namespaces to be compiled."),
     },
@@ -28,7 +28,7 @@ clojure_repl = rule(
 clojure_test = rule(
     doc = "Runs clojure.test for given sources.",
     attrs = {
-        "srcs": attr.label_list(default = [], allow_files = [".clj"], doc = "clj source files with test cases."),
+        "srcs": attr.label_list(mandatory = True, allow_empty = False, allow_files = [".clj"], doc = "clj source files with test cases."),
         "deps": attr.label_list(default = [], providers = [JavaInfo], doc = "Libraries to link into this library."),
     },
     test = True,
