@@ -1,6 +1,18 @@
+load("@rules_clojure//rules:binary.bzl", _clojure_binary_impl = "clojure_binary_impl")
 load("@rules_clojure//rules:library.bzl", _clojure_library_impl = "clojure_library_impl")
 load("@rules_clojure//rules:repl.bzl", _clojure_repl_impl = "clojure_repl_impl")
 load("@rules_clojure//rules:test.bzl", _clojure_test_impl = "clojure_test_impl")
+
+clojure_binary = rule(
+    doc = "Builds a wrapper shell script with the same name as the rule.",
+    attrs = {
+        "main": attr.string(mandatory = True, doc = "A namespace to find a -main function for execution."),
+        "deps": attr.label_list(mandatory = True, allow_empty = False, providers = [JavaInfo], doc = "Libraries to link into this binary."),
+    },
+    executable = True,
+    toolchains = ["@rules_clojure//:toolchain"],
+    implementation = _clojure_binary_impl,
+)
 
 clojure_library = rule(
     doc = "Builds a jar for given sources with ahead-of-time compilation.",

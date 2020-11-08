@@ -1,5 +1,4 @@
-load("@rules_java//java:defs.bzl", "java_binary")
-load("@rules_clojure//:rules.bzl", "clojure_library", "clojure_repl", "clojure_test")
+load("@rules_clojure//:rules.bzl", "clojure_binary", "clojure_library", "clojure_repl", "clojure_test")
 load(":library.bzl", library_test_suite = "test_suite")
 load(":binary.bzl", binary_test_suite = "test_suite")
 
@@ -22,10 +21,10 @@ clojure_repl(
     deps = [":library"],
 )
 
-java_binary(
+clojure_binary(
     name = "binary",
-    main_class = "tests.library",
-    runtime_deps = [":library"],
+    main = "tests.library",
+    deps = [":library"],
 )
 
 library_test_suite()
