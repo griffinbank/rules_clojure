@@ -37,7 +37,7 @@ def test_suite():
 
     native.sh_test(
         name = "library_content_test",
-        srcs = [":library.sh"],
+        srcs = ["assert/library.sh"],
         data = [":library"],
         args = [
             "$(location :library)",
