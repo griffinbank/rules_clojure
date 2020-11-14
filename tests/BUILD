@@ -77,12 +77,7 @@ sh_test(
 clojure_library(
     name = "library",
     srcs = ["library.clj"],
-    aots = ["tests.library"],
 )
-
-load(":library.bzl", library_test_suite = "test_suite")
-
-library_test_suite()
 
 clojure_test(
     name = "library-test",
@@ -232,15 +227,10 @@ sh_test(
 # TODO: Add tests for multiple namespaces and multiple dependencies
 # TODO: Do we need multiple namespaces and dependencies since clojure compiles everything transitively?
 
-clojure_library(
-    name = "lib",  # didn't reuse :library because it has aot I'll do so once aot is removed
-    srcs = ["library.clj"],
-)
-
 clojure_java_library(
     name = "library-java",
     namespaces = ["tests.library"],
-    deps = [":lib"],
+    deps = [":library"],
 )
 
 java_binary(

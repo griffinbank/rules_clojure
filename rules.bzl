@@ -27,11 +27,10 @@ clojure_java_library = rule(
 )
 
 clojure_library = rule(
-    doc = "Builds a jar for given sources with ahead-of-time compilation.",
+    doc = "Builds a jar file from given sources with the paths corresponding to namespaces.",
     attrs = {
         "srcs": attr.label_list(mandatory = True, allow_empty = False, allow_files = [".clj"], doc = "clj source files."),
         "deps": attr.label_list(default = [], providers = [JavaInfo], doc = "Libraries to link into this library."),
-        "aots": attr.string_list(default = [], doc = "Namespaces to be compiled."),
     },
     provides = [JavaInfo],
     toolchains = ["@rules_clojure//:toolchain"],
