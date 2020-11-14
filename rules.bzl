@@ -1,4 +1,5 @@
 load("@rules_clojure//rules:binary.bzl", _clojure_binary_impl = "clojure_binary_impl")
+load("@rules_clojure//rules:compile.bzl", _clojure_java_library_impl = "clojure_java_library_impl")
 load("@rules_clojure//rules:library.bzl", _clojure_library_impl = "clojure_library_impl")
 load("@rules_clojure//rules:repl.bzl", _clojure_repl_impl = "clojure_repl_impl")
 load("@rules_clojure//rules:test.bzl", _clojure_test_impl = "clojure_test_impl")
@@ -12,6 +13,17 @@ clojure_binary = rule(
     executable = True,
     toolchains = ["@rules_clojure//:toolchain"],
     implementation = _clojure_binary_impl,
+)
+
+clojure_java_library = rule(
+    doc = "Compiles given namespaces to java.",
+    attrs = {
+        "namespaces": attr.string_list(mandatory = True, allow_empty = False, doc = "Namespaces in classpath to compile."),
+        "deps": attr.label_list(mandatory = True, allow_empty = False, providers = [JavaInfo], doc = "Dependencies to compile."),
+    },
+    provides = [JavaInfo],
+    toolchains = ["@rules_clojure//:toolchain"],
+    implementation = _clojure_java_library_impl,
 )
 
 clojure_library = rule(

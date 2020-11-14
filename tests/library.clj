@@ -2,4 +2,4 @@
 
 (defn echo [message] (str "library " message))
 
-(defn -main [& args] (print "library main" (apply str args)))
+(defn -main [& args] (println "library main" (apply str args)))

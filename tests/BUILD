@@ -1,4 +1,5 @@
-load("@rules_clojure//:rules.bzl", "clojure_binary", "clojure_library", "clojure_repl", "clojure_test")
+load("@rules_clojure//:rules.bzl", "clojure_binary", "clojure_java_library", "clojure_library", "clojure_repl", "clojure_test")
+load("@rules_java//java:defs.bzl", "java_binary")
 
 clojure_test(
     name = "unconditionally-passing-test",
@@ -224,4 +225,100 @@ sh_test(
         """'app main library input'""",
     ],
     data = [":app-bundled-binary"],
+)
+
+# AOT with clojure_java_library
+# TODO: Move to aot package
+# TODO: Add tests for multiple namespaces and multiple dependencies
+# TODO: Do we need multiple namespaces and dependencies since clojure compiles everything transitively?
+
+clojure_library(
+    name = "lib",  # didn't reuse :library because it has aot I'll do so once aot is removed
+    srcs = ["library.clj"],
+)
+
+clojure_java_library(
+    name = "library-java",
+    namespaces = ["tests.library"],
+    deps = [":lib"],
+)
+
+java_binary(
+    name = "library-java-binary",
+    main_class = "tests.library",
+    runtime_deps = [":library-java"],
+)
+
+sh_test(
+    name = "library-java-binary-test",
+    size = "small",
+    srcs = ["assert/binary.sh"],
+    args = [
+        "$(location :library-java-binary)",
+        """input""",
+        """'library main input'""",
+    ],
+    data = [":library-java-binary"],
+)
+
+clojure_java_library(
+    name = "app-bundled-java",
+    namespaces = ["tests.app"],
+    deps = [":app-bundled"],
+)
+
+clojure_test(
+    name = "app-bundled-java-test",
+    size = "small",
+    srcs = ["app-java-test.clj"],
+    deps = [":app-bundled-java"],
+)
+
+java_binary(
+    name = "app-bundled-java-binary",
+    main_class = "aot.CompiledAppClass",
+    runtime_deps = [":app-bundled-java"],
+)
+
+sh_test(
+    name = "app-bundled-java-binary-test",
+    size = "small",
+    srcs = ["assert/binary.sh"],
+    args = [
+        "$(location :app-bundled-java-binary)",
+        """input""",
+        """'app main library input'""",
+    ],
+    data = [":app-bundled-java-binary"],
+)
+
+clojure_java_library(
+    name = "app-transitive-java",
+    namespaces = ["tests.app"],
+    deps = [":app-transitive"],
+)
+
+clojure_test(
+    name = "app-transitive-java-test",
+    size = "small",
+    srcs = ["app-java-test.clj"],
+    deps = [":app-transitive-java"],
+)
+
+java_binary(
+    name = "app-transitive-java-binary",
+    main_class = "aot.CompiledAppClass",
+    runtime_deps = [":app-transitive-java"],
+)
+
+sh_test(
+    name = "app-transitive-java-binary-test",
+    size = "small",
+    srcs = ["assert/binary.sh"],
+    args = [
+        "$(location :app-transitive-java-binary)",
+        """input""",
+        """'app main library input'""",
+    ],
+    data = [":app-transitive-java-binary"],
 )
