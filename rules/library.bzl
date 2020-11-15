@@ -27,6 +27,6 @@ def clojure_library_impl(ctx):
             output_jar = jar,
             compile_jar = jar,
             source_jar = jar,
-            deps = [dep[JavaInfo] for dep in toolchain.runtime + ctx.attr.deps],
+            deps = [dep[JavaInfo] for dep in ctx.attr.deps],
         ),
     ]
