@@ -16,7 +16,7 @@ def clojure_library_impl(ctx):
         outputs = [jar],
         inputs = ctx.files.srcs + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk,
         mnemonic = "ClojureLibrary",
-        progress_message = "Building clojure library for %s" % ctx.label,
+        progress_message = "Building %s" % ctx.label,
     )
 
     return [
