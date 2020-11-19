@@ -1,10 +1,14 @@
 (require '[clojure.java.io :as io])
-(import (java.io PushbackReader BufferedOutputStream FileOutputStream))
+(import (java.io BufferedOutputStream FileOutputStream))
 (import (java.util.jar Manifest JarEntry JarFile JarOutputStream))
 
 (def compile-dir (-> "clojure.compile.path" System/getProperty io/file))
 (def compile-jar (-> "clojure.compile.jar" System/getProperty io/file))
-(def compile-aot (-> "clojure.compile.aot" System/getProperty or (.split ",") (->> (filter not-empty) (map symbol))))
+
+(def namespaces (map symbol *command-line-args*))
+
+(doseq [namespace namespaces]
+  (compile namespace))
 
 (def manifest
   (let [m (Manifest.)]
@@ -14,9 +18,6 @@
 
 (defn put-next-entry! [target name]
   (.putNextEntry target (doto (JarEntry. name) (.setTime 0))))
-
-(doseq [namespace compile-aot]
-  (compile namespace))
 
 (with-open [jar-os (-> compile-jar FileOutputStream. BufferedOutputStream. JarOutputStream.)]
   (put-next-entry! jar-os JarFile/MANIFEST_NAME)
