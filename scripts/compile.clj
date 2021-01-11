@@ -8,6 +8,7 @@
 (def namespaces (map symbol *command-line-args*))
 
 (doseq [namespace namespaces]
+  (println "compiling" namespace)
   (compile namespace))
 
 (def manifest

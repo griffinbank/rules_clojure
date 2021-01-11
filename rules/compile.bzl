@@ -24,8 +24,8 @@ def clojure_java_library_impl(ctx):
     )
 
     ctx.actions.run_shell(
+        outputs = [jar]
         command = cmd,
-        outputs = [classes, jar],
         inputs = deps.to_list() + toolchain.files.scripts + toolchain.files.jdk,
         mnemonic = "ClojureJavaLibrary",
         progress_message = "Compiling %s" % ctx.label,

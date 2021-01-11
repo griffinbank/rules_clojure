@@ -12,10 +12,10 @@
 (defn ns-path [file]
   (-> file ns-symbol name (.replace \- \_) (.replace \. \/) (str ".clj")))
 
-(def sources (map io/file *command-line-args*))
+(def test-ns (-> *command-line-args* first symbol))
 
-(doseq [source sources]
-  (load-file (.getCanonicalPath source)))
+(println "requiring" test-ns)
+(require test-ns)
 
 (let [{:keys [fail error]} (apply test/run-tests (map ns-symbol sources))]
   (if-not (= 0 fail error) (System/exit 1)))

@@ -1,32 +1,56 @@
+def copy_bash(ctx, src, dst):
+    ctx.actions.run_shell(
+        tools = [src],
+        outputs = [dst],
+        command = "cp -f \"$1\" \"$2\"",
+        arguments = [src.path, dst.path],
+        mnemonic = "CopyFile",
+        progress_message = "Copying files",
+        use_default_shell_env = True,
+    )
+
+CljInfo = provider(fields = ["depset",
+                             "runfiles",
+                             "srcs",
+                             "transitive_srcs",
+                             "java_deps"])
+
 def clojure_library_impl(ctx):
     toolchain = ctx.toolchains["@rules_clojure//:toolchain"]
 
-    jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
+    input_files = ctx.files.srcs
 
-    cmd = "{java} -cp {classpath} -Dclojure.compile.jar={jar} clojure.main {script} {sources}".format(
-        java = toolchain.java,
-        classpath = ":".join([f.path for f in toolchain.files.runtime]),
-        jar = jar.path,
-        script = toolchain.scripts["library.clj"].path,
-        sources = " ".join([f.path for f in ctx.files.srcs]),
-    )
+    all_files = input_files
 
-    ctx.actions.run_shell(
-        command = cmd,
-        outputs = [jar],
-        inputs = ctx.files.srcs + toolchain.files.runtime + toolchain.files.scripts + toolchain.files.jdk,
-        mnemonic = "ClojureLibrary",
-        progress_message = "Building %s" % ctx.label,
-    )
+    all_deps = []
+    java_deps = []
+    transitive_srcs = []
+    for src in ctx.attr.srcs:
+        if CljInfo in src:
+            transitive_srcs.append(src[CljInfo].srcs)
+
+    for dep in ctx.attr.srcs + ctx.attr.deps:
+        if CljInfo in dep:
+            all_deps.append(dep[CljInfo].depset)
+            java_deps.extend(dep[CljInfo].java_deps)
+
+        if JavaInfo in dep:
+            all_deps.append(dep[JavaInfo].transitive_runtime_deps)
+            java_deps.append(dep[JavaInfo])
+
+    the_depset = depset(all_files, transitive = all_deps)
+
+    runfiles = ctx.runfiles(files = all_files,
+                            transitive_files = the_depset)
 
     return [
         DefaultInfo(
-            files = depset([jar]),
-        ),
-        JavaInfo(
-            output_jar = jar,
-            compile_jar = jar,
-            source_jar = jar,
-            deps = [dep[JavaInfo] for dep in ctx.attr.deps],
-        ),
+            files = depset(all_files),
+            runfiles = runfiles),
+        CljInfo(depset = the_depset,
+                srcs = ctx.files.srcs,
+                transitive_srcs = transitive_srcs,
+                runfiles = runfiles,
+                java_deps = java_deps)
+
     ]
