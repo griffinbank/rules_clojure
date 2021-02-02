@@ -28,6 +28,7 @@ def clojure_jar_impl(ctx):
     for dep in ctx.attr.srcs + ctx.attr.deps:
         if DefaultInfo in dep:
             runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
+            runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
 
     java_deps = []
 
@@ -44,8 +45,7 @@ def clojure_jar_impl(ctx):
         output_jar = output_jar,
         compile_jar = output_jar,
         source_jar = None,
-        deps = java_deps,
-        runtime_deps = java_deps)
+        deps = java_deps)
 
     native_libs = []
     for f in runfiles.files.to_list():
@@ -60,7 +60,6 @@ def clojure_jar_impl(ctx):
 
     classpath_files = toolchain.files.runtime + [classes] + java_info.transitive_runtime_deps.to_list()
     classpath_string = ":".join(["src", "test"] + [f.path for f in classpath_files])
-
 
     cmd = """
         set -e;
@@ -79,10 +78,12 @@ def clojure_jar_impl(ctx):
         script = toolchain.scripts["jar.clj"].path,
         aot = ",".join([ns for ns in ctx.attr.aot]))
 
+    inputs = input_files + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.scripts + toolchain.files.jdk + native_libs
+
     ctx.actions.run_shell(
         outputs = [output_jar, classes],
         command = cmd,
-        inputs = input_files + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.scripts + toolchain.files.jdk + native_libs,
+        inputs = inputs,
         mnemonic = "ClojureJar",
         progress_message = "Compiling %s" % ctx.label)
 
@@ -91,5 +92,5 @@ def clojure_jar_impl(ctx):
             files = depset([output_jar]),
             runfiles = runfiles,
         ),
-        java_info,
+        java_info
     ]

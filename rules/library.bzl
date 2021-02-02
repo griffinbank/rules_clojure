@@ -10,17 +10,12 @@ def copy_bash(ctx, src, dst):
     )
 
 CljInfo = provider(fields = ["depset",
-                             "runfiles",
                              "srcs",
                              "transitive_srcs",
                              "java_deps"])
 
 def clojure_library_impl(ctx):
     toolchain = ctx.toolchains["@rules_clojure//:toolchain"]
-
-    input_files = ctx.files.srcs
-
-    all_files = input_files
 
     all_deps = []
     java_deps = []
@@ -33,24 +28,24 @@ def clojure_library_impl(ctx):
         if CljInfo in dep:
             all_deps.append(dep[CljInfo].depset)
             java_deps.extend(dep[CljInfo].java_deps)
-
         if JavaInfo in dep:
-            all_deps.append(dep[JavaInfo].transitive_runtime_deps)
             java_deps.append(dep[JavaInfo])
 
-    the_depset = depset(all_files, transitive = all_deps)
+    for dep in java_deps:
+        all_deps.append(dep[JavaInfo].transitive_runtime_deps)
+        all_deps.append(dep[JavaInfo].transitive_deps)
 
-    runfiles = ctx.runfiles(files = all_files,
+    direct_files = ctx.files.srcs + ctx.files.deps
+    the_depset = depset(direct_files, transitive = all_deps)
+
+    runfiles = ctx.runfiles(files = direct_files,
                             transitive_files = the_depset)
 
     return [
-        DefaultInfo(
-            files = depset(all_files),
-            runfiles = runfiles),
+        DefaultInfo(runfiles = runfiles),
         CljInfo(depset = the_depset,
                 srcs = ctx.files.srcs,
                 transitive_srcs = transitive_srcs,
-                runfiles = runfiles,
                 java_deps = java_deps)
 
     ]
