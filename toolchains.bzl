@@ -29,3 +29,6 @@ clojure_toolchain = rule(
     },
     provides = [platform_common.ToolchainInfo],
 )
+
+def rules_clojure_toolchains():
+    native.register_toolchains("@rules_clojure//:clojure_toolchain")
