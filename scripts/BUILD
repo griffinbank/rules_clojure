@@ -1,5 +1,6 @@
+package(default_visibility = ["//visibility:public"])
+
 filegroup(
     name = "scripts",
-    srcs = glob(["*.clj"]),
-    visibility = ["//visibility:public"],
-)
+    srcs = ["deps.edn"] + glob(["src/*.clj"]),
+    visibility = ["//visibility:public"])

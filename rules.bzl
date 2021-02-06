@@ -1,7 +1,4 @@
-load("@rules_clojure//rules:binary.bzl", _clojure_binary_impl = "clojure_binary_impl")
 load("@rules_clojure//rules:jar.bzl", _clojure_jar_impl = "clojure_jar_impl")
-load("@rules_clojure//rules:library.bzl", _clojure_library_impl = "clojure_library_impl")
-load("@rules_clojure//rules:repl.bzl", _clojure_repl_impl = "clojure_repl_impl")
 
 _clojure_library = rule(
     doc = "Create a jar containing clojure sources. Optionally AOTs. The output jar will contain: all files included in srcs, and all compiled classes from AOTing. The output jar will depend on the transitive dependencies of all srcs & deps",
@@ -30,11 +27,11 @@ def clojure_library(name, srcs = [], aot = [], resources=[], deps=[], **kwargs):
                      testonly = testonly,
                      **kwargs)
 
-    ## clojure libraries which have native library dependencies (eg libsodium) can't be
-    ## defined via skylark rules, because the required provider,
-    ## JavaNativeLibraryInfo, isn't constructable via
-    ## skylark. Therefore, create a `java_library` that we can pass
-    ## deps into
+    ## clojure libraries which have native library dependencies (eg
+    ## libsodium) can't be defined via skylark rules, because the
+    ## required provider, JavaNativeLibraryInfo, is only constructable
+    ## via java, not skylark. Therefore, create a `java_library` that
+    ## we can pass deps into
     native.java_library(name = name,
                         runtime_deps = deps + [":" + name + ".cljsrc.jar"],
                         testonly = testonly)
@@ -61,9 +58,9 @@ def clojure_test(name, test_ns, srcs=[], deps=[], **kwargs):
 
     clojure_library(name=jarname, srcs = srcs, deps = deps, testonly = True)
     native.java_test(name=name + ".test",
-                     runtime_deps = [jarname],
+                     runtime_deps = [jarname, "//src/griffin:testrunner"],
                      use_testrunner = False,
                      main_class="clojure.main",
                      jvm_flags=["-Dclojure.main.report=stderr"],
-                     args = ["-e \"(do (require 'clojure.test) (require '%s) (clojure.test/run-tests '%s) (shutdown-agents))\"" % (test_ns, test_ns)],
+                     args = ["-m", "griffin.testrunner", test_ns],
                      **kwargs)
