@@ -5,7 +5,7 @@ CLJ_VERSIONS = {
 
 CLJ_EXTRACT_DIR = "bin/clj"
 
-def _download_deps(repository_ctx):
+def _download_clj(repository_ctx):
     clj_version = repository_ctx.attr.clj_version
 
     url, sha256 = CLJ_VERSIONS[clj_version]
@@ -14,45 +14,16 @@ def _download_deps(repository_ctx):
         auth = {},
         url = url,
         output = CLJ_EXTRACT_DIR,
+        stripPrefix = "clojure-tools",
         sha256 = sha256)
 
-    repository_ctx.file("clj_info", content = """# url {url}
-# sha256: {sha256}
-""".format(url = url,
-           sha256=sha256))
-
-
-def _install_tools_deps_impl(repository_ctx):
-    _download_deps(repository_ctx)
-    repository_ctx.file("BUILD.bazel", content = """ """)
-
-install_clojure_tools_deps_rule = repository_rule(
-    _install_tools_deps_impl,
-    attrs = {"clj_version": attr.string(default = "1.10.1.763")})
-
-def install_clojure_tools_deps(**kwargs):
-    install_clojure_tools_deps_rule(name = "install_clojure_tools_deps", **kwargs)
-
+def _install_clj(repository_ctx):
+    _download_clj(repository_ctx)
 
 def _add_deps_edn(repository_ctx):
     repository_ctx.symlink(
         repository_ctx.path(repository_ctx.attr.deps_edn),
         repository_ctx.path("deps.edn"))
-
-def _add_clj_info(repository_ctx):
-    # depend on the clj_info file to trigger rebuilds if it changes
-    repository_ctx.symlink(
-        Label("@install_clojure_tools_deps//:clj_info"),
-        repository_ctx.path("_clj_info"))
-
-def _add_clj_script(repository_ctx):
-    # the wrapper script for `clj`
-    repository_ctx.file("_clj_install",
-                        content = """#!/usr/bin/env bash
-set -e
-clojure -Srepro -Sdeps '{:mvn/local-repo "deps"}' -P""",
-                        executable = True)
-
 
 def _add_gen_scripts(repository_ctx):
     repository_ctx.execute(["bash", "-c", """'ln -s ~/.m2/repository {dest}""".format(dest=repository_ctx.path("repository"))])
@@ -61,9 +32,11 @@ def _add_gen_scripts(repository_ctx):
                         content = """#!/usr/bin/env bash
 set -euxo pipefail;
 cd {working_dir};
-clojure -Srepro -J-Dclojure.main.report=stderr -X gen-build/deps :deps-edn-path '"{deps_edn_path}"' :deps-out-dir '"{deps_out_dir}"' :deps-build-dir '"{deps_build_dir}"' :deps-repo-tag '"{deps_repo_tag}"' :aliases '{aliases}'
 
-""".format(deps_repo_tag = "@" + repository_ctx.attr.name,
+{clojure} -Srepro -J-Dclojure.main.report=stderr -X gen-build/deps :deps-edn-path '"{deps_edn_path}"' :deps-out-dir '"{deps_out_dir}"' :deps-build-dir '"{deps_build_dir}"' :deps-repo-tag '"{deps_repo_tag}"' :aliases '{aliases}'
+
+""".format(clojure = repository_ctx.path("bin/clj/clj"),
+           deps_repo_tag = "@" + repository_ctx.attr.name,
            deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
            deps_out_dir = repository_ctx.path("repository"),
            deps_build_dir = repository_ctx.path(""),
@@ -75,9 +48,10 @@ clojure -Srepro -J-Dclojure.main.report=stderr -X gen-build/deps :deps-edn-path 
                         content = """#!/usr/bin/env bash
 set -euxo pipefail;
 cd external/rules_clojure/scripts;
-clojure -Srepro -J-Dclojure.main.report=stderr -X gen-build/srcs :deps-edn-path '"{deps_edn_path}"' :deps-out-dir '"{deps_out_dir}"' :deps-repo-tag '"{deps_repo_tag}"' :aliases '{aliases}'
+{clojure} -Srepro -J-Dclojure.main.report=stderr -X gen-build/srcs :deps-edn-path '"{deps_edn_path}"' :deps-out-dir '"{deps_out_dir}"' :deps-repo-tag '"{deps_repo_tag}"' :aliases '{aliases}'
 
-""".format(deps_repo_tag = "@" + repository_ctx.attr.name,
+""".format(clojure = repository_ctx.path("bin/clj/clj"),
+           deps_repo_tag = "@" + repository_ctx.attr.name,
            deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
            deps_out_dir = repository_ctx.path("repository"),
            deps_build_dir = repository_ctx.path(""),
@@ -92,11 +66,9 @@ sh_binary(name="gen_srcs",
 
 
 def _run_tools_deps_impl(repository_ctx):
+    _install_clj(repository_ctx)
     _add_deps_edn(repository_ctx)
-    _add_clj_info(repository_ctx)
-    _add_clj_script(repository_ctx)
     _add_gen_scripts(repository_ctx)
-    print("workingdir", repository_ctx.path(repository_ctx.attr._scripts).dirname)
     repository_ctx.execute(["scripts/gen_deps.sh"],
                            quiet = False)
 
@@ -104,5 +76,6 @@ def _run_tools_deps_impl(repository_ctx):
 clojure_tools_deps = repository_rule(
     _run_tools_deps_impl,
     attrs = {"deps_edn": attr.label(allow_single_file = True),
+             "clj_version": attr.string(default = "1.10.1.763"),
              "aliases": attr.string_list(default = [], doc = "extra aliases in deps.edn to merge in while resolving deps"),
              "_scripts": attr.label(default = "@rules_clojure//scripts:deps.edn")})
