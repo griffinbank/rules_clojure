@@ -35,6 +35,7 @@
 (s/def ::deps-repo-tag string?)
 (s/def ::deps-edn-path path?)
 (s/def ::deps-out-dir path?)
+(s/def ::deps-build-dir path?)
 
 (s/def ::classpath (s/map-of string? map?))
 (s/def ::basis (s/keys :req-un [::classpath]))
@@ -559,12 +560,12 @@
 
 (defn jar-dependencies [])
 
-(s/fdef gen-toplevel-build :args (s/cat :a (s/keys :req-un [::deps-out-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel] )))
+(s/fdef gen-toplevel-build :args (s/cat :a (s/keys :req-un [::deps-out-dir ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel] )))
 (defn gen-toplevel-build
   "generates the BUILD file for @deps//: with a single target containing all deps.edn-resolved dependencies"
-  [{:keys [deps-out-dir jar->lib lib->jar lib->deps deps-repo-tag deps-bazel] :as args}]
-  (println "writing to" (-> (->path deps-out-dir "BUILD.bazel") path->file))
-  (spit (-> (->path deps-out-dir "BUILD.bazel") path->file)
+  [{:keys [deps-out-dir deps-build-dir jar->lib lib->jar lib->deps deps-repo-tag deps-bazel] :as args}]
+  (println "writing to" (-> (->path deps-build-dir "BUILD.bazel") path->file))
+  (spit (-> (->path deps-build-dir "BUILD.bazel") path->file)
         (str/join "\n\n" (concat
                           [(emit-bazel (list 'package {:default_visibility ["//visibility:public"]}))
                            (emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library"))]
@@ -577,7 +578,7 @@
                                         (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
                                         (emit-bazel (list 'java_import (merge-with into
                                                                                    {:name munged
-                                                                                    :jars [jarpath]
+                                                                                    :jars [(path-relative-to deps-build-dir jarpath)]
                                                                                     :deps (->> (get lib->deps lib)
                                                                                                (mapv (fn [lib]
                                                                                                        (str ":" (library->label lib)))))}
@@ -613,11 +614,12 @@
 
 (instrument-ns)
 
-(defn deps [{:keys [deps-out-dir deps-edn-path deps-repo-tag aliases]
+(defn deps [{:keys [deps-out-dir deps-build-dir deps-edn-path deps-repo-tag aliases]
               :or {deps-repo-tag "@deps"}}]
   (assert (re-find #"^@" deps-repo-tag) (print-str "deps repo tag must start with @"))
   (let [deps-edn-path (-> deps-edn-path ->path absolute)
         deps-out-dir (-> deps-out-dir ->path absolute)
+        deps-build-dir (-> deps-build-dir ->path absolute)
         read-deps (#'read-deps deps-edn-path)
         deps-bazel (parse-deps-bazel read-deps)
         basis (make-basis {:read-deps read-deps
@@ -630,6 +632,7 @@
 
     (gen-toplevel-build {:deps-bazel deps-bazel
                          :deps-out-dir deps-out-dir
+                         :deps-build-dir deps-build-dir
                          :deps-repo-tag deps-repo-tag
                          :jar->lib jar->lib
                          :lib->jar lib->jar

@@ -54,37 +54,55 @@ clojure -Srepro -Sdeps '{:mvn/local-repo "deps"}' -P""",
                         executable = True)
 
 
-def _add_gen_build_script(repository_ctx):
-    repository_ctx.file(repository_ctx.path("scripts/gen_build.sh"),
+def _add_gen_scripts(repository_ctx):
+    repository_ctx.execute(["bash", "-c", """'ln -s ~/.m2/repository {dest}""".format(dest=repository_ctx.path("repository"))])
+
+    repository_ctx.file(repository_ctx.path("scripts/gen_deps.sh"),
                         content = """#!/usr/bin/env bash
 set -euxo pipefail;
-cd external/rules_clojure/scripts;
-clojure -Srepro -J-Dclojure.main.report=stderr -X gen-build/-main :deps-edn-path '"{deps_edn_path}"' :deps-out-dir '"{deps_out_dir}"' :deps-repo-tag '"{deps_repo_tag}"' :aliases '{aliases}'
+cd {working_dir};
+clojure -Srepro -J-Dclojure.main.report=stderr -X gen-build/deps :deps-edn-path '"{deps_edn_path}"' :deps-out-dir '"{deps_out_dir}"' :deps-build-dir '"{deps_build_dir}"' :deps-repo-tag '"{deps_repo_tag}"' :aliases '{aliases}'
 
 """.format(deps_repo_tag = "@" + repository_ctx.attr.name,
            deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
-           deps_out_dir = repository_ctx.path(""),
+           deps_out_dir = repository_ctx.path("repository"),
+           deps_build_dir = repository_ctx.path(""),
+           working_dir = repository_ctx.path(repository_ctx.attr._scripts).dirname,
+           aliases = repository_ctx.attr.aliases),
+                        executable = True)
+
+    repository_ctx.file(repository_ctx.path("scripts/gen_srcs.sh"),
+                        content = """#!/usr/bin/env bash
+set -euxo pipefail;
+cd external/rules_clojure/scripts;
+clojure -Srepro -J-Dclojure.main.report=stderr -X gen-build/srcs :deps-edn-path '"{deps_edn_path}"' :deps-out-dir '"{deps_out_dir}"' :deps-repo-tag '"{deps_repo_tag}"' :aliases '{aliases}'
+
+""".format(deps_repo_tag = "@" + repository_ctx.attr.name,
+           deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
+           deps_out_dir = repository_ctx.path("repository"),
+           deps_build_dir = repository_ctx.path(""),
            aliases = repository_ctx.attr.aliases),
                         executable = True)
     repository_ctx.file("scripts/BUILD", content="""
 package(default_visibility = ["//visibility:public"])
 
-sh_binary(name="gen_build",
-          srcs=["gen_build.sh"],
-          data=["@rules_clojure//scripts"]
-)""")
+sh_binary(name="gen_srcs",
+          srcs=["gen_srcs.sh"],
+          data=["@rules_clojure//scripts"])""")
 
 
 def _run_tools_deps_impl(repository_ctx):
     _add_deps_edn(repository_ctx)
     _add_clj_info(repository_ctx)
     _add_clj_script(repository_ctx)
-    _add_gen_build_script(repository_ctx)
-    # repository_ctx.execute(["_clj_install"])
-    # repository_ctx.symlink(Label("//scripts:gen_build.clj"), repository_ctx.path("scripts/gen_build.clj"))
-    # repository_ctx.execute([repository_ctx.path("scripts/gen_build.sh")], quiet = False, working_directory = "scripts")
+    _add_gen_scripts(repository_ctx)
+    print("workingdir", repository_ctx.path(repository_ctx.attr._scripts).dirname)
+    repository_ctx.execute(["scripts/gen_deps.sh"],
+                           quiet = False)
+
 
 clojure_tools_deps = repository_rule(
     _run_tools_deps_impl,
     attrs = {"deps_edn": attr.label(allow_single_file = True),
-             "aliases": attr.string_list(default = [], doc = "extra aliases in deps.edn to merge in while resolving deps")})
+             "aliases": attr.string_list(default = [], doc = "extra aliases in deps.edn to merge in while resolving deps"),
+             "_scripts": attr.label(default = "@rules_clojure//scripts:deps.edn")})
