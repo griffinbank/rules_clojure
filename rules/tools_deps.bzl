@@ -35,7 +35,7 @@ cd {working_dir};
 
 {clojure} -Srepro -J-Dclojure.main.report=stderr -X gen-build/deps :deps-edn-path '"{deps_edn_path}"' :deps-out-dir '"{deps_out_dir}"' :deps-build-dir '"{deps_build_dir}"' :deps-repo-tag '"{deps_repo_tag}"' :aliases '{aliases}'
 
-""".format(clojure = repository_ctx.path("bin/clj/clj"),
+""".format(clojure = repository_ctx.path("bin/clj/clojure"),
            deps_repo_tag = "@" + repository_ctx.attr.name,
            deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
            deps_out_dir = repository_ctx.path("repository"),
@@ -50,7 +50,7 @@ set -euxo pipefail;
 cd external/rules_clojure/scripts;
 {clojure} -Srepro -J-Dclojure.main.report=stderr -X gen-build/srcs :deps-edn-path '"{deps_edn_path}"' :deps-out-dir '"{deps_out_dir}"' :deps-repo-tag '"{deps_repo_tag}"' :aliases '{aliases}'
 
-""".format(clojure = repository_ctx.path("bin/clj/clj"),
+""".format(clojure = repository_ctx.path("bin/clj/clojure"),
            deps_repo_tag = "@" + repository_ctx.attr.name,
            deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
            deps_out_dir = repository_ctx.path("repository"),
