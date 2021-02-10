@@ -8,9 +8,9 @@ toolchain_type(
 clojure_toolchain(
     name = "default_clojure_toolchain",
     classpath = [
-        "@org_clojure",
-        "@org_clojure_spec_alpha",
-        "@org_clojure_core_specs_alpha",
+        "@rules_clojure_maven//:org_clojure_clojure",
+        "@rules_clojure_maven//:org_clojure_spec_alpha",
+        "@rules_clojure_maven//:org_clojure_core_specs_alpha",
     ],
 )
 
