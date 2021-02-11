@@ -1,6 +1,7 @@
-(ns gen-build
+(ns rules-clojure.gen-build
   "Tools for generating BUILD.bazel files for clojure deps"
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.spec.alpha :as s]
             [clojure.spec.test.alpha :as stest]
@@ -459,28 +460,26 @@
     (let [ns-decl (get-ns-decl path)
           [_ns ns-name & refs] ns-decl
           aot? (requires-aot? ns-decl)
-          test? (test-ns? path)
-          target-type (if test?
-                        'clojure_test
-                        'clojure_library)]
-      [(emit-bazel (list target-type (-> (merge-with into
-                                                     {:name (str (basename path))
-                                                      :srcs [(str (filename path))]
-                                                      :deps [(str deps-repo-tag "//:org_clojure_clojure") "//resources"]}
-                                                     (when test?                                                       {:test_ns (str ns-name)})
-                                                     (when aot?
-                                                       {:aot [(str ns-name)]})
-                                                     (ns-deps args path ns-decl)
-                                                     (ns-import-deps args ns-decl)
-                                                     (ns-gen-class-deps args ns-decl)
-                                                     overrides)
-                                         (update :srcs (comp vec distinct))
-                                         (update :deps (comp vec distinct)))))])))
+          test? (test-ns? path)]
+      [(emit-bazel (list 'clojure_namespace (-> (merge-with into
+                                                            {:name (str (basename path))
+                                                             :srcs [(str (filename path))]
+                                                             :deps [(str deps-repo-tag "//:org_clojure_clojure") "//resources"]}
+                                                            (when test?                                                       {:test_ns (str ns-name)})
+                                                            (when aot?
+                                                              {:aot [(str ns-name)]})
+                                                            (ns-deps args path ns-decl)
+                                                            (ns-import-deps args ns-decl)
+                                                            (ns-gen-class-deps args ns-decl)
+                                                            overrides)
+                                                (update :srcs (comp vec distinct))
+                                                (update :deps (comp vec distinct)))))])))
 
 (s/fdef gen-dir :args (s/cat :a (s/keys :req-un [::workspace-root ::ns->path ::jar->lib ::deps-repo-tag]) :f path?))
 (defn gen-dir
   "given a source directory, write a BUILD.bazel for all .clj files in the directory. non-recursive"
   [args dir]
+  (println "writing to" (->path dir "BUILD.bazel"))
   (let [paths (->> dir
                    ls
                    (filter (fn [path]
@@ -496,8 +495,7 @@
                      (emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library" "clojure_test"))
                      "\n"
                      "\n"
-                     (str/join "\n\n" rules)
-                     )]
+                     (str/join "\n\n" rules))]
     (-> dir
         (->path "BUILD.bazel")
         path->file
@@ -507,6 +505,7 @@
 (defn gen-source-paths-
   "gen-dir for every directory on the classpath."
   [args paths]
+  (println "gen-source-paths-:" paths)
   (->> paths
        (mapcat (fn [path]
                  (ls-r path)))
@@ -526,19 +525,24 @@
     (-> read-deps
         (merge {:mvn/local-repo (str deps-out-dir)})
         (deps/calc-basis {:resolve-args (merge combined-aliases {:trace true})
-                          :classpath-args combined-aliases}))))
+                          :classpath-args combined-aliases})
+        (update [:deps] merge (:extra-deps combined-aliases))
+        (update [:extra-paths] merge (:paths combined-aliases)))))
 
-(s/fdef source-paths :args (s/cat :b ::basis) :ret (s/coll-of string?))
+(s/fdef source-paths :args (s/cat :b ::basis :p path?) :ret (s/coll-of string?))
 (defn source-paths
   "return the set of source directories on the classpath"
-  [basis]
+  [basis deps-edn-path]
   (-> basis
       :classpath
       (->>
        (map first)
+       (map (fn [path]
+              {:post [(do (println "source-paths:" %) true)]}
+              (->path (dirname deps-edn-path) path)))
        (filter (fn [path]
                  (-> path
-                     io/file
+                     .toFile
                      (directory?)))))))
 
 (s/fdef gen-source-paths :args (s/cat :a (s/keys :req-un [::deps-edn-path ::deps-out-dir ::deps-repo-tag ::basis ::jar->lib ::deps-bazel]
@@ -550,17 +554,16 @@
   deps-out-dir: output directory in the bazel sandbox where deps should be downloaded
   deps-repo-tag: Bazel workspace repo for deps, typically `@deps`
   "
-  [{:keys [deps-edn-path deps-repo-tag deps-out-dir basis jar->lib aliases] :as args}]
-  (let [ns->path (->ns->path basis)
+  [{:keys [deps-edn-path deps-repo-tag basis jar->lib aliases] :as args}]
+ (let [ns->path (->ns->path basis)
         args (merge args
                     {:workspace-root (->path "")
                      :ns->path ns->path
                      :jar->lib jar->lib})]
-    (gen-source-paths- args (map ->path (source-paths basis)))))
+   (println "gen-source-paths" deps-edn-path)
+   (gen-source-paths- args (map ->path (source-paths basis deps-edn-path)))))
 
-(defn jar-dependencies [])
-
-(s/fdef gen-toplevel-build :args (s/cat :a (s/keys :req-un [::deps-out-dir ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel] )))
+(s/fdef gen-toplevel-build :args (s/cat :a (s/keys :req-un [::deps-out-dir ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel])))
 (defn gen-toplevel-build
   "generates the BUILD file for @deps//: with a single target containing all deps.edn-resolved dependencies"
   [{:keys [deps-out-dir deps-build-dir jar->lib lib->jar lib->deps deps-repo-tag deps-bazel] :as args}]
@@ -584,6 +587,21 @@
                                                                                                        (str ":" (library->label lib)))))}
                                                                                    extra-deps)))))))))
         :encoding "UTF-8"))
+
+(defn gen-maven-install
+  "prints out a maven_install() block for pasting into WORKSPACE"
+  [basis]
+  (list 'maven_install
+        {:artifacts (->> basis
+                         :deps
+                         (map (fn [[library-name info]]
+                                (if-let [version (:mvn/version info)]
+                                  (str (str/replace library-name "/" ":") ":" version)
+                                  (do (println "WARNING unsupported dep type:" library-name info) nil))))
+                         (filterv identity)
+                         (sort))
+         :repositories (or (->> basis :mvn/repos vals (mapv :url))
+                           ["https://repo1.maven.org/maven2/"])}))
 
 (defn gen-resources
   "Generate a BUILD file for the resources directory"
@@ -674,5 +692,21 @@
               :deps-out-dir "deps"
               :deps-repo-tag "@deps"
               :aliases [:dev :test :bazel :datomic :staging]}]
-    (deps args)
+    ;; (deps args)
     (srcs args)))
+
+(defn -main [& args]
+  (let [cmd (first args)
+        cmd (keyword cmd)
+        opts (apply hash-map (rest args))
+        opts (into {} (map (fn [[k v]]
+                             [(keyword k) v]) opts))
+        opts (-> opts
+                 (update :aliases (fn [aliases] (-> aliases
+                                                    (edn/read-string)
+                                                    (#(mapv keyword %))))))
+        f (case cmd
+            :deps deps
+            :srcs srcs)]
+    ;; (println "gen-build:" cmd opts)
+    (f opts)))

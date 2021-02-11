@@ -1,4 +1,4 @@
-load("@rules_clojure//rules:library.bzl", "CljInfo")
+load("@rules_clojure//rules:common.bzl", "CljInfo")
 
 def contains(lst, item):
     for x in lst:
@@ -9,21 +9,49 @@ def contains(lst, item):
 def clojure_jar_impl(ctx):
     toolchain = ctx.toolchains["@rules_clojure//:toolchain"]
 
-    classes = ctx.actions.declare_directory("%s.classes" % ctx.label.name)
+    classes_dir = ctx.actions.declare_directory("%s.classes" % ctx.label.name) # .class files
 
     output_jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
 
-    input_files = ctx.files.srcs + ctx.files.resources
+    src_dir = "src" # all source files will be symlinked under here
+    toolchain_dir = "toolchain" # compile dependencies, e.g. jar.clj under here
+
+    ctx.actions.run_shell(
+        command = """
+        mkdir -p {classes_dir};
+
+""".format(classes_dir = classes_dir.path),
+        outputs = [classes_dir])
+
+    input_files = [classes_dir]
 
     library_path = []
 
-    for src in ctx.attr.srcs:
-        if CljInfo in src:
-            input_files.append(src[CljInfo].transitive_srcs)
+    input_file_map = {}
+    for ns in ctx.attr.srcs:
+        input_file_map.update(ns[CljInfo].srcs)
+        input_file_map.update(ns[CljInfo].transitive_clj_srcs)
+
+    for infile,path in input_file_map.items():
+        if path[0] != "/":
+            fail("path must be absolute, got " + path)
+        dest = ctx.actions.declare_file(src_dir + path)
+        ctx.actions.symlink(output=dest,target_file = infile.files.to_list()[0])
+        input_files.append(dest)
+
+    toolchain_file_map = {}
+    for ns in ctx.attr._compiledeps:
+        toolchain_file_map.update(ns[CljInfo].srcs)
+        toolchain_file_map.update(ns[CljInfo].transitive_clj_srcs)
+
+    for infile,path in toolchain_file_map.items():
+        if path[0] != "/":
+            fail("path must be absolute, got " + path)
+        dest = ctx.actions.declare_file(toolchain_dir + path)
+        ctx.actions.symlink(output=dest,target_file = infile.files.to_list()[0])
+        input_files.append(dest)
 
     runfiles = ctx.runfiles()
-    # TODO fix hack
-    src = ctx.bin_dir.path + "/src"
 
     for dep in ctx.attr.srcs + ctx.attr.deps:
         if DefaultInfo in dep:
@@ -34,9 +62,7 @@ def clojure_jar_impl(ctx):
 
     for dep in toolchain.runtime + ctx.attr.srcs + ctx.attr.deps:
         if CljInfo in dep:
-            java_deps.extend(dep[CljInfo].java_deps)
-            for ts in dep[CljInfo].transitive_srcs:
-                java_deps.extend(ts[CljInfo].java_deps)
+            java_deps.extend(dep[CljInfo].transitive_java_deps)
 
         if JavaInfo in dep:
             java_deps.append(dep[JavaInfo])
@@ -58,30 +84,33 @@ def clojure_jar_impl(ctx):
         if not contains(library_path, dirname):
             library_path.append(dirname)
 
-    classpath_files = toolchain.files.runtime + [classes] + java_info.transitive_runtime_deps.to_list()
-    classpath_string = ":".join(["src", "test"] + [f.path for f in classpath_files])
+    # it's a little silly, but if we `declare_file("src/a/b/c.clj"),
+    # there's no clean way to recover `src`, so determine the root
+    # from `classes_dir`, and use that
+    dir_root = classes_dir.dirname
+    src_dir = dir_root + "/" + src_dir
+    toolchain_dir = dir_root + "/" + toolchain_dir
+    classpath_files = toolchain.files.runtime + java_info.transitive_runtime_deps.to_list()
+    classpath_string = ":".join([src_dir, toolchain_dir] + [f.path for f in classpath_files])
+
+    library_path_str = "-Djava.library.path=" + ":".join(library_path) if len(library_path) > 0 else ""
 
     cmd = """
-        set -e;
-        mkdir -p {classes};
-        {java} -Dclojure.main.report=stderr -cp {classpath} -Dclojure.compile.path={classes} -Dbazel.jar.input-files={input_files} -Dbazel.jar.output-jar={output_jar} -Djava.library.path={library_path} -Dbazel.jar.aot={aot} clojure.main {script}
+        {java} -Dclojure.main.report=stderr -cp {classpath} {library_path_str} clojure.main -m rules-clojure.jar :input-dir '"{input_dir}"' :aot [{aot}] :classes-dir '"{classes_dir}"' :output-jar '"{output_jar}"'
     """.format(
         java = toolchain.java,
-        classes = classes.path,
-        src = src,
-        # TODO fix hardcoded 'src'
-        # TODO toolchain.files causes duplicate clojure.jars. depset?
+        classes_dir = classes_dir.path,
         classpath = classpath_string,
-        input_files = ",".join([f.path for f in input_files]),
+        input_dir = src_dir,
         output_jar = output_jar.path,
-        library_path = ":".join(library_path),
+        library_path_str = library_path_str,
         script = toolchain.scripts["jar.clj"].path,
         aot = ",".join([ns for ns in ctx.attr.aot]))
 
-    inputs = input_files + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.scripts + toolchain.files.jdk + native_libs
+    inputs = input_files + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs
 
     ctx.actions.run_shell(
-        outputs = [output_jar, classes],
+        outputs = [output_jar],
         command = cmd,
         inputs = inputs,
         mnemonic = "ClojureJar",
