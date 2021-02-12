@@ -20,7 +20,7 @@ clojure_toolchain = rule(
             providers = [JavaInfo],
         ),
         "_scripts": attr.label(
-            default = "//scripts/src/rules_clojure:jar_files",
+            default = "//src/rules_clojure:toolchain_files",
         ),
         "_jdk": attr.label(
             default = "@bazel_tools//tools/jdk:current_java_runtime",

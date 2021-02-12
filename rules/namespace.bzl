@@ -15,7 +15,9 @@ def clojure_ns_impl(ctx):
         if JavaInfo in dep:
             java_deps.append(dep[JavaInfo])
 
-    transitive_clj_srcs = ctx.attr.srcs
+    transitive_clj_srcs = {}
+    transitive_clj_srcs.update(ctx.attr.srcs)
+
     transitive_java_deps = java_deps
 
     for d in clj_srcs:

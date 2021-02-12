@@ -29,16 +29,11 @@
   (.relativize (absolute a) (absolute b)))
 
 (defn -main [& args]
-  (println "jar/-main:" args)
   (let [args (apply hash-map (map read-string args))
         {:keys [input-dir aot classes-dir output-jar]} args
         input-dir (->path input-dir)
         output-jar (->path output-jar)
         classes-dir (->path classes-dir)]
-    (println "input-dir" input-dir)
-    (println "input-files:" (-> input-dir .toFile file-seq))
-    (println "output:" output-jar)
-    (println "classes" classes-dir)
 
     (System/setProperty "clojure.compile.path" (str classes-dir))
     (doseq [ns aot]
@@ -53,7 +48,6 @@
               :when (.isFile file)
               :let [path (.toPath file)
                     name (str (path-relative-to input-dir path))]]
-        (println "inserting" path name)
         (put-next-entry! jar-os name)
         (io/copy file jar-os)
         (.closeEntry jar-os))
