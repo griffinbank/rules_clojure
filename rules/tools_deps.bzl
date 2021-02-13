@@ -61,7 +61,6 @@ def _run_gen_build(repository_ctx):
     home = repository_ctx.os.environ["HOME"]
     repository_ctx.symlink("/"+ home + "/.m2/repository", repository_ctx.path("repository"))
 
-    print("aliases", aliases_str(repository_ctx.attr.aliases))
     repository_ctx.file(repository_ctx.path("scripts/BUILD"),
                         content = """
 package(default_visibility = ["//visibility:public"])

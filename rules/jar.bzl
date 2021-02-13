@@ -32,6 +32,11 @@ def clojure_jar_impl(ctx):
         input_file_map.update(ns[CljInfo].srcs)
         input_file_map.update(ns[CljInfo].transitive_clj_srcs)
 
+    for d in ctx.attr.deps:
+        if CljInfo in dep:
+            input_file_map.update(dep[CljInfo].srcs)
+            input_file_map.update(dep[CljInfo].transitive_clj_srcs)
+
     for infile,path in input_file_map.items():
         if path[0] != "/":
             fail("path must be absolute, got " + path)

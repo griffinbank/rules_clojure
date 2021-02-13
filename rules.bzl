@@ -22,6 +22,7 @@ _clojure_library = rule(
         "aot": attr.string_list(default = [], allow_empty = True, doc = "Namespaces in classpath to compile."),
         "srcs": attr.label_list(mandatory = False, allow_empty = True, default = [], doc = "a list of source namespaces to include in the jar", providers=[[CljInfo]]),
         "deps": attr.label_list(default = [], providers = [[JavaInfo]]),
+        "resources": attr.label_list(default = [], allow_files = True),
         "_compiledeps": attr.label_list(default = ["@rules_clojure//src/rules_clojure:jar"])
     },
     provides = [JavaInfo],
@@ -29,7 +30,7 @@ _clojure_library = rule(
     implementation = _clojure_jar_impl,
 )
 
-def clojure_library(name, srcs = [], aot = [], resources=[], deps=[], **kwargs):
+def clojure_library(name, srcs = [], aot = [], data=[], deps=[], **kwargs):
     testonly = False
     if "testonly" in kwargs:
         testonly = kwargs["testonly"]
@@ -50,6 +51,7 @@ def clojure_library(name, srcs = [], aot = [], resources=[], deps=[], **kwargs):
     ## we can pass deps into
     native.java_library(name = name,
                         runtime_deps = deps + [":" + srcjar],
+                        data = data,
                         testonly = testonly)
 
 def clojure_binary(name, **kwargs):

@@ -18,5 +18,5 @@
           (System/exit 0)
           (System/exit 1)))
       (catch Throwable t
-        (print t)
+        (println t)
         (System/exit 1)))))
