@@ -25,7 +25,7 @@ def clojure_ns_impl(ctx):
 
     return [
         DefaultInfo(
-            files = depset(ctx.files.srcs),
+            files = depset(),
             runfiles = runfiles,
         ),
         CljInfo(srcs = ctx.attr.srcs,
