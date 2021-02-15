@@ -86,8 +86,7 @@ def clojure_jar_impl(ctx):
         command = symlink_sh,
         arguments = [src_dir.path, symlink_args],
         inputs = ctx.files.srcs,
-        outputs = [src_dir],
-        execution_requirements = {"no-sandbox": "1"})
+        outputs = [src_dir])
 
     toolchain_symlink_args = ctx.actions.args()
 
@@ -109,8 +108,7 @@ def clojure_jar_impl(ctx):
         command = symlink_sh,
         arguments = [toolchain_dir.path, toolchain_symlink_args],
         inputs = ctx.files._compiledeps,
-        outputs = [toolchain_dir],
-        execution_requirements = {"no-sandbox": "1"})
+        outputs = [toolchain_dir])
 
     runfiles = ctx.runfiles()
 
