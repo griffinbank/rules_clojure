@@ -36,7 +36,7 @@ def clojure_library(name, srcs = [], aot = [], data=[], deps=[], **kwargs):
         testonly = kwargs["testonly"]
         kwargs.pop("testonly")
 
-    srcjar = name + ".cljsrc.jar"
+    srcjar = name + ".cljsrc"
     _clojure_library(name = srcjar,
                  srcs = srcs,
                  deps = deps,
@@ -50,7 +50,7 @@ def clojure_library(name, srcs = [], aot = [], data=[], deps=[], **kwargs):
     ## via java, not skylark. Therefore, create a `java_library` that
     ## we can pass deps into
     native.java_library(name = name,
-                        runtime_deps = deps + [":" + srcjar],
+                        runtime_deps = deps + [srcjar],
                         data = data,
                         testonly = testonly)
 
@@ -82,7 +82,7 @@ def clojure_repl(name, runtime_deps=[], ns=None, **kwargs):
 def clojure_test(name, *, test_ns, srcs=[], deps=[], **kwargs):
     # ideally the library name and the bin name would be the same. They can't be.
     # clojure src files would like to depend on `foo_test`, so mangle the test binary, not the src jar name
-    jarname = name + ".cljtest.jar"
+    jarname = name + ".cljtest"
 
     clojure_library(name=jarname, srcs = srcs, deps = deps, testonly = True)
     native.java_test(name=name,

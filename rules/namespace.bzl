@@ -9,8 +9,6 @@ def clojure_ns_impl(ctx):
     for dep in ctx.attr.srcs.keys() + ctx.attr.deps:
         if DefaultInfo in dep:
             runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
-        if CljInfo in dep:
-            clj_srcs.append(dep[CljInfo])
         if JavaInfo in dep:
             java_deps.append(dep[JavaInfo])
 
@@ -23,9 +21,13 @@ def clojure_ns_impl(ctx):
         transitive_clj_srcs.update(d.transitive_clj_srcs)
         transitive_java_deps.extend(d.transitive_java_deps)
 
+    src_input_files = []
+    for label in transitive_clj_srcs.keys():
+        src_input_files.extend(label.files.to_list())
+
     return [
         DefaultInfo(
-            files = depset(),
+            files = depset(src_input_files),
             runfiles = runfiles,
         ),
         CljInfo(srcs = ctx.attr.srcs,
