@@ -1,6 +1,7 @@
 load("@rules_clojure//:toolchains.bzl", "clojure_toolchain")
 
-exports_files(glob(["deps.edn"]))
+package(default_visibility = ["//visibility:public"])
+exports_files(glob(["deps.edn", "src/main/resources/**/*.clj"]))
 
 toolchain_type(
     name = "toolchain",

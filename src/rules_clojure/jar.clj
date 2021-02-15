@@ -35,7 +35,6 @@
         output-jar (->path output-jar)
         classes-dir (->path classes-dir)]
 
-    (println "jar.clj" input-dir)
     (System/setProperty "clojure.compile.path" (str classes-dir))
     (doseq [ns aot]
       (println "compiling" ns (class ns))
