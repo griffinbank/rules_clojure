@@ -21,25 +21,33 @@ def contains(lst, item):
 ##  into place in the same go.
 
 ##
+
 symlink_sh = """
 #!/bin/bash
 set -xeuo pipefail;
 
 # the root directory
-mkdir -p $1;
+if ! [ -d $1]; then
+   mkdir -p $1;
+fi
+
 shift;
 
 # pairs of src->dest symlinks
 while (($#)); do
     src=$1
     dest=$2
-    if ! [ -d $(dirname $dest) ]; then
-	mkdir -p $(dirname $dest)
+    destdir=$(dirname $dest)
+    echo "$src"  "$dest" "destdir" "$destdir"
+    if ! [ -d $destdir ]; then
+        echo "mkdir $destdir"
+	mkdir -p $destdir
     fi
-    cp $1 $2
+    cp -v $1 $2
     shift 2
 done
 """
+
 
 def clojure_jar_impl(ctx):
     toolchain = ctx.toolchains["@rules_clojure//:toolchain"]
@@ -60,12 +68,10 @@ def clojure_jar_impl(ctx):
 
     input_file_map = {}
     for ns in ctx.attr.srcs:
-        input_file_map.update(ns[CljInfo].srcs)
         input_file_map.update(ns[CljInfo].transitive_clj_srcs)
 
     for d in ctx.attr.deps:
         if CljInfo in dep:
-            input_file_map.update(dep[CljInfo].srcs)
             input_file_map.update(dep[CljInfo].transitive_clj_srcs)
 
     symlink_args = ctx.actions.args()
@@ -76,18 +82,12 @@ def clojure_jar_impl(ctx):
         dest_file = src_dir.path + path
         symlink_args.add(src_file.path, dest_file)
 
-    src_input_files = []
-    for label in input_file_map.keys():
-        src_input_files.extend(infile.files.to_list())
-
-    print("input_files", src_input_files)
-    print("ctx.files", ctx.files.srcs)
-
     ctx.actions.run_shell(
         command = symlink_sh,
         arguments = [src_dir.path, symlink_args],
-        inputs = src_input_files,
-        outputs = [src_dir])
+        inputs = ctx.files.srcs,
+        outputs = [src_dir],
+        execution_requirements = {"no-sandbox": "1"})
 
     toolchain_symlink_args = ctx.actions.args()
 
@@ -105,15 +105,12 @@ def clojure_jar_impl(ctx):
         dest_file = toolchain_dir.path + path
         toolchain_symlink_args.add(src_file.path, dest_file)
 
-    toolchain_input_files = []
-    for label in toolchain_file_map.keys():
-        toolchain_input_files.extend(label.files.to_list())
-
     ctx.actions.run_shell(
         command = symlink_sh,
         arguments = [toolchain_dir.path, toolchain_symlink_args],
-        inputs = toolchain_input_files,
-        outputs = [toolchain_dir])
+        inputs = ctx.files._compiledeps,
+        outputs = [toolchain_dir],
+        execution_requirements = {"no-sandbox": "1"})
 
     runfiles = ctx.runfiles()
 

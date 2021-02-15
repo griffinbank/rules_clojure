@@ -23,7 +23,7 @@ _clojure_library = rule(
         "srcs": attr.label_list(mandatory = False, allow_empty = True, default = [], doc = "a list of source namespaces to include in the jar", providers=[[CljInfo]]),
         "deps": attr.label_list(default = [], providers = [[JavaInfo]]),
         "resources": attr.label_list(default = [], allow_files = True),
-        "_compiledeps": attr.label_list(default = ["@rules_clojure//src/rules_clojure:jar"])
+        "_compiledeps": attr.label_list(default = ["@rules_clojure//src/rules_clojure:jar"]),
     },
     provides = [JavaInfo],
     toolchains = ["@rules_clojure//:toolchain"],
@@ -38,11 +38,11 @@ def clojure_library(name, srcs = [], aot = [], data=[], deps=[], **kwargs):
 
     srcjar = name + ".cljsrc"
     _clojure_library(name = srcjar,
-                 srcs = srcs,
-                 deps = deps,
-                 aot = aot,
-                 testonly = testonly,
-                 **kwargs)
+                     srcs = srcs,
+                     deps = deps,
+                     aot = aot,
+                     testonly = testonly,
+                     **kwargs)
 
     ## clojure libraries which have native library dependencies (eg
     ## libsodium) can't be defined via skylark rules, because the
@@ -72,12 +72,12 @@ def clojure_repl(name, runtime_deps=[], ns=None, **kwargs):
     args = []
     if ns:
         args.extend(["-e", """\"(require '[{ns}]) (in-ns '{ns})\"""".format(ns = ns)])
-    args.extend(["-e", "(clojure.main/repl)"])
-    native.java_binary(name=name,
-                       runtime_deps=runtime_deps,
-                       main_class = "clojure.main",
-                       args = args,
-                       **kwargs)
+        args.extend(["-e", "(clojure.main/repl)"])
+        native.java_binary(name=name,
+                           runtime_deps=runtime_deps,
+                           main_class = "clojure.main",
+                           args = args,
+                           **kwargs)
 
 def clojure_test(name, *, test_ns, srcs=[], deps=[], **kwargs):
     # ideally the library name and the bin name would be the same. They can't be.

@@ -665,6 +665,8 @@
              "\n"
              (emit-bazel (list 'clojure_namespace {:name (basename path)
                                                    :srcs (->> (ls-r path)
+                                                              (filter (fn [p]
+                                                                        (-> p .toFile normal-file?)))
                                                               (map (fn [f]
                                                                      (let [package-path (path-relative-to workspace-root path)
                                                                            file-path (path-relative-to path f)
