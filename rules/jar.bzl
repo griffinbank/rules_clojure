@@ -38,9 +38,7 @@ while (($#)); do
     src=$1
     dest=$2
     destdir=$(dirname $dest)
-    echo "$src"  "$dest" "destdir" "$destdir"
     if ! [ -d $destdir ]; then
-        echo "mkdir $destdir"
 	mkdir -p $destdir
     fi
     cp -v $1 $2
