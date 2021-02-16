@@ -626,6 +626,9 @@
                           (->> jar->lib
                                (map (fn [[jarpath lib]]
                                       (let [munged (str (library->label lib))
+                                            deps (->> (get lib->deps lib)
+                                                      (mapv (fn [lib]
+                                                              (str ":" (library->label lib)))))
                                             extra-deps (get-in deps-bazel [:extra-deps (jar->label (select-keys args [:jar->lib]) jarpath)])]
                                         (when extra-deps
                                           (println lib "extra-deps:" extra-deps))
@@ -633,9 +636,7 @@
                                         (emit-bazel (list 'java_import (merge-with into
                                                                                    {:name munged
                                                                                     :jars [(path-relative-to deps-build-dir jarpath)]
-                                                                                    :deps (->> (get lib->deps lib)
-                                                                                               (mapv (fn [lib]
-                                                                                                       (str ":" (library->label lib)))))}
+                                                                                    :runtime_deps deps}
                                                                                    extra-deps)))))))))
         :encoding "UTF-8"))
 

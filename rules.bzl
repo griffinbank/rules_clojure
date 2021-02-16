@@ -74,11 +74,12 @@ def clojure_repl(name, runtime_deps=[], ns=None, **kwargs):
     if ns:
         args.extend(["-e", """\"(require '[{ns}]) (in-ns '{ns})\"""".format(ns = ns)])
         args.extend(["-e", "(clojure.main/repl)"])
-        native.java_binary(name=name,
-                           runtime_deps=runtime_deps,
-                           main_class = "clojure.main",
-                           args = args,
-                           **kwargs)
+
+    native.java_binary(name=name,
+                       runtime_deps=runtime_deps,
+                       main_class = "clojure.main",
+                       args = args,
+                       **kwargs)
 
 def clojure_test(name, *, test_ns, srcs=[], deps=[], **kwargs):
     # ideally the library name and the bin name would be the same. They can't be.

@@ -9,6 +9,7 @@ def clojure_ns_impl(ctx):
     for dep in ctx.attr.srcs.keys() + ctx.attr.deps:
         if DefaultInfo in dep:
             runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
+            runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
         if CljInfo in dep:
             clj_srcs.append(dep[CljInfo])
         if JavaInfo in dep:

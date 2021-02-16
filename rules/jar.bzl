@@ -25,7 +25,7 @@ def contains(lst, item):
 
 symlink_sh = """
 #!/bin/bash
-set -xeuo pipefail;
+set -euo pipefail;
 
 # the root directory
 mkdir -p $1;
@@ -67,7 +67,9 @@ def clojure_jar_impl(ctx):
             input_file_map.update(dep[CljInfo].transitive_clj_srcs)
 
     java_deps = []
-    for dep in input_file_map.keys() + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime:
+    for dep in ctx.attr.srcs + input_file_map.keys() + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime:
+        if CljInfo in dep:
+            java_deps.extend(dep[CljInfo].transitive_java_deps)
         if JavaInfo in dep:
             java_deps.append(dep[JavaInfo])
 
@@ -96,7 +98,8 @@ def clojure_jar_impl(ctx):
         output_jar = output_jar,
         compile_jar = output_jar,
         source_jar = None,
-        deps = java_deps)
+        deps = java_deps,
+        runtime_deps = java_deps)
 
     native_libs = []
     for f in runfiles.files.to_list():
@@ -109,7 +112,7 @@ def clojure_jar_impl(ctx):
         if not contains(library_path, dirname):
             library_path.append(dirname)
 
-    classpath_files = [src_dir] + toolchain.files.runtime + java_info.transitive_runtime_deps.to_list()
+    classpath_files = [src_dir] + toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
     classpath_string = ":".join([f.path for f in classpath_files])
 
     library_path_str = "-Djava.library.path=" + ":".join(library_path) if len(library_path) > 0 else ""
