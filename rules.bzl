@@ -70,14 +70,14 @@ def clojure_binary(name, **kwargs):
                        runtime_deps = deps + runtime_deps,
                        **kwargs)
 
-def clojure_repl(name, runtime_deps=[], ns=None, **kwargs):
+def clojure_repl(name, deps=[], ns=None, **kwargs):
     args = []
     if ns:
         args.extend(["-e", """\"(require '[{ns}]) (in-ns '{ns})\"""".format(ns = ns)])
         args.extend(["-e", "(clojure.main/repl)"])
 
     native.java_binary(name=name,
-                       runtime_deps=runtime_deps,
+                       runtime_deps=deps,
                        main_class = "clojure.main",
                        args = args,
                        **kwargs)
