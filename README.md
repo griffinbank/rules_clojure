@@ -22,7 +22,7 @@ load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies", "rules_c
 load("@rules_clojure//:toolchains.bzl", "rules_clojure_toolchains")
 ```
 
-Differs from [https://github.com/simuons/rules_clojure] that it uses `java_library` and `java_binary` as much as possible. `clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code, but it delegates to `java_library` as much as possible.
+Differs from [rules_clojure](https://github.com/simuons/rules_clojure) that it uses `java_library` and `java_binary` as much as possible. `clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code, but it delegates to `java_library` as much as possible.
 
 To avoid Clojure projects being forced into the maven directory layout, the design of rules_clojure is slightly different:
 
@@ -35,7 +35,7 @@ clojure_namespace(name = "bbq",
 clojure_library(
     name = "libbbq",
     srcs = ["bbq"],
-    aot = ["web.core"])
+    aot = ["foo.core"])
 ```
 
 `clojure_namespace` declares a namespace, but produces no output on its own. `srcs` is a map of files to their destination location on the classpath.
@@ -61,7 +61,7 @@ clojure_test(name = "bar_test.test",
 	srcs = ["bar_test"])
 ```
 
-
+Delegates to `java_test`, using `rules-clojure.testrunner`
 
 ## tools.deps dependencies (optional)
 ```
