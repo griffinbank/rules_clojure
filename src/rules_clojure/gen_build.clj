@@ -496,12 +496,13 @@
          (concat
           [(emit-bazel (list 'clojure_namespace (-> (merge-with into
                                                                 {:name ns-label
-                                                                 :aot [(str ns-name)]
                                                                  :srcs {(str (filename path)) (ns-classpath ns-name (extension path))}
                                                                  :deps [(str deps-repo-tag "//:org_clojure_clojure") "//resources"]}
                                                                 (ns-deps (select-keys args [:workspace-root :ns->path :jar->lib :deps-repo-tag]) path ns-decl)
                                                                 (ns-import-deps args ns-decl)
                                                                 (ns-gen-class-deps args ns-decl)
+                                                                (when aot?
+                                                                  {:aot [(str ns-name)]})
                                                                 (when test?
                                                                   {:testonly true})
                                                                 overrides)
