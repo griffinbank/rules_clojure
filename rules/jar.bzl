@@ -110,6 +110,14 @@ def clojure_jar_impl(ctx):
         if not contains(library_path, dirname):
             library_path.append(dirname)
 
+    aot_ns = []
+    aot_ns.extend(ctx.attr.aot)
+
+    for dep in ctx.attr.srcs + ctx.attr.deps:
+        if CljInfo in dep:
+            if len(dep[CljInfo].aot) > 0:
+                aot_ns.extend(dep[CljInfo].aot)
+
     classpath_files = [src_dir] + toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
     classpath_string = ":".join([classes_dir] + [f.path for f in classpath_files])
 
@@ -127,7 +135,7 @@ def clojure_jar_impl(ctx):
         input_dir = src_dir.path,
         output_jar = output_jar.path,
         library_path_str = library_path_str,
-        aot = ",".join([ns for ns in ctx.attr.aot]))
+        aot = ",".join(aot_ns))
 
     inputs = [src_dir] + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs
 

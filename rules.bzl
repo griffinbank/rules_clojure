@@ -9,7 +9,8 @@ clojure_namespace = rule(
     doc = "Define a clojure namespace. Produces no output on its own. Can be consumed by clojure_library. clojure_binary and clojure_repl currently need jars, that requirement may be lifted in the future",
     attrs = {
         "srcs": attr.label_keyed_string_dict(mandatory = True, doc = "a map of the .clj{,c,s} source files to their destination location on the classpath", allow_files = True),
-        "deps": attr.label_list(default = [], providers = [[CljInfo], [JavaInfo]])
+        "deps": attr.label_list(default = [], providers = [[CljInfo], [JavaInfo]]),
+        "aot": attr.string_list(default = [], doc = "namespaces that must be AOT'd in any clojure_library that includes this namespace")
     },
     provides = [CljInfo],
     toolchains = ["@rules_clojure//:toolchain"],
@@ -19,7 +20,7 @@ clojure_namespace = rule(
 _clojure_library = rule(
     doc = "Create a jar containing clojure sources. Optionally AOTs. The output jar will contain: .clj sources and transitive sources, and all compiled classes from AOTing. The output jar will depend on the transitive `deps` of all srcs & deps",
     attrs = {
-        "aot": attr.string_list(default = [], allow_empty = True, doc = "Namespaces in classpath to compile."),
+        "aot": attr.string_list(default = [], allow_empty = True, doc = "Namespaces in classpath to compile. merged with `clojure_namespace.aot`"),
         "srcs": attr.label_list(mandatory = False, allow_empty = True, default = [], doc = "a list of source namespaces to include in the jar", providers=[[CljInfo]]),
         "deps": attr.label_list(default = [], providers = [[JavaInfo]]),
         "resources": attr.label_list(default = [], allow_files = True),
