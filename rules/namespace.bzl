@@ -1,4 +1,4 @@
-load("@rules_clojure//rules:common.bzl", "CljInfo")
+load("//rules:common.bzl", "CljInfo")
 
 def clojure_ns_impl(ctx):
     runfiles = ctx.runfiles()

@@ -1,4 +1,4 @@
-load("@rules_clojure//rules:common.bzl", "CljInfo")
+load("//rules:common.bzl", "CljInfo")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 
 def contains(lst, item):

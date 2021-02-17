@@ -9,7 +9,8 @@ CLJ_VERSIONS_LINUX = {
     "1.10.2.774": ("https://download.clojure.org/install/linux-install-1.10.2.774.sh", "6d39603e84ad2622e5ae601436f02a1ee4a57e4e35dc49098b01a7d142a13d4a")
 }
 
-CLJ_EXTRACT_DIR = ""
+clj_install_prefix = "tools.deps"
+clj_path = clj_install_prefix + "/bin/clojure"
 
 def _install_clj_mac(repository_ctx):
     clj_version = repository_ctx.attr.clj_version
@@ -22,7 +23,9 @@ def _install_clj_mac(repository_ctx):
         output = "tools-deps",
         sha256 = sha256)
 
-    repository_ctx.execute(["./install.sh", repository_ctx.path("")],
+    repository_ctx.execute(["mkdir", repository_ctx.path(clj_install_prefix)],
+                           quiet = False)
+    repository_ctx.execute(["./install.sh", repository_ctx.path(clj_install_prefix)],
                            # bazel strips the environment, but the install assumes this is defined
                            environment={"HOMEBREW_RUBY_PATH": "/usr/bin/ruby"},
                            working_directory="tools-deps/clojure-tools/",
@@ -38,7 +41,7 @@ def _install_clj_linux(repository_ctx):
         url = url,
         sha256 = sha256)
 
-    repository_ctx.execute(["./install.sh", "--prefix", repository_ctx.path("")],
+    repository_ctx.execute(["./install.sh", "--prefix", repository_ctx.path(clj_install_prefix)],
                            quiet = False)
 
 def _install_tools_deps(repository_ctx):
@@ -77,9 +80,10 @@ sh_binary(name="gen_srcs",
                         content = """#!/usr/bin/env bash
  set -euxo pipefail;
  cd {working_dir};
- clojure -Srepro -J-Dclojure.main.report=stderr -m rules-clojure.gen-build deps deps-edn-path "{deps_edn_path}" deps-out-dir "{deps_out_dir}" deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" aliases "{aliases}"
+ {clojure} -Srepro -J-Dclojure.main.report=stderr -m rules-clojure.gen-build deps deps-edn-path "{deps_edn_path}" deps-out-dir "{deps_out_dir}" deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" aliases "{aliases}"
 
- """.format(deps_repo_tag = "@" + repository_ctx.attr.name,
+ """.format(clojure = repository_ctx.path(clj_path),
+            deps_repo_tag = "@" + repository_ctx.attr.name,
             deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
             deps_out_dir = repository_ctx.path("repository"),
             deps_build_dir = repository_ctx.path(""),
@@ -91,9 +95,10 @@ sh_binary(name="gen_srcs",
                         content = """#!/usr/bin/env bash
  set -euxo pipefail;
  cd {working_dir};
- clojure -Srepro -J-Dclojure.main.report=stderr -m rules-clojure.gen-build srcs deps-edn-path "{deps_edn_path}" deps-out-dir "{deps_out_dir}" deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" aliases "{aliases}" workspace-root ${{BUILD_WORKSPACE_DIRECTORY}}
+ {clojure} -Srepro -J-Dclojure.main.report=stderr -m rules-clojure.gen-build srcs deps-edn-path "{deps_edn_path}" deps-out-dir "{deps_out_dir}" deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" aliases "{aliases}" workspace-root ${{BUILD_WORKSPACE_DIRECTORY}}
 
- """.format(deps_repo_tag = "@" + repository_ctx.attr.name,
+ """.format(clojure = repository_ctx.path(clj_path),
+            deps_repo_tag = "@" + repository_ctx.attr.name,
             deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
             deps_out_dir = repository_ctx.path("repository"),
             deps_build_dir = repository_ctx.path(""),
