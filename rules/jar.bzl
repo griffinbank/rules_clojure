@@ -48,16 +48,14 @@ done
 def clojure_jar_impl(ctx):
     toolchain = ctx.toolchains["@rules_clojure//:toolchain"]
 
-    classes_dir = ctx.actions.declare_directory("%s.classes" % ctx.label.name) # .class files
     src_dir = ctx.actions.declare_directory("%s.srcs" % ctx.label.name)
 
-    output_jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
+    # not declaring `classes_dir` because it's not an output, and we don't need any
+    # shell commands on it. Unclear why, but clojure doesn't like the
+    # directory created by `declare_directory`
+    classes_dir = "classes"
 
-    ctx.actions.run_shell(
-        command = """
-        mkdir -p {classes_dir};
-""".format(classes_dir = classes_dir.path),
-        outputs = [classes_dir])
+    output_jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
 
     library_path = []
 
@@ -84,7 +82,7 @@ def clojure_jar_impl(ctx):
     ctx.actions.run_shell(
         command = symlink_sh,
         arguments = [src_dir.path, symlink_args],
-        inputs = ctx.files.srcs,
+        inputs = [target.files.to_list()[0] for target in input_file_map.keys()],
         outputs = [src_dir])
 
     runfiles = ctx.runfiles()
@@ -113,24 +111,25 @@ def clojure_jar_impl(ctx):
             library_path.append(dirname)
 
     classpath_files = [src_dir] + toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
-    classpath_string = ":".join([f.path for f in classpath_files])
+    classpath_string = ":".join([classes_dir] + [f.path for f in classpath_files])
 
     library_path_str = "-Djava.library.path=" + ":".join(library_path) if len(library_path) > 0 else ""
 
     cmd = """
-        set -xeuo pipefail;
+        set -euo pipefail;
+        mkdir {classes_dir};
         {java} -Dclojure.main.report=stderr -cp {classpath} {library_path_str} clojure.main -m rules-clojure.jar :input-dir '"{input_dir}"' :aot [{aot}] :classes-dir '"{classes_dir}"' :output-jar '"{output_jar}"'
     """.format(
         java = toolchain.java,
         src_dir = src_dir.path,
-        classes_dir = classes_dir.path,
+        classes_dir = classes_dir,
         classpath = classpath_string,
         input_dir = src_dir.path,
         output_jar = output_jar.path,
         library_path_str = library_path_str,
         aot = ",".join([ns for ns in ctx.attr.aot]))
 
-    inputs = [classes_dir, src_dir] + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs
+    inputs = [src_dir] + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs
 
     ctx.actions.run_shell(
         outputs = [output_jar],

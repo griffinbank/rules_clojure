@@ -24,6 +24,9 @@
 (defn absolute [path]
   (.toAbsolutePath path))
 
+(defn exists? [path]
+  (Files/exists path (into-array java.nio.file.LinkOption [])))
+
 (defn path-relative-to
   [a b]
   (.relativize (absolute a) (absolute b)))
@@ -33,13 +36,15 @@
         {:keys [input-dir aot classes-dir output-jar]} args
         input-dir (->path input-dir)
         output-jar (->path output-jar)
-        classes-dir (->path classes-dir)]
+        classes-dir (->path *compile-path*)]
 
-    (System/setProperty "clojure.compile.path" (str classes-dir))
-    (doseq [ns aot]
-      (println "compiling" ns (class ns))
-      (compile (symbol ns)))
+    (when (seq aot)
+      (set! *compile-path* (str classes-dir "/"))
+      (assert (exists? (->path *compile-path*)))
 
+      (doseq [ns aot]
+        (println "compiling" ns (class ns))
+        (compile (symbol ns))))
 
     (with-open [jar-os (-> output-jar .toFile FileOutputStream. BufferedOutputStream. JarOutputStream.)]
       (put-next-entry! jar-os JarFile/MANIFEST_NAME)
