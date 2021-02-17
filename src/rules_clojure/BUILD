@@ -18,6 +18,7 @@ clojure_library(
     name="jar",
     srcs=["jar_ns"],
     deps=["@rules_clojure_maven//:org_clojure_clojure"],
+    aot=["rules-clojure.jar"],
     compiledeps=[]
 )
 
@@ -25,7 +26,8 @@ clojure_namespace(name= "testrunner_ns",
                   srcs = {"testrunner.clj": "/rules_clojure/testrunner.clj"})
 
 clojure_library(name = "testrunner",
-                srcs = ["testrunner_ns"])
+                srcs = ["testrunner_ns"],
+                aot = ["rules-clojure.testrunner"])
 
 ## files needed for the clj toolchain
 filegroup(name="toolchain_files",

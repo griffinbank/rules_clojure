@@ -5,6 +5,7 @@ def clojure_ns_impl(ctx):
 
     clj_srcs = []
     java_deps = []
+    transitive_aot = list(ctx.attr.aot)
 
     for dep in ctx.attr.srcs.keys() + ctx.attr.deps:
         if DefaultInfo in dep:
@@ -23,6 +24,7 @@ def clojure_ns_impl(ctx):
     for d in clj_srcs:
         transitive_clj_srcs.update(d.transitive_clj_srcs)
         transitive_java_deps.extend(d.transitive_java_deps)
+        transitive_aot.extend(d.transitive_aot)
 
     src_input_files = []
     for label in transitive_clj_srcs.keys():
@@ -35,6 +37,7 @@ def clojure_ns_impl(ctx):
         ),
         CljInfo(srcs = ctx.attr.srcs,
                 aot = ctx.attr.aot,
+                transitive_aot = transitive_aot,
                 transitive_clj_srcs = transitive_clj_srcs,
                 transitive_java_deps = transitive_java_deps,
                 deps = ctx.attr.deps)]

@@ -4,7 +4,6 @@
   (:gen-class))
 
 (defn -main [& args]
-  (println "griffin.testrunner:" args)
   (assert (string? (first args)) (print-str "first argument must be a string, got" args))
   (let [the-ns (-> args first symbol)]
     (println "testing" the-ns)
