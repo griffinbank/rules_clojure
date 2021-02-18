@@ -631,7 +631,8 @@
                                             deps (->> (get lib->deps lib)
                                                       (mapv (fn [lib]
                                                               (str ":" (library->label lib)))))
-                                            extra-deps (get-in deps-bazel [:extra-deps (jar->label (select-keys args [:jar->lib]) jarpath)])]
+                                            extra-deps-key (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
+                                            extra-deps (get-in deps-bazel [:extra-deps extra-deps-key])]
                                         (when extra-deps
                                           (println lib "extra-deps:" extra-deps))
                                         (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")

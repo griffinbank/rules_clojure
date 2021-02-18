@@ -37,7 +37,10 @@ def clojure_library(*, name, srcs = [], aot = [], data=[], deps=[], **kwargs):
         testonly = kwargs["testonly"]
         kwargs.pop("testonly")
 
+    clj_jar = name
     native_deps_jar = name + ".deps"
+
+
     ## clojure libraries which have native library dependencies (eg
     ## libsodium) can't be defined via skylark rules, because the
     ## required provider, JavaNativeLibraryInfo, is only constructable
@@ -48,13 +51,12 @@ def clojure_library(*, name, srcs = [], aot = [], data=[], deps=[], **kwargs):
                         data = data,
                         testonly = testonly)
 
-    _clojure_library(name = name,
+    _clojure_library(name = clj_jar,
                      srcs = srcs,
                      deps = deps + [native_deps_jar],
                      aot = aot,
                      testonly = testonly,
                      **kwargs)
-
 
 def clojure_binary(name, **kwargs):
     deps = []
