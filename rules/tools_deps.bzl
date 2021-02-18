@@ -39,10 +39,13 @@ def _install_clj_linux(repository_ctx):
     repository_ctx.download(
         auth = {},
         url = url,
+        output = "install.sh",
+        executable = True,
         sha256 = sha256)
 
     repository_ctx.execute(["./install.sh", "--prefix", repository_ctx.path(clj_install_prefix)],
                            quiet = False)
+    print(repository_ctx.execute(["ls", "-l", repository_ctx.path("").dirname]).stdout)
 
 def _install_tools_deps(repository_ctx):
     fns = {"linux": _install_clj_linux,
@@ -51,8 +54,7 @@ def _install_tools_deps(repository_ctx):
     f(repository_ctx)
 
 def _add_deps_edn(repository_ctx):
-    repository_ctx.execute(["ls", "-l", repository_ctx.path(repository_ctx.attr.deps_edn).dirname])
-    repository_ctx.delete(repository_ctx.path("deps.edn"))
+    # repository_ctx.delete(repository_ctx.path("deps.edn"))
     repository_ctx.symlink(
         repository_ctx.path(repository_ctx.attr.deps_edn),
         repository_ctx.path("deps.edn"))
