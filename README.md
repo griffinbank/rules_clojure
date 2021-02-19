@@ -54,7 +54,9 @@ clojure_library(
 `clojure_namespace` declares a namespace, but produces no output on its own. `srcs` is a map of files to their destination location on the classpath.
 `deps` may be `clojure_namespaces`, `clojure_library` or any bazel Java target. `aot` is a list of namespaces that _must_ be AOT'd in a library that includes this namespace.
 
-`clojure_library` produces a jar. `srcs` is a list of targets to include in the jar. `aot` is a list of namespaces that should be aot'd, in addition to any mandatory AOTs from `clojure_namespace`.
+Because of clojure's general lack of concern about the difference between runtime and compile-time, all clojure rules use `deps` and don't pay attention to runtime_deps. These are passed to `runtime_deps` when calling java rules.
+
+`clojure_library` produces a jar. `srcs` is a list of targets to include in the jar. `aot` is a list of namespaces that should be aot'd, in addition to any mandatory AOTs from `clojure_namespace`. Prefer use `aot` on a namespace to indicate it _must_ be AOT'd, e.g. gen-class, and prefer `aot` on a library when fast startup is desired.
 
 `clojure_repl`
 
@@ -150,6 +152,9 @@ Custom toolchain can be defined with `clojure_toolchain` rule from [@rules_cloju
 
 Please see [example](examples/setup/custom) of custom toolchain.
 
+
+# Known Issues
+- transitively loading native libraries:. `clojure_library` A depends on `java_library` B, and B depends on `cc_library` C. The clojure library won't depend on the native library, so it must be specified as a direct dependency of A. The required provider, JavaNativeLibraryInfo, isn't exposed to starlark, so the workaround is to explicitly list all required native libraries. If B is a `clojure_library` instead of a `java_library`, A _will_ load C.
 
 # Thanks
 

@@ -65,7 +65,12 @@ def clojure_jar_impl(ctx):
             input_file_map.update(dep[CljInfo].transitive_clj_srcs)
 
     java_deps = []
+    runfiles = ctx.runfiles()
+
     for dep in ctx.attr.srcs + input_file_map.keys() + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime:
+        if DefaultInfo in dep:
+            runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
+            runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
         if CljInfo in dep:
             java_deps.extend(dep[CljInfo].transitive_java_deps)
         if JavaInfo in dep:

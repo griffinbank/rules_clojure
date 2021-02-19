@@ -22,7 +22,7 @@ _clojure_library = rule(
     attrs = {
         "aot": attr.string_list(default = [], allow_empty = True, doc = "Namespaces in classpath to compile. merged with `clojure_namespace.aot`"),
         "srcs": attr.label_list(mandatory = False, allow_empty = True, default = [], doc = "a list of source namespaces to include in the jar", providers=[[CljInfo]]),
-        "deps": attr.label_list(default = [], providers = [[JavaInfo]]),
+        "deps": attr.label_list(default = []),
         "resources": attr.label_list(default = [], allow_files = True),
         "compiledeps": attr.label_list(default = ["@rules_clojure//src/rules_clojure:jar"]),
     },
@@ -37,8 +37,8 @@ def clojure_library(*, name, srcs = [], aot = [], data=[], deps=[], **kwargs):
         testonly = kwargs["testonly"]
         kwargs.pop("testonly")
 
-    clj_jar = name
-    native_deps_jar = name + ".deps"
+    clj_jar = name + ".cljsrc"
+    native_deps_jar = name
 
 
     ## clojure libraries which have native library dependencies (eg
@@ -47,13 +47,13 @@ def clojure_library(*, name, srcs = [], aot = [], data=[], deps=[], **kwargs):
     ## via java, not skylark. Therefore, create a `java_library` that
     ## we can pass deps into, and make the clj jar  depend on it
     native.java_library(name = native_deps_jar,
-                        runtime_deps = deps,
+                        runtime_deps = deps + [clj_jar],
                         data = data,
                         testonly = testonly)
 
     _clojure_library(name = clj_jar,
                      srcs = srcs,
-                     deps = deps + [native_deps_jar],
+                     deps = deps,
                      aot = aot,
                      testonly = testonly,
                      **kwargs)
@@ -64,6 +64,7 @@ def clojure_binary(name, **kwargs):
     if "deps" in kwargs:
         deps = kwargs["deps"]
         kwargs.pop("deps")
+
     if "runtime_deps" in kwargs:
         runtime_deps = kwargs["runtime_deps"]
         kwargs.pop("runtime_deps")
@@ -74,12 +75,17 @@ def clojure_binary(name, **kwargs):
 
 def clojure_repl(name, deps=[], ns=None, **kwargs):
     args = []
+
     if ns:
         args.extend(["-e", """\"(require '[{ns}]) (in-ns '{ns})\"""".format(ns = ns)])
-        args.extend(["-e", "(clojure.main/repl)"])
+
+    args.extend(["-e", "(clojure.main/repl)"])
+
+    print("args:", args)
 
     native.java_binary(name=name,
                        runtime_deps=deps,
+                       jvm_flags=["-Dclojure.main.report=stderr"],
                        main_class = "clojure.main",
                        args = args,
                        **kwargs)
