@@ -12,17 +12,16 @@ Add the following to your `WORKSPACE`:
 
 ```skylark
 
-+RULES_JVM_EXTERNAL_TAG = "4.0"
-+RULES_JVM_EXTERNAL_SHA = "31701ad93dbfe544d597dbe62c9a1fdd76d81d8a9150c2bf1ecf928ecdf97169"
-+
-+http_archive(
-+    name = "rules_jvm_external",
-+    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
-+    sha256 = RULES_JVM_EXTERNAL_SHA,
-+    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
-+)
-+
-+load("@rules_jvm_external//:defs.bzl", "maven_install")
+RULES_JVM_EXTERNAL_TAG = "4.0"
+RULES_JVM_EXTERNAL_SHA = "31701ad93dbfe544d597dbe62c9a1fdd76d81d8a9150c2bf1ecf928ecdf97169"
+
+http_archive(
+    name = "rules_jvm_external",
+    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
+    sha256 = RULES_JVM_EXTERNAL_SHA,
+    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG)
+
+load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
@@ -35,9 +34,11 @@ load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies", "rules_c
 load("@rules_clojure//:toolchains.bzl", "rules_clojure_toolchains")
 ```
 
-Differs from [rules_clojure](https://github.com/simuons/rules_clojure) that it uses `java_library` and `java_binary` as much as possible. `clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code, but it delegates to `java_library` as much as possible.
+Differs from [rules_clojure](https://github.com/simuons/rules_clojure) that it uses `java_library` and `java_binary` as much as possible.
 
-To avoid Clojure projects being forced into the maven directory layout, the design of rules_clojure is slightly different:
+`clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code, but it delegates to `java_library` as much as possible.
+
+To avoid Clojure projects being forced into the maven directory layout, the design of this is slightly different:
 
 ```
 clojure_namespace(name = "bbq",
@@ -52,13 +53,13 @@ clojure_library(
 ```
 
 `clojure_namespace` declares a namespace, but produces no output on its own. `srcs` is a map of files to their destination location on the classpath.
-`deps` may be `clojure_namespaces`, `clojure_library` or any bazel Java target. `aot` is a list of namespaces that _must_ be AOT'd in a library that includes this namespace.
+`deps` may be `clojure_namespaces`, `clojure_library` or any bazel Java target (`java_library`, etc). `aot` is a list of namespaces that _must_ be AOT'd in a library that includes this namespace.
 
 Because of clojure's general lack of concern about the difference between runtime and compile-time, all clojure rules use `deps` and don't pay attention to runtime_deps. These are passed to `runtime_deps` when calling java rules.
 
 `clojure_library` produces a jar. `srcs` is a list of targets to include in the jar. `aot` is a list of namespaces that should be aot'd, in addition to any mandatory AOTs from `clojure_namespace`. Prefer use `aot` on a namespace to indicate it _must_ be AOT'd, e.g. gen-class, and prefer `aot` on a library when fast startup is desired.
 
-`clojure_repl`
+### clojure_repl
 
 ```
 clojure_repl(
@@ -68,7 +69,7 @@ clojure_repl(
 
 Behaves as you'd expect.
 
-`clojure_test`
+### clojure_test
 
 ```
 clojure_test(name = "bar_test.test",
@@ -87,11 +88,11 @@ rules_clojure_toolchains()
 
 clojure_tools_deps(name = "deps",
                    clj_version = "1.10.1.763",
-				   deps_edn = "//:deps.edn",
-				   aliases = ["dev", "test"])
+                   deps_edn = "//:deps.edn",
+                   aliases = ["dev", "test"])
 ```
 
-`clojure_tools_deps` will call `clojure` to resolve dependencies from a deps.edn file and define `java_import` targets for all dependencies. Targets follow the same naming rules as `rules_jvm_external`, i.e. `@deps//:org_clojure_clojure`.
+`clojure_tools_deps` will call `clojure` to resolve dependencies from a deps.edn file and write BUILD files containing `java_import` targets for all dependencies. Targets follow the same naming rules as `rules_jvm_external`, i.e. `@deps//:org_clojure_clojure`.
 
 ## BUILD generation (optional)
 
@@ -112,7 +113,7 @@ Run `gen_srcs` again any time the ns declarations in the source tree change.
 
 ### Tests
 
-For files containing `_test.clj`, gen-src defines both a `namespace` and a `test`. Because
+For files with paths containing `_test.clj`, gen-src defines both a `namespace` and a `test`. Because
 
 ```
 clojure_namespace(name = "bar_test",
@@ -126,7 +127,7 @@ clojure_test(name = "bar_test.test",
 
 ```
 
-Bazel requires target names to be unique within the same directory, so the namespace target always matches the `ns`, while the `test` target is `$ns.test`, so `foo_test.test`. ¯\_(ツ)_/¯
+Bazel requires target names to be unique within the same directory, so the namespace target always matches the `ns`, while the `test` target is `$ns.test`, so the binary test target is `foo_test.test`. ¯\_(ツ)_/¯
 
 ### extra deps
 
@@ -158,5 +159,5 @@ Please see [example](examples/setup/custom) of custom toolchain.
 
 # Thanks
 
-Forked from https://github.com/simuons/rules_clojure
-Additional inspiration from https://github.com/markdingram/bazel-clojure
+- Forked from https://github.com/simuons/rules_clojure
+- Additional inspiration from https://github.com/markdingram/bazel-clojure
