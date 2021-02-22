@@ -26,7 +26,7 @@ load("@rules_jvm_external//:defs.bzl", "maven_install")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 git_repository(name = "rules_clojure",
-               commit = "8ae46519293f41075a7f5ec253ac5ad4321d309c",
+               commit = $CURRENT_SHA1,
                remote = "https://github.com/griffinbank/rules_clojure.git")
 
 
