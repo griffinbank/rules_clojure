@@ -81,8 +81,6 @@ def clojure_repl(name, deps=[], ns=None, **kwargs):
 
     args.extend(["-e", "(clojure.main/repl)"])
 
-    print("args:", args)
-
     native.java_binary(name=name,
                        runtime_deps=deps,
                        jvm_flags=["-Dclojure.main.report=stderr"],

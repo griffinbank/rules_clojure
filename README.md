@@ -154,7 +154,7 @@ Please see [example](examples/setup/custom) of custom toolchain.
 
 
 # Known Issues
-- transitively loading native libraries:. `clojure_library` A depends on `java_library` B, and B depends on `cc_library` C. The clojure library won't depend on the native library, so it must be specified as a direct dependency of A. The required provider, JavaNativeLibraryInfo, isn't exposed to starlark, so the workaround is to explicitly list all required native libraries. If B is a `clojure_library` instead of a `java_library`, A _will_ load C.
+- transitively loading native libraries:. Example: `clojure_library` A depends on `java_library` B, and B depends on `cc_library` C. The clojure library can't express a transitive dependency on the native library, so binary/test/repl rules must contain a direct dependency on B. This is because the required provider, JavaNativeLibraryInfo, isn't exposed to starlark.
 
 # Thanks
 
