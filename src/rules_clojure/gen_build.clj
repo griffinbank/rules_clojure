@@ -33,7 +33,7 @@
 (s/def ::aliases (s/coll-of keyword?))
 
 (s/def ::paths (s/coll-of string?))
-(s/def ::library qualified-symbol?)
+(s/def ::library symbol?)
 (s/def ::lib->deps (s/map-of ::library (s/coll-of ::library)))
 
 (s/def ::deps-info (s/keys :req-un [::paths]))
@@ -66,9 +66,9 @@
 (s/fdef ->path :args (s/cat :dirs (s/* (s/alt :s string? :p path?))) :ret path?)
 (defn ->path [& dirs]
   (let [[d & dr] dirs
-        d (if
-              (string? d) (Paths/get d (into-array String []))
-              d)]
+        d (if (string? d)
+            (Paths/get d (into-array String []))
+            d)]
     (reduce (fn [^Path p dir] (.resolve p dir)) d (rest dirs))))
 
 (defn file->path [f]
@@ -83,6 +83,7 @@
 
 (s/fdef relative-to :args (s/cat :a path? :b path?) :ret path?)
 (defn path-relative-to
+  "Return the path to b, relative to a"
   [a b]
   {:pre []}
   (.relativize (absolute a) (absolute b)))
@@ -509,8 +510,6 @@
                                                                         (ns-gen-class-deps args ns-decl)
                                                                         (when aot?
                                                                           {:aot [(str ns-name)]})
-                                                                        (when test?
-                                                                          {:testonly true})
                                                                         overrides)
                                                             (update :deps (comp vec distinct))))))]
           (when test?
@@ -549,7 +548,7 @@
         path->file
         (spit content :encoding "UTF-8"))))
 
-(s/fdef gen-source-path- :args (s/cat :a (s/keys :req-un [::workspace-root ::ns->path ::jar->lib ::deps-repo-tag ::deps-bazel]) :paths (s/coll-of path?)))
+(s/fdef gen-source-paths- :args (s/cat :a (s/keys :req-un [::workspace-root ::ns->path ::jar->lib ::deps-repo-tag ::deps-bazel]) :paths (s/coll-of path?)))
 (defn gen-source-paths-
   "gen-dir for every directory on the classpath."
   [args paths]
@@ -589,20 +588,25 @@
         (update :extra-paths merge (:paths combined-aliases))
         (basis-absolute-source-paths deps-edn-path))))
 
-(s/fdef source-paths :args (s/cat :b ::basis :p path?) :ret (s/coll-of string?))
+(s/fdef source-paths :args (s/cat :b ::read-deps :p path?) :ret (s/coll-of path?))
+(defn resource-paths [read-deps deps-edn-path]
+  (->> (or (-> read-deps :bazel :resources)
+           ["resources"])
+       (map (fn [path]
+              (->path (dirname deps-edn-path) path)))))
+
+(s/fdef source-paths :args (s/cat :b ::basis :p path?) :ret (s/coll-of path?))
 (defn source-paths
   "return the set of source directories on the classpath"
   [basis deps-edn-path]
   {:post [(do (println "source-paths:" %) true)]}
-  (-> basis
-      :classpath
-      (->>
-       (map first)
-       (filter (fn [path]
-                 (-> path
-                     .toFile
-                     (directory?)))))))
-
+  (let [resource-paths (set (resource-paths basis deps-edn-path))]
+    (->>
+     (concat (:paths basis) (:extra-paths basis))
+     (map (fn [path]
+            (->path (dirname deps-edn-path) path)))
+     (remove (fn [path]
+               (contains? resource-paths path))))))
 
 
 (s/fdef gen-source-paths :args (s/cat :a (s/keys :req-un [::deps-edn-path ::deps-out-dir ::deps-repo-tag ::basis ::jar->lib ::deps-bazel ::workspace-root]
@@ -620,7 +624,7 @@
                     {:ns->path ns->path
                      :jar->lib jar->lib})]
     (println "gen-source-paths" deps-edn-path)
-    (gen-source-paths- args (map ->path (source-paths basis deps-edn-path)))))
+    (gen-source-paths- args (source-paths basis deps-edn-path))))
 
 (s/fdef gen-toplevel-build :args (s/cat :a (s/keys :req-un [::deps-out-dir ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel])))
 (defn gen-toplevel-build
@@ -684,7 +688,7 @@
                                                                                [label (str "/" file-path)])))
                                                                       (into {}))})))
              "\n"
-             (emit-bazel (list 'clojure_library (kwargs {:name "resources"
+             (emit-bazel (list 'clojure_library (kwargs {:name (basename path)
                                                          :srcs [(str (basename path) "_ns")]})))
              "\n")))
 
@@ -753,9 +757,13 @@
                        :basis basis
                        :jar->lib jar->lib
                        :class->jar class->jar})
-    (gen-resources {:deps-edn-path deps-edn-path
-                    :workspace-root workspace-root}
-                   (->path (dirname deps-edn-path) "resources"))))
+    (->> (resource-paths basis deps-edn-path)
+         (map (fn [p]
+                (println "gen-resources" p)
+                (gen-resources {:deps-edn-path deps-edn-path
+                                :workspace-root workspace-root}
+                               (->path (dirname deps-edn-path) p))))
+         (dorun))))
 
 (defn run! []
   (let [args {:deps-edn-path "deps.edn"

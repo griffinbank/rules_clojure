@@ -143,6 +143,14 @@ put `:bazel {:extra-deps {}}` at the top level of your deps.edn file. `:extra-de
 
 Deps are a map of bazel labels to a map of extra fields to merge into `clojure_namespace` and imported deps.
 
+## Resources
+
+`gen_src` will automatically create a `clojure_library` target for `/resources`, relative to the deps.edn. If your project has more resources in the deps.edn file, using
+
+```clojure
+{:bazel {:resources ["resources" "dev-resources" "test-resources"]
+```
+
 ## Toolchains
 
 Rules require `@rules_clojure//:toolchain` type.
