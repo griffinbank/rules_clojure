@@ -121,9 +121,6 @@ def clojure_jar_impl(ctx):
         if CljInfo in dep:
             aot_ns.extend(dep[CljInfo].transitive_aot)
 
-    if len(aot_ns) > 0:
-        print("compiling", ctx.attr.name + ".jar", "AOT:", aot_ns)
-
     classpath_files = [src_dir] + toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
     classpath_string = ":".join([classes_dir] + [f.path for f in classpath_files])
 
