@@ -585,7 +585,7 @@
         (deps/calc-basis {:resolve-args (merge combined-aliases {:trace true})
                           :classpath-args combined-aliases})
         (update :deps merge (:extra-deps combined-aliases))
-        (update :extra-paths merge (:paths combined-aliases))
+        (update :paths concat (:extra-paths combined-aliases))
         (basis-absolute-source-paths deps-edn-path))))
 
 (s/fdef source-paths :args (s/cat :b ::read-deps :p path?) :ret (s/coll-of path?))
@@ -602,7 +602,7 @@
   {:post [(do (println "source-paths:" %) true)]}
   (let [resource-paths (set (resource-paths basis deps-edn-path))]
     (->>
-     (concat (:paths basis) (:extra-paths basis))
+     (:paths basis)
      (map (fn [path]
             (->path (dirname deps-edn-path) path)))
      (remove (fn [path]
@@ -770,7 +770,7 @@
               :deps-out-dir "deps"
               :deps-repo-tag "@deps"
               :workspace-root (-> (->path "") absolute)
-              :aliases [:dev :test :bazel :datomic :staging]}]
+              :aliases [:dev :test]}]
     ;; (deps args)
     (srcs args)))
 
