@@ -25,13 +25,14 @@ _clojure_library = rule(
         "deps": attr.label_list(default = []),
         "resources": attr.label_list(default = [], allow_files = True),
         "compiledeps": attr.label_list(default = ["@rules_clojure//src/rules_clojure:jar"]),
+        "javacopts": attr.string_list(default = [], allow_empty = True, doc = "Optional javac compiler options")
     },
     provides = [JavaInfo],
     toolchains = ["@rules_clojure//:toolchain"],
     implementation = _clojure_jar_impl,
 )
 
-def clojure_library(*, name, srcs = [], aot = [], data=[], deps=[], **kwargs):
+def clojure_library(*, name, srcs = [], aot = [], data=[], deps=[], javacopts=[], **kwargs):
     testonly = False
     if "testonly" in kwargs:
         testonly = kwargs["testonly"]
@@ -49,13 +50,15 @@ def clojure_library(*, name, srcs = [], aot = [], data=[], deps=[], **kwargs):
     native.java_library(name = native_deps_jar,
                         runtime_deps = deps + [clj_jar],
                         data = data,
-                        testonly = testonly)
+                        testonly = testonly,
+                        javacopts = javacopts)
 
     _clojure_library(name = clj_jar,
                      srcs = srcs,
                      deps = deps,
                      aot = aot,
                      testonly = testonly,
+                     javacopts = javacopts,
                      **kwargs)
 
 def clojure_binary(name, **kwargs):

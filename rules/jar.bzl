@@ -124,14 +124,17 @@ def clojure_jar_impl(ctx):
     classpath_files = [src_dir] + toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
     classpath_string = ":".join([classes_dir] + [f.path for f in classpath_files])
 
+    javaopts_str = " ".join(ctx.attr.javacopts)
+
     library_path_str = "-Djava.library.path=" + ":".join(library_path) if len(library_path) > 0 else ""
 
     cmd = """
         set -euo pipefail;
         mkdir {classes_dir};
-        {java} -Dclojure.main.report=stderr -cp {classpath} {library_path_str} clojure.main -m rules-clojure.jar :input-dir '"{input_dir}"' :aot [{aot}] :classes-dir '"{classes_dir}"' :output-jar '"{output_jar}"'
+        {java} {javacopts} -Dclojure.main.report=stderr -cp {classpath} {library_path_str} clojure.main -m rules-clojure.jar :input-dir '"{input_dir}"' :aot [{aot}] :classes-dir '"{classes_dir}"' :output-jar '"{output_jar}"'
     """.format(
         java = toolchain.java,
+        javacopts = javaopts_str,
         src_dir = src_dir.path,
         classes_dir = classes_dir,
         classpath = classpath_string,
