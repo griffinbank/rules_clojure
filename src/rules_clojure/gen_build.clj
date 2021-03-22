@@ -364,6 +364,20 @@
   (let [path (path-relative-to workspace-root path)]
     (str "//" (dirname path) ":" (str (basename path)))))
 
+(s/fdef src->wildcards-for-label :args (s/cat :a (s/keys :req-un [::workspace-root]) :p path?) :ret (s/coll-of string?))
+(defn src->wildcards-for-label
+  "Return a collection of 'wildcard' labels that could match the given path"
+  [{:keys [workspace-root]} path]
+  (let [path (path-relative-to workspace-root path)
+        subpaths (map #(.subpath path 0 (inc %)) (range (.getNameCount path)))]
+
+    (mapcat (fn [p] (map (fn [target] (let [p0 (str (dirname p))]
+                                        (cond-> (str "//" p0)
+                                          (pos? (count p0)) (str "/")
+                                          :else (str target))))
+                         ["..." "...:all" ":*" ":all-targets"]))
+            subpaths)))
+
 (s/fdef library->label :args (s/cat :p symbol?) :ret string?)
 (defn library->label
   "given the name of a library, e.g. `org.clojure/clojure`, munge the name into a bazel label"
@@ -486,6 +500,16 @@
                (str/replace "-" "_")
                (str/replace "." "/")) "." extension))
 
+(defn extra-dependencies
+  "get extra dependencies, handling wildcard labels as per
+  https://docs.bazel.build/versions/master/guide.html#specifying-targets-to-build"
+  [{:keys [deps-bazel] :as args} path]
+  (let [candidate-labels (conj (src->wildcards-for-label args path)
+                               (src->label args path))]
+    (->> candidate-labels
+         (mapcat (fn [label] (get-in deps-bazel [:extra-deps label])))
+         seq)))
+
 (s/fdef ns-rules :args (s/cat :a (s/keys :req-un [::workspace-root ::ns->path ::jar->lib ::deps-repo-tag ::deps-bazel]) :f path?))
 (defn ns-rules
   "given a .clj path, return all rules for the file "
@@ -496,7 +520,7 @@
             ns-label (str (basename path))
             test-label (str (basename path) ".test")
             aot? (requires-aot? ns-decl)
-            overrides (get-in deps-bazel [:extra-deps (src->label {:workspace-root workspace-root} path)])]
+            overrides (extra-dependencies args path)]
         (when overrides
           (println "extra-info:" overrides))
         (->>
