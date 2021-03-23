@@ -136,12 +136,15 @@ Sometimes the dependency graph isn't complete, for example when using JVM librar
 ```clojure
 :bazel {:extra-deps {"@deps//:com_cognitect_aws_api" {:deps ["@deps//:com_cognitect_aws_endpoints"]}
                       "//src/foo/foo_s3" {:deps ["@deps//:com_cognitect_aws_s3"]}
-                      "@deps//:caesium_caesium" {:deps ["@griffin//native:libsodium"]}
+                      "@deps//:caesium_caesium" {:deps ["@griffin//native:libsodium"]
+                      "//test/..." {:deps ["@deps//::some_dep_for_all_tests"]}
 ```
 
 put `:bazel {:extra-deps {}}` at the top level of your deps.edn file. `:extra-deps` will be merged in when running `gen_srcs`
 
 Deps are a map of bazel labels to a map of extra fields to merge into `clojure_namespace` and imported deps.
+
+[Wildcard](https://docs.bazel.build/versions/master/guide.html#specifying-targets-to-build) rules are supported _only_ on the left hand side of extra-deps declarations. This is to ensure that overly broad dependencies aren't specified
 
 ## Resources
 
