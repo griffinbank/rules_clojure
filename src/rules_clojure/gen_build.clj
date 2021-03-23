@@ -364,9 +364,9 @@
   (let [path (path-relative-to workspace-root path)]
     (str "//" (dirname path) ":" (str (basename path)))))
 
-(s/fdef src->wildcards-for-label :args (s/cat :a (s/keys :req-un [::workspace-root]) :p path?) :ret (s/coll-of string?))
-(defn src->wildcards-for-label
-  "Return a collection of 'wildcard' labels that could match the given path"
+(s/fdef src->wildcard-patterns-for-path :args (s/cat :a (s/keys :req-un [::workspace-root]) :p path?) :ret (s/coll-of string?))
+(defn src->wildcard-patterns-for-path
+  "Return a collection of 'wildcard' target patterns that could match the given path"
   [{:keys [workspace-root]} path]
   (let [path (path-relative-to workspace-root path)
         subpaths (map #(.subpath path 0 (inc %)) (range (.getNameCount path)))]
@@ -504,9 +504,9 @@
   "get extra dependencies, handling wildcard labels as per
   https://docs.bazel.build/versions/master/guide.html#specifying-targets-to-build"
   [{:keys [deps-bazel] :as args} path]
-  (let [candidate-labels (conj (src->wildcards-for-label args path)
+  (let [target-patterns (conj (src->wildcard-patterns-for-path args path)
                                (src->label args path))]
-    (->> candidate-labels
+    (->> target-patterns
          (mapcat (fn [label] (get-in deps-bazel [:extra-deps label])))
          seq)))
 
