@@ -7,6 +7,12 @@ def contains(lst, item):
             return True
     return False
 
+def distinct(lst):
+    d = {}
+    for i in lst:
+        d[i] = True
+    return d.keys()
+
 ## This is annoyingly painful. It's the result of several constraints:
 ##  Bazel wants every output to be declared using either declare_file,
 ##  or declare_directory. We would like all source files to be in a
@@ -122,6 +128,8 @@ def clojure_jar_impl(ctx):
             aot_ns.extend(dep[CljInfo].transitive_aot)
 
     classpath_files = [src_dir] + toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
+    aot_ns = distinct(aot_ns)
+
     classpath_string = ":".join([classes_dir] + [f.path for f in classpath_files])
 
     javaopts_str = " ".join(ctx.attr.javacopts)

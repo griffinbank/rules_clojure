@@ -19,8 +19,7 @@ clojure_library(
     srcs=["jar_ns"],
     deps=["@rules_clojure_maven//:org_clojure_clojure"],
     aot=["rules-clojure.jar"],
-    compiledeps=[]
-)
+    compiledeps=[])
 
 clojure_namespace(name= "testrunner_ns",
                   srcs = {"testrunner.clj": "/rules_clojure/testrunner.clj"})
