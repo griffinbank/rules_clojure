@@ -2,7 +2,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files(glob(["*.clj"]))
 
-load("//:rules.bzl", "clojure_library", "clojure_namespace")
+load("//:rules.bzl", "clojure_library")
 
 clojure_library(
     name= "gen_build",
@@ -11,21 +11,14 @@ clojure_library(
           "@rules_clojure_maven//:org_clojure_tools_namespace",
           "@rules_clojure_maven//:org_clojure_tools_deps_alpha"])
 
-clojure_namespace(name="jar_ns",
-                  srcs= {"jar.clj": "/rules_clojure/jar.clj"})
+clojure_library(name="jar",
+                srcs= {"jar.clj": "/rules_clojure/jar.clj"},
+                deps=["@rules_clojure_maven//:org_clojure_clojure"],
+                compiledeps=[], # prevent it from depending on itself
+                aot=["rules-clojure.jar"])
 
-clojure_library(
-    name="jar",
-    srcs=["jar_ns"],
-    deps=["@rules_clojure_maven//:org_clojure_clojure"],
-    aot=["rules-clojure.jar"],
-    compiledeps=[])
-
-clojure_namespace(name= "testrunner_ns",
-                  srcs = {"testrunner.clj": "/rules_clojure/testrunner.clj"})
-
-clojure_library(name = "testrunner",
-                srcs = ["testrunner_ns"],
+clojure_library(name= "testrunner",
+                srcs = {"testrunner.clj": "/rules_clojure/testrunner.clj"},
                 aot = ["rules-clojure.testrunner"])
 
 ## files needed for the clj toolchain

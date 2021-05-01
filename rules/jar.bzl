@@ -1,4 +1,3 @@
-load("//rules:common.bzl", "CljInfo")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 
 def contains(lst, item):
@@ -65,25 +64,18 @@ def clojure_jar_impl(ctx):
 
     library_path = []
 
-    input_file_map = {}
-    for dep in ctx.attr.srcs + ctx.attr.deps:
-        if CljInfo in dep:
-            input_file_map.update(dep[CljInfo].transitive_clj_srcs)
-
     java_deps = []
     runfiles = ctx.runfiles()
 
-    for dep in ctx.attr.srcs + input_file_map.keys() + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime:
+    for dep in ctx.attr.srcs.keys() + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime:
         if DefaultInfo in dep:
             runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
             runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
-        if CljInfo in dep:
-            java_deps.extend(dep[CljInfo].transitive_java_deps)
         if JavaInfo in dep:
             java_deps.append(dep[JavaInfo])
 
     symlink_args = ctx.actions.args()
-    for infile,path in input_file_map.items():
+    for infile,path in ctx.attr.srcs.items():
         if path[0] != "/":
             fail("path must be absolute, got " + path)
         src_file = infile.files.to_list()[0]
@@ -93,12 +85,12 @@ def clojure_jar_impl(ctx):
     ctx.actions.run_shell(
         command = symlink_sh,
         arguments = [src_dir.path, symlink_args],
-        inputs = [target.files.to_list()[0] for target in input_file_map.keys()],
+        inputs = [target.files.to_list()[0] for target in ctx.attr.srcs.keys()],
         outputs = [src_dir])
 
     runfiles = ctx.runfiles()
 
-    for dep in ctx.attr.srcs + ctx.attr.deps:
+    for dep in ctx.attr.srcs.keys() + ctx.attr.deps:
         if DefaultInfo in dep:
             runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
             runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
@@ -116,16 +108,7 @@ def clojure_jar_impl(ctx):
         if (f.path.endswith(".dylib") or f.path.endswith(".so")) and (f.path.rfind("solib_darwin") == -1):
             native_libs.append(f)
 
-    for f in native_libs:
-        dirname = f.dirname
-        if not contains(library_path, dirname):
-            library_path.append(dirname)
-
     aot_ns = list(ctx.attr.aot)
-
-    for dep in ctx.attr.srcs + ctx.attr.deps:
-        if CljInfo in dep:
-            aot_ns.extend(dep[CljInfo].transitive_aot)
 
     classpath_files = [src_dir] + toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
     aot_ns = distinct(aot_ns)

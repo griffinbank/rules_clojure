@@ -43,7 +43,7 @@
       (assert (exists? (->path *compile-path*)))
 
       (doseq [ns aot]
-        (println (str output-jar) "compiling" ns)
+        (println "compiling" ns "to" *compile-path* "for jar" (str output-jar))
         (compile (symbol ns))))
 
     (with-open [jar-os (-> output-jar .toFile FileOutputStream. BufferedOutputStream. JarOutputStream.)]

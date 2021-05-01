@@ -41,23 +41,17 @@ Differs from [rules_clojure](https://github.com/simuons/rules_clojure) that it u
 To avoid Clojure projects being forced into the maven directory layout, the design of this is slightly different:
 
 ```
-clojure_namespace(name = "bbq",
-	srcs = {"bbq.clj" : "/foo/bbq.clj"},
-	aot = ["foo.bbq"]
-	deps = ["@deps//:org_clojure_clojure","//resources","@deps//:org_clojure_spec_alpha"])
-
 clojure_library(
     name = "libbbq",
-    srcs = ["bbq"],
+    srcs = {"bbq.clj" : "/foo/bbq.clj"},
+	deps = ["foo"],
     aot = ["foo.core"])
 ```
 
-`clojure_namespace` declares a namespace, but produces no output on its own. `srcs` is a map of files to their destination location on the classpath.
-`deps` may be `clojure_namespaces`, `clojure_library` or any bazel Java target (`java_library`, etc). `aot` is a list of namespaces that _must_ be AOT'd in a library that includes this namespace.
+`clojure_library` produces a Jar. `srcs` is a map of files to their destination location on the classpath.
+`deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc). `aot` is a list of namespaces to compile.
 
 Because of clojure's general lack of concern about the difference between runtime and compile-time, all clojure rules use `deps` and don't pay attention to runtime_deps. These are passed to `runtime_deps` when calling java rules.
-
-`clojure_library` produces a jar. `srcs` is a list of targets to include in the jar. `aot` is a list of namespaces that should be aot'd, in addition to any mandatory AOTs from `clojure_namespace`. Prefer use `aot` on a namespace to indicate it _must_ be AOT'd, e.g. gen-class, and prefer `aot` on a library when fast startup is desired.
 
 ### clojure_repl
 
@@ -107,13 +101,13 @@ clojure_gen_srcs(
     deps_repo_tag = "@deps")
 ```
 
-`gen_srcs` defines a target which behaves similarly to [bazel-gazelle](https://github.com/bazelbuild/bazel-gazelle). When run, it introspects all directories under deps.edn `:paths`, and generates a BUILD.bazel file in each directory. `gen_src` defines `clojure_namespace` and `clojure_test` targets. `repl` and `library` targets must be defined by hand.
+`gen_srcs` defines a target which behaves similarly to [bazel-gazelle](https://github.com/bazelbuild/bazel-gazelle). When run, it introspects all directories under deps.edn `:paths`, and generates a BUILD.bazel file in each directory. `gen_src` defines `clojure_library` and `clojure_test` targets. Creates a library per namespace, with AOT on by default.
 
 Run `gen_srcs` again any time the ns declarations in the source tree change.
 
 ### Tests
 
-For files with paths containing `_test.clj`, gen-src defines both a `namespace` and a `test`. Because
+For files with paths containing `_test.clj`, gen-src defines both a `namespace` and a `test`.
 
 ```
 clojure_namespace(name = "bar_test",
@@ -127,7 +121,7 @@ clojure_test(name = "bar_test.test",
 
 ```
 
-Bazel requires target names to be unique within the same directory, so the namespace target always matches the `ns`, while the `test` target is `$ns.test`, so the binary test target is `foo_test.test`. ¯\_(ツ)_/¯
+Because Bazel requires target names to be unique within the same directory, the namespace target always matches the `ns`, while the `test` target is `$ns.test`, so the binary test target is `foo_test.test`. ¯\_(ツ)_/¯
 
 ### extra deps
 
@@ -163,10 +157,6 @@ Default is registered with `rules_clojure_toolchains` from [@rules_clojure//:rep
 Custom toolchain can be defined with `clojure_toolchain` rule from [@rules_clojure//:toolchains.bzl](toolchains.bzl)
 
 Please see [example](examples/setup/custom) of custom toolchain.
-
-
-# Known Issues
-- transitively loading native libraries:. Example: `clojure_library` A depends on `java_library` B, and B depends on `cc_library` C. The clojure library can't express a transitive dependency on the native library, so binary/test/repl rules must contain a direct dependency on B. This is because the required provider, JavaNativeLibraryInfo, isn't exposed to starlark.
 
 # Thanks
 
