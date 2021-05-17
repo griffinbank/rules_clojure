@@ -289,11 +289,16 @@
       (str/replace #"-" "_")
       (str/replace #"[^\w]" "_")))
 
-(defn dep-ns-aot-label
+(defn internal-dep-ns-aot-label
+  "Given a dep library and a namespace inside it, return the name of the AOT target"
+  [lib ns]
+  (str "ns_" (library->label lib) "_" (library->label ns)))
+
+(defn external-dep-ns-aot-label [{:keys [deps-repo-tag]} lib ns]
   "Given a dep library and a namespace inside it, return the name of the AOT target"
   [{:keys [deps-repo-tag]} lib ns]
   {:pre [deps-repo-tag]}
-  (str "ns_" (library->label lib) "_" (library->label ns)))
+  (str deps-repo-tag "//:ns_" (library->label lib) "_" (library->label ns)))
 
 (s/def ::dep-ns->label (s/map-of symbol? string?))
 
@@ -306,7 +311,7 @@
                 (let [nses (find/find-namespaces [(path->file path)])]
                   (->> nses
                        (map (fn [n]
-                              [n (dep-ns-aot-label (select-keys args [:deps-repo-tag]) lib-name n)]))
+                              [n (internal-dep-ns-aot-label lib-name n)]))
                        (into {}))))))
        (filter identity)
        (apply merge)))
@@ -542,8 +547,7 @@
             ns-label (str (basename path))
             test-label (str (basename path) ".test")
             overrides (get-in deps-bazel [:extra-deps (src->label {:workspace-root workspace-root} path)])
-            aot? (:aot overrides true)
-            overrides (dissoc overrides :aot)]
+            aot (get overrides :aot [(str ns-name)])]
         (when overrides
           (println ns-name "extra-info:" overrides))
         (->>
@@ -552,9 +556,7 @@
                                                                         {:name ns-label
                                                                          :srcs {(str (filename path)) (ns-classpath ns-name (extension path))}
                                                                          :deps [(str deps-repo-tag "//:org_clojure_clojure") "//resources"]
-                                                                         :aot (if aot?
-                                                                                [(str ns-name)]
-                                                                                [])}
+                                                                         :aot aot}
                                                                         (ns-deps (select-keys args [:workspace-root :src-ns->label :dep-ns->label :jar->lib :deps-repo-tag]) path ns-decl)
                                                                         (ns-import-deps args ns-decl)
                                                                         (ns-gen-class-deps args ns-decl)
@@ -675,10 +677,6 @@
     (println "gen-source-paths" deps-edn-path)
     (gen-source-paths- args (source-paths basis deps-edn-path))))
 
-(defn aot-jar-nses
-  "Given a jar, return a list of targets, "
-  [jar])
-
 (s/fdef gen-deps-build :args (s/cat :a (s/keys :req-un [::deps-out-dir ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel])))
 (defn gen-deps-build
   "generates the BUILD file for @deps//: with a single target containing all deps.edn-resolved dependencies"
@@ -707,9 +705,14 @@
                                                                                                  :runtime_deps deps}
                                                                                                 extra-deps))))]
                                             (map (fn [ns]
-                                                   (emit-bazel (list 'clojure_library (kwargs {:name (dep-ns-aot-label (select-keys args [:deps-repo-tag]) munged ns)
-                                                                                               :deps [(str ":" munged)]
-                                                                                               :aot [(str ns)]}))))
+                                                   (let [internal-label (internal-dep-ns-aot-label munged ns)
+                                                         external-label (external-dep-ns-aot-label (select-keys args [:deps-repo-tag]) munged ns)
+                                                         overrides (get-in deps-bazel [:extra-deps external-label])
+                                                         aot (get overrides :aot [(str ns)])]
+                                                     (emit-bazel (list 'clojure_library (kwargs (merge
+                                                                                                 {:name internal-label
+                                                                                                  :deps [(str ":" munged)]
+                                                                                                  :aot aot}))))))
                                                  (distinct (jar-nses jarpath))))))))))
         :encoding "UTF-8"))
 
