@@ -69,6 +69,7 @@
         d (if (string? d)
             (Paths/get d (into-array String []))
             d)]
+    (assert d)
     (reduce (fn [^Path p dir] (.resolve p dir)) d (rest dirs))))
 
 (defn file->path [f]
@@ -231,22 +232,6 @@
       ->path
       absolute))
 
-(s/fdef ->ns->path :args (s/cat :b ::basis) :ret ::ns-path)
-(defn ->ns->path
-  "Given a classpath string, return a map of namespace symbols to the .clj / .jar containing it on the classpath. `cp` is a classpath string"
-  [basis]
-  (->> basis
-       :classpath
-       (mapcat (fn [[path _]]
-                 (let [file (.toFile path)
-                       nses (find/find-namespaces [file])]
-                   (map (fn [n]
-                          ;; the classpath contains source directories, but we'd prefer source files here so we can look up ns->file directly
-                          (if (directory? file)
-                            [n (resolve-src-location path n)]
-                            [n (->path path)])) nses))))
-       (into {})))
-
 (s/fdef read-deps :args (s/cat :p path?))
 (defn read-deps [deps-path]
   (-> deps-path
@@ -296,6 +281,59 @@
        (filter identity)
        (into {})))
 
+(s/fdef library->label :args (s/cat :p symbol?) :ret string?)
+(defn library->label
+  "given the name of a library, e.g. `org.clojure/clojure`, munge the name into a bazel label"
+  [lib-name]
+  (-> lib-name
+      (str/replace #"-" "_")
+      (str/replace #"[^\w]" "_")))
+
+(defn dep-ns-aot-label
+  "Given a dep library and a namespace inside it, return the name of the AOT target"
+  [{:keys [deps-repo-tag]} lib ns]
+  {:pre [deps-repo-tag]}
+  (str "ns_" (library->label lib) "_" (library->label ns)))
+
+(s/def ::dep-ns->label (s/map-of symbol? string?))
+
+(defn ->dep-ns->label [{:keys [basis] :as args}]
+  {:pre [(map? basis)]}
+  (->> basis
+       :classpath
+       (map (fn [[path {:keys [lib-name]}]]
+              (when lib-name
+                (let [nses (find/find-namespaces [(path->file path)])]
+                  (->> nses
+                       (map (fn [n]
+                              [n (dep-ns-aot-label (select-keys args [:deps-repo-tag]) lib-name n)]))
+                       (into {}))))))
+       (filter identity)
+       (apply merge)))
+
+(s/fdef src-path->label :args (s/cat :a (s/keys :req-un [::workspace-root]) :p path?) :ret string?)
+(defn src-path->label [{:keys [workspace-root]} path]
+  (let [path (path-relative-to workspace-root path)]
+    (str "//" (dirname path) ":" (str (basename path)))))
+
+(s/def ::src-ns->label (s/map-of symbol? string?))
+
+(defn ->src-ns->label [{:keys [basis workspace-root] :as args}]
+  {:pre [(-> basis map?) (-> basis :classpath map?)]
+   :post [(map? %)]}
+  (->> basis
+       :classpath
+       (map (fn [[path {:keys [path-key]}]]
+              (when path-key
+                (let [nses (find/find-namespaces [(path->file path)])]
+                  (->> nses
+                       (map (fn [n]
+                              [n (-> (resolve-src-location path n)
+                                     (#(src-path->label (select-keys args [:workspace-root]) %)))]))
+                       (into {}))))))
+       (filter identity)
+       (apply merge)))
+
 (defn ->lib->jar
   "Return a map of library name to jar"
   [jar->lib]
@@ -316,6 +354,20 @@
               (-> e
                   (str/replace "/" ".")
                   symbol))))))
+
+(defn jar-nses [path]
+  (-> path
+      str
+      (JarFile.)
+      (find/find-namespaces-in-jarfile)))
+
+(defn jar-ns-decls
+  "Given a path to a jar, return a seq of ns-decls"
+  [path]
+  (-> path
+      str
+      (JarFile.)
+      (find/find-ns-decls-in-jarfile)))
 
 (s/def ::class->jar (s/map-of symbol? path?))
 (s/fdef ->class->jar :args (s/cat :b ::basis) :ret ::class->jar)
@@ -353,8 +405,7 @@
               (do
                 (assert (symbol? parent))
                 (assert (symbol? child))
-                (update dep-map parent (fnil conj #{}) child)
-                )
+                (update dep-map parent (fnil conj #{}) child))
               ;; empty parent means this is a toplevel dep, already covered elsewhere
               dep-map)
             )) {})))
@@ -364,43 +415,23 @@
   (let [path (path-relative-to workspace-root path)]
     (str "//" (dirname path) ":" (str (basename path)))))
 
-(s/fdef src->wildcard-patterns-for-path :args (s/cat :a (s/keys :req-un [::workspace-root]) :p path?) :ret (s/coll-of string?))
-(defn src->wildcard-patterns-for-path
-  "Return a collection of 'wildcard' target patterns that could match the given path"
-  [{:keys [workspace-root]} path]
-  (let [path (path-relative-to workspace-root path)
-        subpaths (map #(.subpath path 0 (inc %)) (range (.getNameCount path)))]
-
-    (mapcat (fn [p] (map (fn [target] (let [p0 (str (dirname p))]
-                                        (cond-> (str "//" p0)
-                                          (pos? (count p0)) (str "/")
-                                          :else (str target))))
-                         ["..." "...:all" ":*" ":all-targets"]))
-            subpaths)))
-
-(s/fdef library->label :args (s/cat :p symbol?) :ret string?)
-(defn library->label
-  "given the name of a library, e.g. `org.clojure/clojure`, munge the name into a bazel label"
-  [lib-name]
-  (-> lib-name
-      (str/replace #"-" "_")
-      (str/replace #"[^\w]" "_")))
-
 (s/fdef jar->label :args (s/cat :a (s/keys :req-un [::jar->lib] :opt-un [::deps-repo-tag]) :p path?) :ret string?)
 (defn jar->label
   "Given a .jar path, return the bazel label. `deps-repo-tag` is the name of the bazel repository where deps are held, e.g `@deps`"
   [{:keys [deps-repo-tag jar->lib] :as args} jarpath]
   (str deps-repo-tag "//:" (->> jarpath (get! jar->lib) library->label)))
 
-(s/fdef ns->label :args (s/cat :a (s/keys :req-un [::workspace-root ::ns->path ::deps-repo-tag
-                                                   ]) :n symbol?))
+(s/fdef ns->label :args (s/cat :a (s/keys :req-un [::src-ns->label ::dep-ns->label]) :n symbol?))
 (defn ns->label
   "given the ns-map and a namespace, return a map of `:src` or `:dep` to the file/jar where it is located"
-  [{:keys [ns->path jar->lib workspace-root deps-repo-tag] :as args} ns]
-  (let [path (get! ns->path ns)]
-    {:deps (if (jar? path)
-             [(jar->label (select-keys args [:deps-repo-tag :jar->lib]) path)]
-             [(src->label {:workspace-root workspace-root} path)])}))
+  [{:keys [src-ns->label dep-ns->label deps-repo-tag] :as args} ns]
+  {:pre [(map? src-ns->label)]}
+  (let [label  (or (get src-ns->label ns)
+                   (when-let [label (get dep-ns->label ns)]
+                     (assert deps-repo-tag)
+                     (str deps-repo-tag "//:" label)))]
+    (assert label (str "couldn't find label for " ns))
+    {:deps [label]}))
 
 (defn get-ns-decl [path]
   (let [form (-> path
@@ -411,14 +442,14 @@
     (when (and form (= 'ns (first form)))
       form)))
 
-(s/fdef ns-deps :args (s/cat :a (s/keys :req-un [::workspace-root ::ns->path ::jar->lib ::deps-repo-tag]) :p path? :d ::ns-decl))
+(s/fdef ns-deps :args (s/cat :a (s/keys :req-un [::workspace-root ::jar->lib ::deps-repo-tag]) :p path? :d ::ns-decl))
 (defn ns-deps
   "Given the ns declaration for a .clj file, return a map of {:srcs [labels], :data [labels]} for all :require statements"
-  [{:keys [ns->path workspace-root jar->lib deps-repo-tag] :as args} path ns-decl]
+  [{:keys [src-ns->label dep-ns->label workspace-root jar->lib deps-repo-tag] :as args} path ns-decl]
   (try
     (->> ns-decl
          parse/deps-from-ns-decl
-         (map (partial ns->label (select-keys args [:ns->path :jar->lib :workspace-root :deps-repo-tag :workspace-root])))
+         (map (partial ns->label (select-keys args [:src-ns->label :dep-ns->label :deps-repo-tag])))
          (filter identity)
          (distinct)
          (apply merge-with concat))
@@ -500,40 +531,33 @@
                (str/replace "-" "_")
                (str/replace "." "/")) "." extension))
 
-(defn extra-dependencies
-  "get extra dependencies, handling wildcard labels as per
-  https://docs.bazel.build/versions/master/guide.html#specifying-targets-to-build"
-  [{:keys [deps-bazel] :as args} path]
-  (let [target-patterns (conj (src->wildcard-patterns-for-path args path)
-                               (src->label args path))]
-    (->> target-patterns
-         (mapcat (fn [label] (get-in deps-bazel [:extra-deps label])))
-         seq)))
-
-(s/fdef ns-rules :args (s/cat :a (s/keys :req-un [::workspace-root ::ns->path ::jar->lib ::deps-repo-tag ::deps-bazel]) :f path?))
+(s/fdef ns-rules :args (s/cat :a (s/keys :req-un [::workspace-root ::jar->lib ::deps-repo-tag ::deps-bazel]) :f path?))
 (defn ns-rules
   "given a .clj path, return all rules for the file "
   [{:keys [workspace-root deps-bazel deps-repo-tag] :as args} path]
+  (assert (map? (:src-ns->label args)))
   (try
     (if-let [[_ns ns-name & refs :as ns-decl] (get-ns-decl path)]
       (let [test? (test-ns? path)
             ns-label (str (basename path))
             test-label (str (basename path) ".test")
-            aot? true
-            overrides (extra-dependencies args path)]
+            overrides (get-in deps-bazel [:extra-deps (src->label {:workspace-root workspace-root} path)])
+            aot? (:aot overrides true)
+            overrides (dissoc overrides :aot)]
         (when overrides
-          (println "extra-info:" overrides))
+          (println ns-name "extra-info:" overrides))
         (->>
          (concat
           [(emit-bazel (list 'clojure_library (kwargs (-> (merge-with into
                                                                         {:name ns-label
                                                                          :srcs {(str (filename path)) (ns-classpath ns-name (extension path))}
-                                                                         :deps [(str deps-repo-tag "//:org_clojure_clojure") "//resources"]}
-                                                                        (ns-deps (select-keys args [:workspace-root :ns->path :jar->lib :deps-repo-tag]) path ns-decl)
+                                                                         :deps [(str deps-repo-tag "//:org_clojure_clojure") "//resources"]
+                                                                         :aot (if aot?
+                                                                                [(str ns-name)]
+                                                                                [])}
+                                                                        (ns-deps (select-keys args [:workspace-root :src-ns->label :dep-ns->label :jar->lib :deps-repo-tag]) path ns-decl)
                                                                         (ns-import-deps args ns-decl)
                                                                         (ns-gen-class-deps args ns-decl)
-                                                                        (when aot?
-                                                                          {:aot [(str ns-name)]})
                                                                         overrides)
                                                             (update :deps (comp vec distinct))))))]
           (when test?
@@ -546,11 +570,11 @@
       (println "while processing" path)
       (throw t))))
 
-(s/fdef gen-dir :args (s/cat :a (s/keys :req-un [::workspace-root ::ns->path ::jar->lib ::deps-repo-tag]) :f path?))
+(s/fdef gen-dir :args (s/cat :a (s/keys :req-un [::workspace-root ::jar->lib ::deps-repo-tag]) :f path?))
 (defn gen-dir
   "given a source directory, write a BUILD.bazel for all .clj files in the directory. non-recursive"
   [args dir]
-  (println "writing to" (->path dir "BUILD.bazel"))
+  (assert (map? (:src-ns->label args)))
   (let [paths (->> dir
                    ls
                    (filter (fn [path]
@@ -572,10 +596,11 @@
         path->file
         (spit content :encoding "UTF-8"))))
 
-(s/fdef gen-source-paths- :args (s/cat :a (s/keys :req-un [::workspace-root ::ns->path ::jar->lib ::deps-repo-tag ::deps-bazel]) :paths (s/coll-of path?)))
+(s/fdef gen-source-paths- :args (s/cat :a (s/keys :req-un [::workspace-root ::src-ns->label ::dep-ns->label ::jar->lib ::deps-repo-tag ::deps-bazel]) :paths (s/coll-of path?)))
 (defn gen-source-paths-
   "gen-dir for every directory on the classpath."
   [args paths]
+  (assert (map? (:src-ns->label args)))
   (->> paths
        (mapcat (fn [path]
                  (ls-r path)))
@@ -643,15 +668,19 @@
   deps-repo-tag: Bazel workspace repo for deps, typically `@deps`
   "
   [{:keys [deps-edn-path deps-repo-tag basis jar->lib workspace-root aliases] :as args}]
-  (let [ns->path (->ns->path basis)
-        args (merge args
-                    {:ns->path ns->path
+  (let [args (merge args
+                    {:src-ns->label (->src-ns->label args)
+                     :dep-ns->label (->dep-ns->label args)
                      :jar->lib jar->lib})]
     (println "gen-source-paths" deps-edn-path)
     (gen-source-paths- args (source-paths basis deps-edn-path))))
 
-(s/fdef gen-toplevel-build :args (s/cat :a (s/keys :req-un [::deps-out-dir ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel])))
-(defn gen-toplevel-build
+(defn aot-jar-nses
+  "Given a jar, return a list of targets, "
+  [jar])
+
+(s/fdef gen-deps-build :args (s/cat :a (s/keys :req-un [::deps-out-dir ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel])))
+(defn gen-deps-build
   "generates the BUILD file for @deps//: with a single target containing all deps.edn-resolved dependencies"
   [{:keys [deps-out-dir deps-build-dir jar->lib lib->jar lib->deps deps-repo-tag deps-bazel] :as args}]
   (println "writing to" (-> (->path deps-build-dir "BUILD.bazel") path->file))
@@ -660,21 +689,28 @@
                           [(emit-bazel (list 'package (kwargs {:default_visibility ["//visibility:public"]})))
                            (emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library"))]
                           (->> jar->lib
-                               (map (fn [[jarpath lib]]
-                                      (let [munged (str (library->label lib))
-                                            deps (->> (get lib->deps lib)
-                                                      (mapv (fn [lib]
-                                                              (str ":" (library->label lib)))))
-                                            extra-deps-key (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
-                                            extra-deps (get-in deps-bazel [:extra-deps extra-deps-key])]
-                                        (when extra-deps
-                                          (println lib "extra-deps:" extra-deps))
-                                        (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
-                                        (emit-bazel (list 'java_import (kwargs (merge-with into
-                                                                                           {:name munged
-                                                                                            :jars [(path-relative-to deps-build-dir jarpath)]
-                                                                                            :runtime_deps deps}
-                                                                                           extra-deps))))))))))
+                               (mapcat (fn [[jarpath lib]]
+                                         (let [munged (str (library->label lib))
+                                               deps (->> (get lib->deps lib)
+                                                         (mapv (fn [lib]
+                                                                 (str ":" (library->label lib)))))
+                                               extra-deps-key (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
+                                               extra-deps (get-in deps-bazel [:extra-deps extra-deps-key])]
+                                           (when extra-deps
+                                             (println lib "extra-deps:" extra-deps))
+                                           (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
+
+                                           (concat
+                                            [(emit-bazel (list 'java_import (kwargs (merge-with into
+                                                                                                {:name munged
+                                                                                                 :jars [(path-relative-to deps-build-dir jarpath)]
+                                                                                                 :runtime_deps deps}
+                                                                                                extra-deps))))]
+                                            (map (fn [ns]
+                                                   (emit-bazel (list 'clojure_library (kwargs {:name (dep-ns-aot-label (select-keys args [:deps-repo-tag]) munged ns)
+                                                                                               :deps [(str ":" munged)]
+                                                                                               :aot [(str ns)]}))))
+                                                 (distinct (jar-nses jarpath))))))))))
         :encoding "UTF-8"))
 
 (defn gen-maven-install
@@ -746,13 +782,13 @@
         class->jar (->class->jar basis)
         lib->deps (->lib->deps basis)]
 
-    (gen-toplevel-build {:deps-bazel deps-bazel
-                         :deps-out-dir deps-out-dir
-                         :deps-build-dir deps-build-dir
-                         :deps-repo-tag deps-repo-tag
-                         :jar->lib jar->lib
-                         :lib->jar lib->jar
-                         :lib->deps lib->deps})))
+    (gen-deps-build {:deps-bazel deps-bazel
+                     :deps-out-dir deps-out-dir
+                     :deps-build-dir deps-build-dir
+                     :deps-repo-tag deps-repo-tag
+                     :jar->lib jar->lib
+                     :lib->jar lib->jar
+                     :lib->deps lib->deps})))
 
 (defn srcs [{:keys [deps-out-dir deps-edn-path deps-repo-tag aliases workspace-root]
              :or {deps-repo-tag "@deps"}}]

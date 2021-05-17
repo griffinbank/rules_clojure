@@ -1,6 +1,8 @@
 (ns rules-clojure.jar
   (:require [clojure.java.io :as io]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [clojure.tools.namespace.find :as find]
+            [clojure.tools.namespace.parse :as parse])
   (:import [java.io BufferedOutputStream FileOutputStream]
            [java.util.jar Manifest JarEntry JarFile JarOutputStream]
            [java.nio.file Files Path Paths FileSystem FileSystems]))
@@ -21,6 +23,9 @@
             d)]
     (reduce (fn [^Path p dir] (.resolve p dir)) d (rest dirs))))
 
+(defn path->file [p]
+  (.toFile p))
+
 (defn absolute [path]
   (.toAbsolutePath path))
 
@@ -30,6 +35,22 @@
 (defn path-relative-to
   [a b]
   (.relativize (absolute a) (absolute b)))
+
+(defn non-transitive-compile
+  [input-dir ns]
+  (assert (symbol? ns))
+  (->> (-> input-dir absolute path->file)
+       (find/find-ns-decls-in-dir)
+       (filter (fn [ns-decl]
+                 (let [found-ns (-> ns-decl second)]
+                   (assert (symbol? found-ns))
+                   (= ns found-ns))))
+       (first)
+       ((fn [ns-decl]
+          (let [deps (parse/deps-from-ns-decl ns-decl)]
+            (doseq [d deps]
+              (require d))
+            (compile ns))))))
 
 (defn -main [& args]
   (let [args (apply hash-map (map read-string args))
@@ -43,8 +64,7 @@
       (assert (exists? (->path *compile-path*)))
 
       (doseq [ns aot]
-        (println "compiling" ns "to" *compile-path* "for jar" (str output-jar))
-        (compile (symbol ns))))
+        (non-transitive-compile input-dir (symbol ns))))
 
     (with-open [jar-os (-> output-jar .toFile FileOutputStream. BufferedOutputStream. JarOutputStream.)]
       (put-next-entry! jar-os JarFile/MANIFEST_NAME)

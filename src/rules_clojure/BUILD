@@ -13,7 +13,8 @@ clojure_library(
 
 clojure_library(name="jar",
                 srcs= {"jar.clj": "/rules_clojure/jar.clj"},
-                deps=["@rules_clojure_maven//:org_clojure_clojure"],
+                deps=["@rules_clojure_maven//:org_clojure_clojure",
+                      "@rules_clojure_maven//:org_clojure_tools_namespace"],
                 compiledeps=[], # prevent it from depending on itself
                 aot=["rules-clojure.jar"])
 

@@ -51,7 +51,7 @@ done
 """
 
 def clojure_jar_impl(ctx):
-    toolchain = ctx.toolchains["@rules_clojure//:toolchain"]
+    toolchain = ctx.toolchains["@rules_clojure//:toolchain_type"]
 
     src_dir = ctx.actions.declare_directory("%s.srcs" % ctx.label.name)
 

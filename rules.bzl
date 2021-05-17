@@ -14,7 +14,7 @@ clojure_library = rule(
         "javacopts": attr.string_list(default = [], allow_empty = True, doc = "Optional javac compiler options"),
     },
     provides = [JavaInfo],
-    toolchains = ["@rules_clojure//:toolchain"],
+    toolchains = ["@rules_clojure//:toolchain_type"],
     implementation = _clojure_jar_impl,
 )
 
