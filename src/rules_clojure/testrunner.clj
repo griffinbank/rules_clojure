@@ -11,8 +11,7 @@
       (require the-ns)
       (let [test-report (clojure.test/run-tests the-ns)]
         (println test-report)
-        (if (and (pos? (:test test-report))
-                 (zero? (:fail test-report))
+        (if (and (zero? (:fail test-report))
                  (zero? (:error test-report)))
           (System/exit 0)
           (System/exit 1)))
