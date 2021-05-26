@@ -708,10 +708,11 @@
                                                    (let [internal-label (internal-dep-ns-aot-label munged ns)
                                                          external-label (external-dep-ns-aot-label (select-keys args [:deps-repo-tag]) munged ns)
                                                          overrides (get-in deps-bazel [:extra-deps external-label])
-                                                         aot (get overrides :aot [(str ns)])]
+                                                         aot (get overrides :aot [(str ns)])
+                                                         extra-deps (get overrides :deps [])]
                                                      (emit-bazel (list 'clojure_library (kwargs (merge
                                                                                                  {:name internal-label
-                                                                                                  :deps [(str ":" munged)]
+                                                                                                  :deps (vec (concat [(str ":" munged)] extra-deps))
                                                                                                   :aot aot}))))))
                                                  (distinct (jar-nses jarpath))))))))))
         :encoding "UTF-8"))
