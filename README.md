@@ -38,12 +38,12 @@ Differs from [rules_clojure](https://github.com/simuons/rules_clojure) that it u
 
 `clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code, but it delegates to `java_library` as much as possible.
 
-To avoid Clojure projects being forced into the maven directory layout, the design of this is slightly different:
+`rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, the design of this is slightly different:
 
 ```
 clojure_library(
     name = "libbbq",
-    srcs = {"bbq.clj" : "/foo/bbq.clj"},
+    srcs = {"src/foo/bbq.clj" : "/foo/bbq.clj"},
 	deps = ["foo"],
     aot = ["foo.core"])
 ```
@@ -130,15 +130,10 @@ Sometimes the dependency graph isn't complete, for example when using JVM librar
 ```clojure
 :bazel {:extra-deps {"@deps//:com_cognitect_aws_api" {:deps ["@deps//:com_cognitect_aws_endpoints"]}
                       "//src/foo/foo_s3" {:deps ["@deps//:com_cognitect_aws_s3"]}
-                      "@deps//:caesium_caesium" {:deps ["@griffin//native:libsodium"]
-                      "//test/..." {:deps ["@deps//::some_dep_for_all_tests"]}
+					  "//src/bar/core" {:aot []}}}
 ```
 
-put `:bazel {:extra-deps {}}` at the top level of your deps.edn file. `:extra-deps` will be merged in when running `gen_srcs`
-
-Deps are a map of bazel labels to a map of extra fields to merge into `clojure_namespace` and imported deps.
-
-[Wildcard](https://docs.bazel.build/versions/master/guide.html#specifying-targets-to-build) rules are supported _only_ on the left hand side of extra-deps declarations. This is to ensure that overly broad dependencies aren't specified
+put `:bazel {:extra-deps {}}` at the top level of your deps.edn file. `:extra-deps` will be merged in when running `gen_srcs`. Deps are a map of bazel labels to a map of extra fields to merge into `clojure_namespace` and imported deps. `:aot []` is also supported
 
 ## Resources
 
