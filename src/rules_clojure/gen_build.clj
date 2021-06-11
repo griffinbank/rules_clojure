@@ -547,9 +547,13 @@
             ns-label (str (basename path))
             test-label (str (basename path) ".test")
             overrides (get-in deps-bazel [:extra-deps (src->label {:workspace-root workspace-root} path)])
+            test-full-label (str "//" (path-relative-to workspace-root (dirname path)) ":" (str (basename path) ".test"))
+            test-overrides (get-in deps-bazel [:extra-deps test-full-label])
             aot (get overrides :aot [(str ns-name)])]
         (when overrides
           (println ns-name "extra-info:" overrides))
+        (when test-overrides
+          (println ns-name "test extra-info:" test-overrides))
         (->>
          (concat
           [(emit-bazel (list 'clojure_library (kwargs (-> (merge-with into
@@ -563,9 +567,11 @@
                                                                         overrides)
                                                             (update :deps (comp vec distinct))))))]
           (when test?
-            [(emit-bazel (list 'clojure_test (kwargs {:name test-label
-                                                      :test_ns (str ns-name)
-                                                      :deps [ns-label]})))]))
+            [(emit-bazel (list 'clojure_test (kwargs (merge
+                                                      {:name test-label
+                                                       :test_ns (str ns-name)
+                                                       :deps [ns-label]}
+                                                      test-overrides))))]))
          (filterv identity)))
       (println "WARNING: skipping" path "due to no ns declaration"))
     (catch Throwable t
