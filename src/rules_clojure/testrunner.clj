@@ -1,6 +1,5 @@
-(ns rules-clojure.testrunner
+(ns rules_clojure.testrunner
   (:require [clojure.test])
-  ;; gen-class for speed
   (:gen-class))
 
 (defn -main [& args]

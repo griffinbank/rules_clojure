@@ -1,4 +1,4 @@
-(ns rules-clojure.jar
+(ns rules_clojure.jar
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.namespace.find :as find]

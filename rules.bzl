@@ -1,22 +1,50 @@
 load("//rules:jar.bzl", _clojure_jar_impl = "clojure_jar_impl")
-load("//rules:namespace.bzl", _clojure_ns_impl = "clojure_ns_impl")
 
-def _clojure_path_impl(ctx):
-    return [DefaultInfo(files = depset([]))]
+def _clojure_aot_annotation_impl(ctx):
+    ctx.actions.expand_template(
+        template = ctx.file._template,
+        output = ctx.outputs.dest,
+        substitutions = {
+            "{ns}": ctx.attr.ns,
+        })
 
-clojure_library = rule(
-    doc = "Define a clojure library",
-    attrs = {
-        "srcs": attr.label_keyed_string_dict(mandatory = False, doc = "a map of the .clj{,c,s} source files to their destination on the classpath", allow_files = True, default = {}),
-        "deps": attr.label_list(default = [], providers = [[JavaInfo]]),
-        "aot": attr.string_list(default = [], doc = "namespaces to be compiled"),
-        "compiledeps": attr.label_list(default = ["@rules_clojure//src/rules_clojure:jar"]),
-        "javacopts": attr.string_list(default = [], allow_empty = True, doc = "Optional javac compiler options"),
+_clojure_aot_annotation = rule(
+    attrs= {
+        "ns": attr.string(),
+        "dest": attr.output(),
+        "_template": attr.label(default="//java/rules_clojure:aot_template.java", allow_single_file=True)
     },
-    provides = [JavaInfo],
-    toolchains = ["@rules_clojure//:toolchain_type"],
-    implementation = _clojure_jar_impl,
-)
+    implementation = _clojure_aot_annotation_impl)
+
+def clojure_library(name, **kwargs):
+    aot = kwargs.get("aot",[])
+    if "aot" in kwargs:
+        kwargs.pop("aot")
+
+    if len(aot) > 0:
+        preaot = "%s.preaot" % name
+        plugin_classpath = "%s.plugin_classpath" % name
+        aot_anns = []
+        native.java_library(name=preaot,
+                            **kwargs)
+        for ns in aot:
+            aot_ann = ":%s/package-info.java" % name
+            aot_anns.append(aot_ann)
+            _clojure_aot_annotation(name="%s.gen_annotate" % name,
+                                    dest=aot_ann,
+                                    ns=ns)
+        # use this plugin to add lib source to the plugin classpath
+        native.java_plugin(name=plugin_classpath,
+                           deps=[preaot,
+                                 "@rules_clojure//java/tools/aot"])
+        native.java_library(name=name,
+                            srcs=aot_anns,
+                            plugins=[plugin_classpath],
+                            deps=[preaot,
+                                  "@rules_clojure//java/tools/aot"])
+    else:
+        native.java_library(name=name,
+                            **kwargs)
 
 def clojure_binary(name, **kwargs):
     deps = []
@@ -48,14 +76,14 @@ def clojure_repl(name, deps=[], ns=None, **kwargs):
                        args = args,
                        **kwargs)
 
-def clojure_test(name, *, test_ns, deps=[], **kwargs):
+def clojure_test(name, *, test_ns, runtime_deps=[], **kwargs):
     # ideally the library name and the bin name would be the same. They can't be.
     # clojure src files would like to depend on `foo_test`, so mangle the test binary, not the src jar name
 
     native.java_test(name=name,
-                     runtime_deps = deps + ["@rules_clojure//src/rules_clojure:testrunner"],
+                     runtime_deps = runtime_deps + ["@rules_clojure//src/rules_clojure:testrunner"],
                      use_testrunner = False,
                      main_class="clojure.main",
                      jvm_flags=["-Dclojure.main.report=stderr"],
-                     args = ["-m", "rules-clojure.testrunner", test_ns],
+                     args = ["-m", "rules_clojure.testrunner", test_ns],
                      **kwargs)
