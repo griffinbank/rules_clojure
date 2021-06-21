@@ -165,8 +165,7 @@ def clojure_jar_impl(ctx):
         mnemonic = "ClojureJar",
         progress_message = "Compiling %s" % ctx.label,
         execution_requirements={"supports-workers":"1",
-                                # "requires-worker-protocol":"json"
-                                })
+                                "requires-worker-protocol":"json"})
 
     return [
         DefaultInfo(
