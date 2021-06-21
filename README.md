@@ -36,22 +36,23 @@ load("@rules_clojure//:toolchains.bzl", "rules_clojure_toolchains")
 
 Differs from [rules_clojure](https://github.com/simuons/rules_clojure) that it uses `java_library` and `java_binary` as much as possible.
 
-`clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code, but it delegates to `java_library` as much as possible.
+`clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code.
 
-`rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, the design of this is slightly different:
+`rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use `resource_strip_prefix`, which is present in both the built-in `java_library`, and `clojure_library`:
 
 ```
 clojure_library(
     name = "libbbq",
-    srcs = {"src/foo/bbq.clj" : "/foo/bbq.clj"},
+    srcs = ["bbq.clj"],
 	deps = ["foo"],
+	resource_strip_prefix = ["src"],
     aot = ["foo.core"])
 ```
 
-`clojure_library` produces a Jar. `srcs` is a map of files to their destination location on the classpath.
+`clojure_library` produces a Jar. `srcs` is list of file targets.
 `deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc). `aot` is a list of namespaces to compile.
 
-Because of clojure's general lack of concern about the difference between runtime and compile-time, all clojure rules use `deps` and don't pay attention to runtime_deps. These are passed to `runtime_deps` when calling java rules.
+Because of clojure's general lack of concern about the difference between runtime and compile-time (e.g. AOT), all clojure rules accept `deps` only. Output jars will use `deps` for both compile time and runtime dependencies.
 
 ### clojure_repl
 
@@ -107,17 +108,17 @@ Run `gen_srcs` again any time the ns declarations in the source tree change.
 
 ### Tests
 
-For files with paths containing `_test.clj`, gen-src defines both a `namespace` and a `test`.
+For files with paths containing `_test.clj`, gen-src defines both a `clojure_library` and `clojure_test`:
 
 ```
-clojure_namespace(name = "bar_test",
-	srcs = {"bar_test.clj" : "/foo/bar_test.clj"},
+clojure_library(name = "bar_test",
+	srcs = ["bar_test.clj"],
 	deps = [...],
 	testonly = True)
 
 clojure_test(name = "bar_test.test",
 	test_ns = "foo.bar-test",
-	srcs = ["bar_test"])
+	deps = ["bar_test"])
 
 ```
 

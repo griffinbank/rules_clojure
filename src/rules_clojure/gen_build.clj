@@ -436,7 +436,7 @@
                      (assert deps-repo-tag)
                      (str deps-repo-tag "//:" label)))]
     (assert label (str "couldn't find label for " ns))
-    {:runtime_deps [label]}))
+    {:deps [label]}))
 
 (defn get-ns-decl [path]
   (let [form (-> path
@@ -481,8 +481,8 @@
                                                  (symbol (str package "." c))) classes)))))
          (map (fn [class]
                 (when-let [jar (get class->jar class)]
-                  {:runtime_deps [(jar->label {:deps-repo-tag deps-repo-tag
-                                               :jar->lib jar->lib} jar)]})))
+                  {:deps [(jar->label {:deps-repo-tag deps-repo-tag
+                                       :jar->lib jar->lib} jar)]})))
          (filter identity)
          (distinct)
          (apply merge-with concat))))
@@ -499,8 +499,8 @@
             (let [args (apply hash-map (rest form))]
               (when-let [class (:extends args)]
                 (when-let [jar (get class->jar class)]
-                  {:runtime_deps [(jar->label {:deps-repo-tag deps-repo-tag
-                                               :jar->lib jar->lib} jar)]}))))))))
+                  {:deps [(jar->label {:deps-repo-tag deps-repo-tag
+                                       :jar->lib jar->lib} jar)]}))))))))
 
 (defn test-ns? [path]
   (re-find #"_test.clj" (str path)))
@@ -580,7 +580,9 @@
             overrides (get-in deps-bazel [:extra-deps src-label])
             test-full-label (str "//" (path-relative-to workspace-root (dirname path)) ":" (str (basename path) ".test"))
             test-overrides (get-in deps-bazel [:extra-deps test-full-label])
-            aot (if (requires-aot? ns-decl) [(str ns-name)] [])
+            aot (if true ;; (requires-aot? ns-decl)
+                  [(str ns-name)]
+                  [])
             aot (get overrides :aot aot)]
         (when overrides
           (println ns-name "extra-info:" overrides))
@@ -590,25 +592,26 @@
          (concat
           [(emit-bazel (list 'clojure_library (kwargs (-> (merge-with into
                                                                       {:name ns-label
-                                                                       :resources [(filename path)]
-                                                                       :aot aot
-
-                                                                       :runtime_deps [(str deps-repo-tag "//:org_clojure_clojure")]}
+                                                                       :srcs [(filename path)]
+                                                                       :deps [(str deps-repo-tag "//:org_clojure_clojure")]}
+                                                                      (when (seq aot)
+                                                                        {:aot aot})
                                                                       (when-let [strip-path (strip-path (select-keys args [:basis :workspace-root]) path)]
                                                                         {:resource_strip_prefix strip-path})
                                                                    (ns-deps (select-keys args [:workspace-root :src-ns->label :dep-ns->label :jar->lib :deps-repo-tag]) path ns-decl)
                                                                    (ns-import-deps args ns-decl)
                                                                    (ns-gen-class-deps args ns-decl)
                                                                    overrides)
-                                                       (as-> $
-                                                           (cond-> $
-                                                             (seq (:deps $)) (update :deps (comp vec distinct))
-                                                             (:runtime_deps $) (update :runtime_deps (comp vec distinct))))))))]
+                                                          (as-> m
+                                                              (cond-> m
+                                                                (seq (:deps m)) (update :deps (comp vec distinct))
+                                                                (:deps m) (update :deps (comp vec distinct)))
+                                                            )))))]
           (when test?
             [(emit-bazel (list 'clojure_test (kwargs (merge
                                                       {:name test-label
                                                        :test_ns (str ns-name)
-                                                       :runtime_deps [(str ":" ns-label)]}
+                                                       :deps [(str ":" ns-label)]}
                                                       test-overrides))))]))
          (filterv identity)))
       (println "WARNING: skipping" path "due to no ns declaration"))
@@ -719,37 +722,39 @@
   (println "writing to" (-> (->path deps-build-dir "BUILD.bazel") path->file))
   (spit (-> (->path deps-build-dir "BUILD.bazel") path->file)
         (str/join "\n\n" (concat
-                          [(emit-bazel (list 'package (kwargs {:default_visibility ["//visibility:public"]})))]
+                          [(emit-bazel (list 'package (kwargs {:default_visibility ["//visibility:public"]})))
+                           (emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library"))]
                           (->> jar->lib
+                               (sort-by (fn [[k v]] (library->label v)))
                                (mapcat (fn [[jarpath lib]]
-                                         (let [munged (str (library->label lib))
+                                         (let [label (library->label lib)
+                                               preaot (str label ".preaot")
                                                deps (->> (get lib->deps lib)
                                                          (mapv (fn [lib]
                                                                  (str ":" (library->label lib)))))
                                                extra-deps-key (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
-                                               extra-deps (get-in deps-bazel [:extra-deps extra-deps-key])]
+                                               extra-deps (-> deps-bazel
+                                                              (get-in [:extra-deps extra-deps-key]))
+                                               aot (or (:aot extra-deps) (mapv str (find/find-namespaces [(path->file jarpath)])))
+                                               extra-deps (dissoc extra-deps :aot)]
                                            (when extra-deps
                                              (println lib "extra-deps:" extra-deps))
                                            (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
 
-                                           (concat
-                                            [(emit-bazel (list 'java_import (kwargs (merge-with into
-                                                                                                {:name munged
-                                                                                                 :jars [(path-relative-to deps-build-dir jarpath)]
-                                                                                                 :runtime_deps deps}
-                                                                                                extra-deps))))]
-                                            (map (fn [ns]
-                                                   (let [internal-label (internal-dep-ns-aot-label munged ns)
-                                                         external-label (external-dep-ns-aot-label (select-keys args [:deps-repo-tag]) munged ns)
-                                                         overrides (get-in deps-bazel [:extra-deps external-label])
-                                                         aot (get overrides :aot [(str ns)])
-                                                         extra-deps (get overrides :runtime_deps [])]
-                                                     (emit-bazel (list 'java_library (kwargs (merge
-                                                                                              {:name internal-label
-                                                                                               :runtime_deps (vec (concat [(str ":" munged)] extra-deps))
-                                                                                               ;; :aot aot
-                                                                                               }))))))
-                                                 (distinct (jar-nses jarpath))))))))))
+                                           [(emit-bazel (list 'java_import (kwargs (merge-with into
+                                                                                               {:name (if (seq aot)
+                                                                                                        preaot
+                                                                                                        label)
+                                                                                                :jars [(path-relative-to deps-build-dir jarpath)]}
+                                                                                               (when (seq deps)
+                                                                                                 {:deps deps
+                                                                                                  :runtime_deps deps})
+                                                                                               extra-deps))))
+                                            (when (seq aot)
+                                              (emit-bazel (list 'clojure_library (kwargs {:name label
+                                                                                          :deps [preaot]
+                                                                                          :aot aot}))))]
+                                           ))))))
         :encoding "UTF-8"))
 
 (defn gen-maven-install

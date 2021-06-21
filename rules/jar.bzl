@@ -1,4 +1,3 @@
-load("@bazel_skylib//lib:paths.bzl", "paths")
 
 def contains(lst, item):
     for x in lst:
@@ -12,85 +11,98 @@ def distinct(lst):
         d[i] = True
     return d.keys()
 
-## This is annoyingly painful. It's the result of several constraints:
-##  Bazel wants every output to be declared using either declare_file,
-##  or declare_directory. We would like all source files to be in a
-##  single directory, `src`, so it's easy to specify the classpath,
-##  and easy to create jars (just zip up everything under `src`). It
-##  would be nice if we could just use `declare_file` + `symlink`, but
-##  that's not possible. If we declare_file both foo/bar.clj
-##  foo/bbq.clj, bazel complains about one being a prefix of the
-##  other. Therefore, use `declare_directory`. declare_directory means
-##  that bazel doesn't pay attention to the contents of the
-##  directory. But if we declare directory, only one action can create
-##  that directory, which means the script to create the directory
-##  must also symlink all files into place in the same go.
+def paths(resources, resource_strip_prefix):
+    """Return a list of path tuples (target, source) where:
+        target - is a path in the archive (with given prefix stripped off)
+        source - is an absolute path of the resource file
 
-##
+    Tuple ordering is aligned with zipper format ie zip_path=file
 
-symlink_sh = """
-#!/bin/bash
-set -euo pipefail;
+    Args:
+        resources: list of file objects
+        resource_strip_prefix: string to strip from resource path
+    """
+    return [(_target_path(resource, resource_strip_prefix), resource.path) for resource in resources]
 
-# the root directory
-mkdir -p $1;
+def _strip_prefix(path, prefix):
+    return path[len(prefix):] if path.startswith(prefix) else path
 
-shift;
+def _target_path(resource, resource_strip_prefix):
+    path = _target_path_by_strip_prefix(resource, resource_strip_prefix) if resource_strip_prefix else _target_path_by_default_prefixes(resource)
+    return _strip_prefix(path, "/")
 
-# pairs of src->dest symlinks
-while (($#)); do
-    src=$1
-    dest=$2
-    destdir=$(dirname $dest)
+def _target_path_by_strip_prefix(resource, resource_strip_prefix):
+    # Start from absolute resource path and then strip roots so we get to correct short path
+    # resource.short_path sometimes give weird results ie '../' prefix
+    path = resource.path
+    if resource_strip_prefix != resource.owner.workspace_root:
+        path = _strip_prefix(path, resource.owner.workspace_root + "/")
+    path = _strip_prefix(path, resource.root.path + "/")
 
-    mkdir -p $destdir
-    cp $1 $2
+    # proto_library translates strip_import_prefix to proto_source_root which includes root so we have to strip it
+    prefix = _strip_prefix(resource_strip_prefix, resource.root.path + "/")
+    if not path.startswith(prefix):
+        fail("Resource file %s is not under the specified prefix %s to strip" % (path, prefix))
+    return path[len(prefix):]
 
-    shift 2
-done
-"""
+def _target_path_by_default_prefixes(resource):
+    path = resource.path
+
+    #  Here we are looking to find out the offset of this resource inside
+    #  any resources folder. We want to return the root to the resources folder
+    #  and then the sub path inside it
+    dir_1, dir_2, rel_path = path.partition("resources")
+    if rel_path:
+        return rel_path
+
+    #  The same as the above but just looking for java
+    (dir_1, dir_2, rel_path) = path.partition("java")
+    if rel_path:
+        return rel_path
+
+    # Both short_path and path have quirks we wish to avoid, in short_path there are times where
+    # it is prefixed by `../` instead of `external/`. And in .path it will instead return the entire
+    # bazel-out/... path, which is also wanting to be avoided. So instead, we return the short-path if
+    # path starts with bazel-out and the entire path if it does not.
+    return resource.short_path if path.startswith("bazel-out") else path
+
+def restore_prefix(src, stripped):
+    """opposite of _target_path. Given a source and stripped file, return the prefix """
+    if src.path.endswith(stripped):
+        return src.path[:len(src.path)-len(stripped)]
+    else:
+        fail("Resource file %s is not under the specified prefix %s to strip" % (src, stripped))
+
+def argsfile_name(label):
+    return str(label).replace("@","_").replace("/","_") + "_args"
+
+def printable_label(label):
+    return "%s.%s" % (label.package.replace("/","_").replace("@",""),
+                      label.name)
 
 def clojure_jar_impl(ctx):
+
     toolchain = ctx.toolchains["@rules_clojure//:toolchain_type"]
 
-    src_dir = ctx.actions.declare_directory("%s.srcs" % ctx.label.name)
-
-    # not declaring `classes_dir` because it's not an output, and we don't need any
-    # shell commands on it. Unclear why, but clojure doesn't like the
-    # directory created by `declare_directory`
-    classes_dir = "classes"
-
+    # src_dir = ctx.actions.declare_directory("%s.srcs/" % ctx.label.name)
     output_jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
+    classes_dir = "%s.classes" % (printable_label(ctx.label))
 
     library_path = []
 
     java_deps = []
     runfiles = ctx.runfiles()
 
-    for dep in ctx.attr.srcs.keys() + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime:
+    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime + [ctx.attr._shimdandy_impl, ctx.attr._jar_lib]:
         if DefaultInfo in dep:
             runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
             runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
         if JavaInfo in dep:
             java_deps.append(dep[JavaInfo])
 
-    symlink_args = ctx.actions.args()
-    for infile,path in ctx.attr.srcs.items():
-        if path[0] != "/":
-            fail("path must be absolute, got " + path)
-        src_file = infile.files.to_list()[0]
-        dest_file = src_dir.path + path
-        symlink_args.add(src_file.path, dest_file)
-
-    ctx.actions.run_shell(
-        command = symlink_sh,
-        arguments = [src_dir.path, symlink_args],
-        inputs = [target.files.to_list()[0] for target in ctx.attr.srcs.keys()],
-        outputs = [src_dir])
-
     runfiles = ctx.runfiles()
 
-    for dep in ctx.attr.srcs.keys() + ctx.attr.deps:
+    for dep in ctx.attr.srcs + ctx.attr.deps:
         if DefaultInfo in dep:
             runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
             runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
@@ -102,46 +114,59 @@ def clojure_jar_impl(ctx):
         deps = java_deps,
         runtime_deps = java_deps)
 
+    aot_ns = list(ctx.attr.aot)
+
+    srcs = ctx.files.srcs + ctx.files.resources
+
+    if len(srcs):
+        src_dir = restore_prefix(srcs[0], _target_path(srcs[0], ctx.attr.resource_strip_prefix))
+    else:
+        src_dir = ""
+
+    srcs = [_target_path(s, ctx.attr.resource_strip_prefix) for s in srcs]
+
+    classpath_files = toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
+
     native_libs = []
     for f in runfiles.files.to_list():
         ## Bazel on mac sticks weird looking directories in runfiles, like _solib_darwin/_U_S_Snative_C_Ulibsodium___Unative_Slibsodium_Slib. filter them out
         if (f.path.endswith(".dylib") or f.path.endswith(".so")) and (f.path.rfind("solib_darwin") == -1):
             native_libs.append(f)
 
-    aot_ns = list(ctx.attr.aot)
-
-    classpath_files = [src_dir] + toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
     aot_ns = distinct(aot_ns)
-
-    classpath_string = ":".join([classes_dir] + [f.path for f in classpath_files])
 
     javaopts_str = " ".join(ctx.attr.javacopts)
 
     library_path_str = "-Djava.library.path=" + ":".join(library_path) if len(library_path) > 0 else ""
 
-    cmd = """
-        set -euo pipefail;
-        mkdir {classes_dir};
-        {java} {javacopts} -Dclojure.main.report=stderr -cp {classpath} {library_path_str} clojure.main -m rules-clojure.jar :input-dir '"{input_dir}"' :aot [{aot}] :classes-dir '"{classes_dir}"' :output-jar '"{output_jar}"'
-    """.format(
-        java = toolchain.java,
-        javacopts = javaopts_str,
-        src_dir = src_dir.path,
-        classes_dir = classes_dir,
-        classpath = classpath_string,
-        input_dir = src_dir.path,
-        output_jar = output_jar.path,
-        library_path_str = library_path_str,
-        aot = ",".join(aot_ns))
+    if len(library_path):
+        args.add_joined("-Djava.library.path=", library_path, join_with=":")
 
-    inputs = [src_dir] + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs
+    args={}
+    args["classes_dir"] = classes_dir
+    args["output_jar"] = output_jar.path
+    args["src_dir"] = src_dir
+    args["srcs"] = srcs
+    args["aot"] = aot_ns
+    args["classpath"]=[src_dir] + [f.path for f in classpath_files] + [f.path for f in ctx.files._shimdandy_impl] + [f.path for f in ctx.files._jar_lib]
 
-    ctx.actions.run_shell(
+    args_file = ctx.actions.declare_file(argsfile_name(ctx.label))
+    ctx.actions.write(
+        output = args_file,
+        content = json.encode(args))
+
+    inputs = ctx.files.srcs + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs + [args_file]
+
+    ctx.actions.run(
+        executable=ctx.executable.worker,
+        arguments=["--persistent_worker", "@%s" % args_file.path],
         outputs = [output_jar],
-        command = cmd,
         inputs = inputs,
         mnemonic = "ClojureJar",
-        progress_message = "Compiling %s" % ctx.label)
+        progress_message = "Compiling %s" % ctx.label,
+        execution_requirements={"supports-workers":"1",
+                                # "requires-worker-protocol":"json"
+                                })
 
     return [
         DefaultInfo(

@@ -6,21 +6,28 @@ load("//:rules.bzl", "clojure_library", "clojure_binary")
 
 clojure_library(
     name= "gen_build",
-    resources= ["gen_build.clj"],
-    runtime_deps=["@rules_clojure_maven//:org_clojure_clojure",
+    srcs=["gen_build.clj"],
+    resource_strip_prefix = "src",
+    deps=["@rules_clojure_maven//:org_clojure_clojure",
                   "@rules_clojure_maven//:org_clojure_tools_namespace",
                   "@rules_clojure_maven//:org_clojure_tools_deps_alpha",
+                  "@rules_clojure_maven//:org_clojure_data_json"],
+    aot=["rules-clojure.gen-build"])
+
+java_library(
+    name="jar-lib",
+    resources=["jar.clj"],
+    resource_strip_prefix="src",
+    runtime_deps=["@rules_clojure_maven//:org_clojure_clojure",
+                  "@rules_clojure_maven//:org_clojure_spec_alpha",
+                  "@rules_clojure_maven//:org_clojure_core_specs_alpha",
+                  "@rules_clojure_maven//:org_clojure_tools_namespace",
                   "@rules_clojure_maven//:org_clojure_data_json"])
 
-# clojure_library(name="jar",
-#                 resources= ["jar.clj"],
-#                 runtime_deps=["@rules_clojure_maven//:org_clojure_clojure",
-#                               "@rules_clojure_maven//:org_clojure_tools_namespace"],
-#                 aot="rules-clojure.jar")
-
 clojure_library(name= "testrunner",
-                resources= ["testrunner.clj"],
-                aot=["rules_clojure.testrunner"])
+                srcs=["testrunner.clj"],
+                resource_strip_prefix="src",
+                aot=["rules-clojure.testrunner"])
 
 ## files needed for the clj toolchain
 filegroup(name="toolchain_files",

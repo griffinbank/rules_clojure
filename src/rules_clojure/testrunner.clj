@@ -1,4 +1,4 @@
-(ns rules_clojure.testrunner
+(ns rules-clojure.testrunner
   (:require [clojure.test])
   (:gen-class))
 
