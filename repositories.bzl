@@ -19,6 +19,7 @@ def rules_clojure_dependencies():
                        version="0.2.56",
                        exclusions=["org.clojure:clojure",
                                    "org.clojure:spec.alpha"]),
+        "org.clojure:java.classpath:1.0.0",
         "org.clojure:tools.namespace:1.1.0",
         "org.clojure:tools.deps.alpha:0.9.857",
         "org.clojure:data.json:2.3.1",

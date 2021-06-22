@@ -22,6 +22,7 @@ java_library(
                   "@rules_clojure_maven//:org_clojure_spec_alpha",
                   "@rules_clojure_maven//:org_clojure_core_specs_alpha",
                   "@rules_clojure_maven//:org_clojure_tools_namespace",
+                  "@rules_clojure_maven//:org_clojure_java_classpath",
                   "@rules_clojure_maven//:org_clojure_data_json"])
 
 clojure_library(name= "testrunner",

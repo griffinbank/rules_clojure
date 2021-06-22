@@ -580,10 +580,11 @@
             overrides (get-in deps-bazel [:extra-deps src-label])
             test-full-label (str "//" (path-relative-to workspace-root (dirname path)) ":" (str (basename path) ".test"))
             test-overrides (get-in deps-bazel [:extra-deps test-full-label])
-            aot (if (or (requires-aot? ns-decl) (not test?))
-                  [(str ns-name)]
-                  [])
-            aot (get overrides :aot aot)]
+            aot (or
+                 (get overrides :aot)
+                 (if (requires-aot? ns-decl)
+                   [(str ns-name)]
+                   []))]
         (when overrides
           (println ns-name "extra-info:" overrides))
         (when test-overrides
@@ -736,7 +737,9 @@
                                                extra-deps-key (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
                                                extra-deps (-> deps-bazel
                                                               (get-in [:extra-deps extra-deps-key]))
-                                               aot (or (:aot extra-deps) (mapv str (find/find-namespaces [(path->file jarpath)])))
+                                               aot (or (:aot extra-deps) []
+                                                       ;; (mapv str (find/find-namespaces [(path->file jarpath)]))
+                                                       )
                                                extra-deps (dissoc extra-deps :aot)]
                                            (when extra-deps
                                              (println lib "extra-deps:" extra-deps))
