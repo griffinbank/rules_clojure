@@ -116,14 +116,12 @@ def clojure_jar_impl(ctx):
 
     aot_ns = list(ctx.attr.aot)
 
-    srcs = ctx.files.srcs + ctx.files.resources
+    input_files = ctx.files.srcs + ctx.files.resources
 
-    if len(srcs):
-        src_dir = restore_prefix(srcs[0], _target_path(srcs[0], ctx.attr.resource_strip_prefix))
+    if len(input_files):
+        src_dir = restore_prefix(input_files[0], _target_path(input_files[0], ctx.attr.resource_strip_prefix))
     else:
         src_dir = ""
-
-    srcs = [_target_path(s, ctx.attr.resource_strip_prefix) for s in srcs]
 
     classpath_files = toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
 
@@ -146,7 +144,8 @@ def clojure_jar_impl(ctx):
     args["classes_dir"] = classes_dir
     args["output_jar"] = output_jar.path
     args["src_dir"] = src_dir
-    args["srcs"] = srcs
+    args["srcs"] = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.srcs]
+    args["resources"] = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.resources]
     args["aot"] = aot_ns
     args["classpath"]=[src_dir] + [f.path for f in classpath_files] + [f.path for f in ctx.files._shimdandy_impl] + [f.path for f in ctx.files._jar_lib]
 
@@ -155,7 +154,7 @@ def clojure_jar_impl(ctx):
         output = args_file,
         content = json.encode(args))
 
-    inputs = ctx.files.srcs + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs + [args_file]
+    inputs = ctx.files.srcs + ctx.files.resources + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs + [args_file]
 
     ctx.actions.run(
         executable=ctx.executable.worker,

@@ -19,6 +19,7 @@ import java.io.Reader;
 import java.io.Writer;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.Arrays;
 import java.util.Map;
 import org.projectodd.shimdandy.ClojureRuntimeShim;
 
@@ -51,8 +52,6 @@ class ClojureCompileRequest{
 class ClojureWorker  {
 
     public static void main(String [] args) {
-	System.err.println("ClojureWorker main" + args);
-
 	if (args.length > 0 && args[0].equals("--persistent_worker")) {
 	    persistentWorkerMain(args);
 	} else {

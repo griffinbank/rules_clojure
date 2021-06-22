@@ -580,7 +580,7 @@
             overrides (get-in deps-bazel [:extra-deps src-label])
             test-full-label (str "//" (path-relative-to workspace-root (dirname path)) ":" (str (basename path) ".test"))
             test-overrides (get-in deps-bazel [:extra-deps test-full-label])
-            aot (if true ;; (requires-aot? ns-decl)
+            aot (if (or (requires-aot? ns-decl) (not test?))
                   [(str ns-name)]
                   [])
             aot (get overrides :aot aot)]

@@ -38,7 +38,7 @@ Differs from [rules_clojure](https://github.com/simuons/rules_clojure) that it u
 
 `clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code.
 
-`rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use `resource_strip_prefix`, which is present in both the built-in `java_library`, and `clojure_library`:
+
 
 ```
 clojure_library(
@@ -51,8 +51,9 @@ clojure_library(
 
 `clojure_library` produces a Jar. `srcs` is list of file targets.
 `deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc). `aot` is a list of namespaces to compile.
+`srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar. `resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use `resource_strip_prefix`, which is present in both the built-in `java_library`, and `clojure_library`.
 
-Because of clojure's general lack of concern about the difference between runtime and compile-time (e.g. AOT), all clojure rules accept `deps` only. Output jars will use `deps` for both compile time and runtime dependencies.
+Because of clojure's general lack of concern about the difference between runtime and compile-time (e.g. AOT), all clojure rules accept `deps` only. Output jars will specify `deps` for both compile time and runtime dependencies (because a downstream library might depend on the library, and whether it's a `dep` or `runtime_dep` depends on whether the downstream library is AOTing or not.
 
 ### clojure_repl
 

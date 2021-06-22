@@ -41,7 +41,7 @@
 
 (defn compile! [json]
   (let [args (json/read-str json :key-fn keyword)
-        {:keys [src_dir srcs aot classes_dir output_jar]} args
+        {:keys [src_dir srcs resources aot classes_dir output_jar]} args
         classes-dir (->path classes_dir)
         src-dir (->path src_dir)
         output-jar (->path output_jar)]
@@ -50,20 +50,19 @@
         (mkdir classes-dir)
 
         (doseq [ns aot]
-          (compile (symbol ns))
-          ;; (non-transitive-compile input-dir (symbol ns))
-          )))
+          (compile (symbol ns)))))
 
     (with-open [jar-os (-> output-jar .toFile FileOutputStream. BufferedOutputStream. JarOutputStream.)]
       (put-next-entry! jar-os JarFile/MANIFEST_NAME)
       (.write manifest jar-os)
       (.closeEntry jar-os)
-      (doseq [src srcs
-              :let [full-path (->path src-dir src)]]
+
+      (doseq [r resources
+              :let [full-path (->path src-dir r)]]
         (assert (exists? full-path) (str full-path))
         (assert (-> full-path .toFile .isFile))
 
-        (put-next-entry! jar-os src)
+        (put-next-entry! jar-os r)
         (io/copy (.toFile full-path) jar-os)
         (.closeEntry jar-os))
       (doseq [file (-> classes-dir .toFile file-seq)
@@ -73,20 +72,3 @@
         (put-next-entry! jar-os name)
         (io/copy file jar-os)
         (.closeEntry jar-os)))))
-
-(defn -main
-  ":src-dir a path. This should already be on the classpath, so compilation works
-  :srcs a seq of files, relative to :src-dir"
-  [& args]
-  (let [args (apply hash-map (map read-string args))
-        {:keys [src-dir srcs aot classes-dir output-jar]} args
-        src-dir (->path src-dir)
-        output-jar (->path output-jar)
-        classes-dir (->path classes-dir)]
-    (assert src-dir)
-    (mkdir classes-dir)
-    (compile! {:src-dir src-dir
-               :srcs srcs
-               :classes-dir classes-dir
-               :aot aot
-               :output-jar output-jar})))
