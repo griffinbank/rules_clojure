@@ -592,10 +592,12 @@
          (concat
           [(emit-bazel (list 'clojure_library (kwargs (-> (merge-with into
                                                                       {:name ns-label
-                                                                       :srcs [(filename path)]
                                                                        :deps [(str deps-repo-tag "//:org_clojure_clojure")]}
-                                                                      (when (seq aot)
-                                                                        {:aot aot})
+                                                                      (if (seq aot)
+                                                                        {:srcs [(filename path)]
+                                                                         :aot aot}
+                                                                        {:resources [(filename path)]
+                                                                         :aot []})
                                                                       (when-let [strip-path (strip-path (select-keys args [:basis :workspace-root]) path)]
                                                                         {:resource_strip_prefix strip-path})
                                                                    (ns-deps (select-keys args [:workspace-root :src-ns->label :dep-ns->label :jar->lib :deps-repo-tag]) path ns-decl)
@@ -605,8 +607,7 @@
                                                           (as-> m
                                                               (cond-> m
                                                                 (seq (:deps m)) (update :deps (comp vec distinct))
-                                                                (:deps m) (update :deps (comp vec distinct)))
-                                                            )))))]
+                                                                (:deps m) (update :deps (comp vec distinct))))))))]
           (when test?
             [(emit-bazel (list 'clojure_test (kwargs (merge
                                                       {:name test-label
