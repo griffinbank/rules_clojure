@@ -11,7 +11,9 @@ clojure_library = rule(
         "compiledeps": attr.label_list(default = []),
         "javacopts": attr.string_list(default = [], allow_empty = True, doc = "Optional javac compiler options"),
         "worker": attr.label(default=Label("@rules_clojure//java/rules_clojure:ClojureWorker"), executable = True, cfg="host"),
-        "_shimdandy_impl": attr.label(default=Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")),
+        "_shimdandy": attr.label_list(default=[Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_api"),
+
+                                               Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")]),
         "_jar_lib": attr.label(default=Label("@rules_clojure//src/rules_clojure:jar-lib"), cfg="host"),
 
     },

@@ -582,7 +582,7 @@
             test-overrides (get-in deps-bazel [:extra-deps test-full-label])
             aot (or
                  (get overrides :aot)
-                 (if (requires-aot? ns-decl)
+                 (if true ;; (requires-aot? ns-decl)
                    [(str ns-name)]
                    []))]
         (when overrides
@@ -737,8 +737,9 @@
                                                extra-deps-key (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
                                                extra-deps (-> deps-bazel
                                                               (get-in [:extra-deps extra-deps-key]))
-                                               aot (or (:aot extra-deps) []
-                                                       ;; (mapv str (find/find-namespaces [(path->file jarpath)]))
+                                               aot (or (:aot extra-deps)
+                                                       (mapv str (find/find-namespaces [(path->file jarpath)]))
+                                                       ;; []
                                                        )
                                                extra-deps (dissoc extra-deps :aot)]
                                            (when extra-deps
@@ -817,7 +818,7 @@
                      :lib->jar lib->jar
                      :lib->deps lib->deps})))
 
-(defn srcs [{:keys [deps-out-dir deps-edn-path deps-repo-tag aliases workspace-root]
+(defn srcs [{:keys [deps-out-dir deps-edn-path deps-repo-tag aliases workspace-root aot-default]
              :or {deps-repo-tag "@deps"}}]
   (assert (re-find #"^@" deps-repo-tag) (print-str "deps repo tag must start with @"))
   (assert workspace-root)
@@ -850,7 +851,7 @@
         cmd (keyword cmd)
         opts (apply hash-map (rest args))
         opts (into {} (map (fn [[k v]]
-                             [(keyword k) v]) opts))
+                             [(edn/read-string k) v]) opts))
         opts (-> opts
                  (update :aliases (fn [aliases] (-> aliases
                                                     (edn/read-string)

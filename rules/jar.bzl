@@ -93,7 +93,7 @@ def clojure_jar_impl(ctx):
     java_deps = []
     runfiles = ctx.runfiles()
 
-    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime + [ctx.attr._shimdandy_impl, ctx.attr._jar_lib]:
+    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime + [ctx.attr._shimdandy, ctx.attr._jar_lib]:
         if DefaultInfo in dep:
             runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
             runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
@@ -147,7 +147,7 @@ def clojure_jar_impl(ctx):
     args["srcs"] = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.srcs]
     args["resources"] = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.resources]
     args["aot"] = aot_ns
-    args["classpath"]=[src_dir] + [f.path for f in classpath_files] + [f.path for f in ctx.files._shimdandy_impl] + [f.path for f in ctx.files._jar_lib]
+    args["classpath"]=[src_dir] + [f.path for f in classpath_files] + [f.path for f in ctx.files._shimdandy] + [f.path for f in ctx.files._jar_lib]
 
     args_file = ctx.actions.declare_file(argsfile_name(ctx.label))
     ctx.actions.write(
@@ -159,6 +159,7 @@ def clojure_jar_impl(ctx):
     ctx.actions.run(
         executable=ctx.executable.worker,
         arguments=["--persistent_worker", "@%s" % args_file.path],
+        # arguments=["clojure.main", "-m" "rules-clojure.worker", "@%s" % args_file.path],
         outputs = [output_jar],
         inputs = inputs,
         mnemonic = "ClojureJar",

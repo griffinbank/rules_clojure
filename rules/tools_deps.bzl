@@ -81,7 +81,7 @@ sh_binary(name="gen_srcs",
                         content = """#!/usr/bin/env bash
  set -euxo pipefail;
  cd {working_dir};
- {clojure} -Srepro -J-Dclojure.main.report=stderr -m rules-clojure.gen-build deps deps-edn-path "{deps_edn_path}" deps-out-dir "{deps_out_dir}" deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" aliases "{aliases}"
+ {clojure} -Srepro -J-Dclojure.main.report=stderr -m rules-clojure.gen-build deps :deps-edn-path "{deps_edn_path}" :deps-out-dir "{deps_out_dir}" :deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" :aliases "{aliases}"
 
  """.format(clojure = repository_ctx.path(clj_path),
             deps_repo_tag = "@" + repository_ctx.attr.name,
@@ -96,7 +96,7 @@ sh_binary(name="gen_srcs",
                         content = """#!/usr/bin/env bash
  set -euxo pipefail;
  cd {working_dir};
- {clojure} -Srepro -J-Dclojure.main.report=stderr -m rules-clojure.gen-build srcs deps-edn-path "{deps_edn_path}" deps-out-dir "{deps_out_dir}" deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" aliases "{aliases}" workspace-root ${{BUILD_WORKSPACE_DIRECTORY}}
+ {clojure} -Srepro -J-Dclojure.main.report=stderr -m rules-clojure.gen-build srcs :deps-edn-path "{deps_edn_path}" :deps-out-dir "{deps_out_dir}" deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" :aliases "{aliases}" :workspace-root ${{BUILD_WORKSPACE_DIRECTORY}}
 
  """.format(clojure = repository_ctx.path(clj_path),
             deps_repo_tag = "@" + repository_ctx.attr.name,
@@ -129,4 +129,4 @@ def clojure_gen_deps(name, deps_edn, aliases, deps_repo_tag):
 
 def clojure_gen_srcs(name, deps_edn, aliases, deps_repo_tag):
     native.sh_binary(name=name,
-              srcs=["@deps//scripts:gen_srcs.sh"])
+                     srcs=["@deps//scripts:gen_srcs.sh"])

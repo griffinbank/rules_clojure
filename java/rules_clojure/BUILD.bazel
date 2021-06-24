@@ -2,10 +2,11 @@ package(default_visibility = ["//visibility:public"])
 
 java_library(
     name = "ClojureWorker-lib",
-    srcs = glob(["ClojureWorker.java"]),
+    srcs = ["ClojureWorker.java",
+            "DynamicClassLoader.java"],
     deps = ["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_api",
             "@rules_clojure_maven//:com_google_code_gson_gson"],
-    ## shimdandy-impl is not allowed to be on the startup classpath
+    ## shimdandy-impl and Clojure are not allowed to be on the startup classpath
     data = ["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
             "//src/rules_clojure:jar-lib"])
 
