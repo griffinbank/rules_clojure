@@ -9,26 +9,15 @@
             [clojure.tools.deps.alpha :as deps]
             [clojure.tools.deps.alpha.util.concurrent :as concurrent]
             [clojure.tools.namespace.parse :as parse]
-            [clojure.tools.namespace.find :as find])
+            [clojure.tools.namespace.find :as find]
+            [rules-clojure.fs :as fs])
   (:import java.io.File
            [clojure.lang Keyword IPersistentVector IPersistentList IPersistentMap Var]
            [java.nio.file Files Path Paths FileSystem FileSystems]
            java.nio.file.attribute.FileAttribute
            [java.util.jar JarFile]))
 
-(defn path? [x]
-  (instance? Path x))
-
-(defn file? [x]
-  (instance? File x))
-
-(s/fdef absolute? :args (s/cat :p path?) :ret boolean?)
-(defn absolute? [path]
-  (.isAbsolute path))
-
-(s/def ::absolute-path (s/and path? absolute?))
-
-(s/def ::ns-path (s/map-of symbol? ::absolute-path))
+(s/def ::ns-path (s/map-of symbol? ::fs/absolute-path))
 (s/def ::read-deps map?)
 (s/def ::aliases (s/coll-of keyword?))
 
@@ -37,14 +26,14 @@
 (s/def ::lib->deps (s/map-of ::library (s/coll-of ::library)))
 
 (s/def ::deps-info (s/keys :req-un [::paths]))
-(s/def ::jar->lib (s/map-of ::absolute-path ::library))
-(s/def ::workspace-root ::absolute-path)
+(s/def ::jar->lib (s/map-of ::fs/absolute-path ::library))
+(s/def ::workspace-root ::fs/absolute-path)
 (s/def ::deps-repo-tag string?)
-(s/def ::deps-edn-path ::absolute-path)
-(s/def ::deps-out-dir ::absolute-path)
-(s/def ::deps-build-dir ::absolute-path)
+(s/def ::deps-edn-path ::fs/absolute-path)
+(s/def ::deps-out-dir ::fs/absolute-path)
+(s/def ::deps-build-dir ::fs/absolute-path)
 
-(s/def ::classpath (s/map-of ::absolute-path map?))
+(s/def ::classpath (s/map-of ::fs/absolute-path map?))
 (s/def ::basis (s/keys :req-un [::classpath]))
 (s/def ::aliases (s/coll-of keyword?))
 
@@ -62,102 +51,6 @@
 (defn first! [coll]
   (throw-if-not! (seq coll) "no first in coll" {:coll coll})
   (first coll))
-
-(s/fdef ->path :args (s/cat :dirs (s/* (s/alt :s string? :p path?))) :ret path?)
-(defn ->path [& dirs]
-  (let [[d & dr] dirs
-        d (if (string? d)
-            (Paths/get d (into-array String []))
-            d)]
-    (assert d)
-    (reduce (fn [^Path p dir] (.resolve p dir)) d (rest dirs))))
-
-(defn file->path [f]
-  (.toPath f))
-
-(defn path->file [p]
-  (.toFile p))
-
-(s/fdef absolute :args (s/cat :p path?) :ret path?)
-(defn absolute [path]
-  (.toAbsolutePath path))
-
-(s/fdef relative-to :args (s/cat :a path? :b path?) :ret path?)
-(defn path-relative-to
-  "Return the path to b, relative to a"
-  [a b]
-  {:pre []}
-  (.relativize (absolute a) (absolute b)))
-
-(s/fdef normal-file? :args (s/cat :f file?) :ret boolean?)
-(defn normal-file? [file]
-  (.isFile file))
-
-(s/fdef directory? :args (s/cat :f file?) :ret boolean?)
-(defn directory? [file]
-  (.isDirectory file))
-
-(defn create-directory [path]
-  (Files/createDirectory path (into-array java.nio.file.attribute.FileAttribute [])))
-
-(defn exists? [path]
-  (Files/exists path (into-array java.nio.file.LinkOption [])))
-
-(defn ensure-directory [path]
-  (when-not (exists? path)
-    (create-directory path)))
-
-(s/fdef filename :args (s/cat :p path?) :ret string?)
-(defn filename [path]
-  (-> path
-      .getFileName
-      str))
-
-(defn dirname [path]
-  (.getParent path))
-
-(s/fdef extension :args (s/cat :p path?) :ret string?)
-(defn extension [path]
-  (-> path
-      filename
-      (str/split #"\.")
-      rest
-      last))
-
-(defn basename [path]
-  (-> path
-      filename
-      (str/split #"\.")
-      first))
-
-(s/fdef ls :args (s/cat :d path?) :ret (s/coll-of path?))
-(defn ls [^Path dir]
-  (-> dir
-      .toFile
-      .listFiles
-      (->>
-       (map (fn [^File f]
-              (.toPath f))))))
-
-(s/fdef ls-r :args (s/cat :d path?) :ret (s/coll-of path?))
-(defn ls-r
-  "recursive list"
-  [dir]
-  (->> dir
-       ls
-       (mapcat (fn [path]
-                 (if (-> path .toFile directory?)
-                   (concat [path] (ls-r path))
-                   [path])))))
-
-(s/fdef jar? :args (s/cat :f path?) :ret boolean?)
-(defn jar? [path]
-  (= "jar" (extension path)))
-
-(s/fdef clj-file? :args (s/cat :f file?) :ret boolean?)
-(defn clj-file? [file]
-  (and (normal-file? file)
-       (contains? #{"clj" "cljc"} (-> file file->path extension))))
 
 (defn emit-bazel-dispatch [x]
   (class x))
@@ -229,13 +122,13 @@
   (-> (str src-dir "/" (-> (str ns)
                            (str/replace #"\." "/")
                            (str/replace #"-" "_")) ".clj")
-      ->path
-      absolute))
+      fs/->path
+      fs/absolute))
 
-(s/fdef read-deps :args (s/cat :p path?))
+(s/fdef read-deps :args (s/cat :p fs/path?))
 (defn read-deps [deps-path]
   (-> deps-path
-      path->file
+      fs/path->file
       slurp
       read-string))
 
@@ -261,11 +154,11 @@
   (let [orig (.getAbsoluteFile path)]
     (loop [path orig]
       (if (seq (str path))
-        (let [dir (dirname path)
+        (let [dir (fs/dirname path)
               path (io/file dir name)]
-          (if (exists? (io/file path))
+          (if (fs/exists? (io/file path))
             path
-            (recur (dirname (dirname path)))))
+            (recur (fs/dirname (fs/dirname path)))))
         (assert false (print-str "could not find " name " above" orig))))))
 
 (s/fdef ->jar->lib :args (s/cat :b ::basis) :ret ::jar->lib)
@@ -277,7 +170,7 @@
        :classpath
        (map (fn [[path {:keys [path-key lib-name]}]]
               (when lib-name
-                [(->path path) lib-name])))
+                [(fs/->path path) lib-name])))
        (filter identity)
        (into {})))
 
@@ -308,7 +201,7 @@
        :classpath
        (map (fn [[path {:keys [lib-name]}]]
               (when lib-name
-                (let [nses (find/find-namespaces [(path->file path)])]
+                (let [nses (find/find-namespaces [(fs/path->file path)])]
                   (->> nses
                        (map (fn [n]
                               [n (library->label lib-name)]))
@@ -316,10 +209,10 @@
        (filter identity)
        (apply merge)))
 
-(s/fdef src-path->label :args (s/cat :a (s/keys :req-un [::workspace-root]) :p path?) :ret string?)
+(s/fdef src-path->label :args (s/cat :a (s/keys :req-un [::workspace-root]) :p fs/path?) :ret string?)
 (defn src-path->label [{:keys [workspace-root]} path]
-  (let [path (path-relative-to workspace-root path)]
-    (str "//" (dirname path) ":" (str (basename path)))))
+  (let [path (fs/path-relative-to workspace-root path)]
+    (str "//" (fs/dirname path) ":" (str (fs/basename path)))))
 
 (s/def ::src-ns->label (s/map-of symbol? string?))
 
@@ -330,7 +223,7 @@
        :classpath
        (map (fn [[path {:keys [path-key]}]]
               (when path-key
-                (let [nses (find/find-namespaces [(path->file path)])]
+                (let [nses (find/find-namespaces [(fs/path->file path)])]
                   (->> nses
                        (map (fn [n]
                               [n (-> (resolve-src-location path n)
@@ -366,6 +259,18 @@
       (JarFile.)
       (find/find-namespaces-in-jarfile)))
 
+(defn jar-compiled?
+  "true if the jar contains .class files"
+  [path]
+  (-> path
+      str
+      (JarFile.)
+      (.entries)
+      (enumeration-seq)
+      (->>
+       (some (fn [e]
+               (re-find #".class$" (.getName e)))))))
+
 (defn jar-ns-decls
   "Given a path to a jar, return a seq of ns-decls"
   [path]
@@ -374,7 +279,7 @@
       (JarFile.)
       (find/find-ns-decls-in-jarfile)))
 
-(s/def ::class->jar (s/map-of symbol? path?))
+(s/def ::class->jar (s/map-of symbol? fs/path?))
 (s/fdef ->class->jar :args (s/cat :b ::basis) :ret ::class->jar)
 (defn ->class->jar
   "returns a map of class symbol to jarpath for all jars on the classpath"
@@ -386,7 +291,7 @@
                  (when lib-name
                    (->> (jar-classes path)
                         (map (fn [c]
-                               [c (->path path)]))))))
+                               [c (fs/->path path)]))))))
        (into {})))
 
 (defn expand-deps- [basis]
@@ -415,12 +320,12 @@
               dep-map)
             )) {})))
 
-(s/fdef src->label :args (s/cat :a (s/keys :req-un [::workspace-root]) :p path?) :ret string?)
+(s/fdef src->label :args (s/cat :a (s/keys :req-un [::workspace-root]) :p fs/path?) :ret string?)
 (defn src->label [{:keys [workspace-root]} path]
-  (let [path (path-relative-to workspace-root path)]
-    (str "//" (dirname path) ":" (str (basename path)))))
+  (let [path (fs/path-relative-to workspace-root path)]
+    (str "//" (fs/dirname path) ":" (str (fs/basename path)))))
 
-(s/fdef jar->label :args (s/cat :a (s/keys :req-un [::jar->lib] :opt-un [::deps-repo-tag]) :p path?) :ret string?)
+(s/fdef jar->label :args (s/cat :a (s/keys :req-un [::jar->lib] :opt-un [::deps-repo-tag]) :p fs/path?) :ret string?)
 (defn jar->label
   "Given a .jar path, return the bazel label. `deps-repo-tag` is the name of the bazel repository where deps are held, e.g `@deps`"
   [{:keys [deps-repo-tag jar->lib] :as args} jarpath]
@@ -447,7 +352,7 @@
     (when (and form (= 'ns (first form)))
       form)))
 
-(s/fdef ns-deps :args (s/cat :a (s/keys :req-un [::workspace-root ::jar->lib ::deps-repo-tag]) :p path? :d ::ns-decl))
+(s/fdef ns-deps :args (s/cat :a (s/keys :req-un [::workspace-root ::jar->lib ::deps-repo-tag]) :p fs/path? :d ::ns-decl))
 (defn ns-deps
   "Given the ns declaration for a .clj file, return a map of {:srcs [labels], :data [labels]} for all :require statements"
   [{:keys [src-ns->label dep-ns->label workspace-root jar->lib deps-repo-tag] :as args} path ns-decl]
@@ -536,7 +441,7 @@
                (str/replace "-" "_")
                (str/replace "." "/")) "." extension))
 
-(s/fdef resource-paths :args (s/cat :a (s/keys :req-un [::aliases ::basis ::workspace-root])) :ret (s/coll-of path?))
+(s/fdef resource-paths :args (s/cat :a (s/keys :req-un [::aliases ::basis ::workspace-root])) :ret (s/coll-of fs/path?))
 (defn resource-paths
   "Returns the set paths"
   [{:keys [basis aliases workspace-root] :as args}]
@@ -549,13 +454,13 @@
    (map (fn [p]
           (assert p)
           (assert workspace-root)
-          (->path workspace-root p)))))
+          (fs/->path workspace-root p)))))
 
 (s/fdef resource-labels :args (s/cat :a (s/keys :req-un [::basis ::workspace-root ::aliases])) :ret (s/coll-of string?))
 (defn resource-labels [{:keys [basis workspace-root aliases] :as args}]
   (->> (resource-paths args)
        (mapv (fn [p]
-               (str "//" (path-relative-to workspace-root p))))))
+               (str "//" (fs/path-relative-to workspace-root p))))))
 
 (defn strip-path
   "Given a"
@@ -563,10 +468,10 @@
   (->> basis
        :paths
        (filter (fn [p]
-                 (.startsWith path (->path workspace-root p))))
+                 (.startsWith path (fs/->path workspace-root p))))
        first))
 
-(s/fdef ns-rules :args (s/cat :a (s/keys :req-un [::basis ::workspace-root ::jar->lib ::deps-repo-tag ::deps-bazel]) :f path?))
+(s/fdef ns-rules :args (s/cat :a (s/keys :req-un [::basis ::workspace-root ::jar->lib ::deps-repo-tag ::deps-bazel]) :f fs/path?))
 (defn ns-rules
   "given a .clj path, return all rules for the file "
   [{:keys [basis workspace-root deps-bazel deps-repo-tag deps-edn-path] :as args} path]
@@ -574,11 +479,11 @@
   (try
     (if-let [[_ns ns-name & refs :as ns-decl] (get-ns-decl path)]
       (let [test? (test-ns? path)
-            ns-label (str (basename path))
+            ns-label (str (fs/basename path))
             src-label (src->label {:workspace-root workspace-root} path)
-            test-label (str (basename path) ".test")
+            test-label (str (fs/basename path) ".test")
             overrides (get-in deps-bazel [:extra-deps src-label])
-            test-full-label (str "//" (path-relative-to workspace-root (dirname path)) ":" (str (basename path) ".test"))
+            test-full-label (str "//" (fs/path-relative-to workspace-root (fs/dirname path)) ":" (str (fs/basename path) ".test"))
             test-overrides (get-in deps-bazel [:extra-deps test-full-label])
             aot (or
                  (get overrides :aot)
@@ -595,9 +500,9 @@
                                                                       {:name ns-label
                                                                        :deps [(str deps-repo-tag "//:org_clojure_clojure")]}
                                                                       (if (seq aot)
-                                                                        {:srcs [(filename path)]
+                                                                        {:srcs [(fs/filename path)]
                                                                          :aot aot}
-                                                                        {:resources [(filename path)]
+                                                                        {:resources [(fs/filename path)]
                                                                          :aot []})
                                                                       (when-let [strip-path (strip-path (select-keys args [:basis :workspace-root]) path)]
                                                                         {:resource_strip_prefix strip-path})
@@ -621,15 +526,15 @@
       (println "while processing" path)
       (throw t))))
 
-(s/fdef gen-dir :args (s/cat :a (s/keys :req-un [::workspace-root ::basis ::jar->lib ::deps-repo-tag]) :f path?))
+(s/fdef gen-dir :args (s/cat :a (s/keys :req-un [::workspace-root ::basis ::jar->lib ::deps-repo-tag]) :f fs/path?))
 (defn gen-dir
   "given a source directory, write a BUILD.bazel for all .clj files in the directory. non-recursive"
   [args dir]
   (assert (map? (:src-ns->label args)))
   (let [paths (->> dir
-                   ls
+                   fs/ls
                    (filter (fn [path]
-                             (-> path .toFile clj-file?)))
+                             (-> path .toFile fs/clj-file?)))
                    doall)
         rules (->> paths
                    (mapcat (fn [p]
@@ -643,21 +548,21 @@
                      "\n"
                      (str/join "\n\n" rules))]
     (-> dir
-        (->path "BUILD.bazel")
-        path->file
+        (fs/->path "BUILD.bazel")
+        fs/path->file
         (spit content :encoding "UTF-8"))))
 
-(s/fdef gen-source-paths- :args (s/cat :a (s/keys :req-un [::workspace-root ::src-ns->label ::dep-ns->label ::jar->lib ::deps-repo-tag ::deps-bazel]) :paths (s/coll-of path?)))
+(s/fdef gen-source-paths- :args (s/cat :a (s/keys :req-un [::workspace-root ::src-ns->label ::dep-ns->label ::jar->lib ::deps-repo-tag ::deps-bazel]) :paths (s/coll-of fs/path?)))
 (defn gen-source-paths-
   "gen-dir for every directory on the classpath."
   [args paths]
   (assert (map? (:src-ns->label args)))
   (->> paths
        (mapcat (fn [path]
-                 (ls-r path)))
+                 (fs/ls-r path)))
        (filter (fn [path]
-                 (-> path .toFile clj-file?)))
-       (map dirname)
+                 (-> path .toFile fs/clj-file?)))
+       (map fs/dirname)
        (distinct)
        (map (fn [dir]
               (gen-dir args dir)))
@@ -667,13 +572,13 @@
   "By default the source directories on the basis `:classpath` are relative to the deps.edn. Absolute-ize them"
   [basis deps-edn-path]
   (reduce (fn [basis [path info]]
-            (if (= "jar" (-> path ->path extension))
+            (if (= "jar" (-> path fs/->path fs/extension))
               (-> basis
                   (update-in [:classpath] dissoc path)
-                  (assoc-in [:classpath (->path path)] info))
+                  (assoc-in [:classpath (fs/->path path)] info))
               (-> basis
                   (update-in [:classpath] dissoc path)
-                  (assoc-in [:classpath (->path (dirname deps-edn-path) path)] info)))) basis (:classpath basis)))
+                  (assoc-in [:classpath (fs/->path (fs/dirname deps-edn-path) path)] info)))) basis (:classpath basis)))
 
 (s/fdef make-basis :args (s/cat :a (s/keys :req-un [::read-deps ::aliases ::deps-out-dir ::deps-edn-path])) :ret ::basis)
 (defn make-basis
@@ -688,7 +593,7 @@
         (update :paths concat (:extra-paths combined-aliases))
         (basis-absolute-source-paths deps-edn-path))))
 
-(s/fdef source-paths :args (s/cat :a (s/keys :req-un [::basis ::deps-edn-path ::aliases ::workspace-root])) :ret (s/coll-of path?))
+(s/fdef source-paths :args (s/cat :a (s/keys :req-un [::basis ::deps-edn-path ::aliases ::workspace-root])) :ret (s/coll-of fs/path?))
 (defn source-paths
   "return the set of source directories on the classpath"
   [{:keys [basis deps-edn-path aliases] :as args}]
@@ -696,7 +601,7 @@
     (->>
      (:paths basis)
      (map (fn [path]
-            (->path (dirname deps-edn-path) path)))
+            (fs/->path (fs/dirname deps-edn-path) path)))
      (remove (fn [path]
                (contains? resource-paths path))))))
 
@@ -721,8 +626,8 @@
 (defn gen-deps-build
   "generates the BUILD file for @deps//: with a single target containing all deps.edn-resolved dependencies"
   [{:keys [deps-out-dir deps-build-dir jar->lib lib->jar lib->deps deps-repo-tag deps-bazel] :as args}]
-  (println "writing to" (-> (->path deps-build-dir "BUILD.bazel") path->file))
-  (spit (-> (->path deps-build-dir "BUILD.bazel") path->file)
+  (println "writing to" (-> (fs/->path deps-build-dir "BUILD.bazel") fs/path->file))
+  (spit (-> (fs/->path deps-build-dir "BUILD.bazel") fs/path->file)
         (str/join "\n\n" (concat
                           [(emit-bazel (list 'package (kwargs {:default_visibility ["//visibility:public"]})))
                            (emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library"))]
@@ -737,10 +642,10 @@
                                                extra-deps-key (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
                                                extra-deps (-> deps-bazel
                                                               (get-in [:extra-deps extra-deps-key]))
-                                               aot (or (:aot extra-deps)
-                                                       (mapv str (find/find-namespaces [(path->file jarpath)]))
-                                                       ;; []
-                                                       )
+                                               aot (or
+                                                    (:aot extra-deps)
+                                                    (mapv str (find/find-namespaces [(fs/path->file jarpath)])))
+
                                                extra-deps (dissoc extra-deps :aot)]
                                            (when extra-deps
                                              (println lib "extra-deps:" extra-deps))
@@ -750,7 +655,7 @@
                                                                                                {:name (if (seq aot)
                                                                                                         preaot
                                                                                                         label)
-                                                                                                :jars [(path-relative-to deps-build-dir jarpath)]}
+                                                                                                :jars [(fs/path-relative-to deps-build-dir jarpath)]}
                                                                                                (when (seq deps)
                                                                                                  {:deps deps
                                                                                                   :runtime_deps deps})
@@ -796,9 +701,9 @@
 (defn deps [{:keys [deps-out-dir deps-build-dir deps-edn-path deps-repo-tag aliases]
              :or {deps-repo-tag "@deps"}}]
   (assert (re-find #"^@" deps-repo-tag) (print-str "deps repo tag must start with @"))
-  (let [deps-edn-path (-> deps-edn-path ->path absolute)
-        deps-out-dir (-> deps-out-dir ->path absolute)
-        deps-build-dir (-> deps-build-dir ->path absolute)
+  (let [deps-edn-path (-> deps-edn-path fs/->path fs/absolute)
+        deps-out-dir (-> deps-out-dir fs/->path fs/absolute)
+        deps-build-dir (-> deps-build-dir fs/->path fs/absolute)
         read-deps (#'read-deps deps-edn-path)
         deps-bazel (parse-deps-bazel read-deps)
         basis (make-basis {:read-deps read-deps
@@ -822,8 +727,8 @@
              :or {deps-repo-tag "@deps"}}]
   (assert (re-find #"^@" deps-repo-tag) (print-str "deps repo tag must start with @"))
   (assert workspace-root)
-  (let [deps-edn-path (-> deps-edn-path ->path absolute)
-        deps-out-dir (-> deps-out-dir ->path absolute)
+  (let [deps-edn-path (-> deps-edn-path fs/->path fs/absolute)
+        deps-out-dir (-> deps-out-dir fs/->path fs/absolute)
         read-deps (#'read-deps deps-edn-path)
         deps-bazel (parse-deps-bazel read-deps)
         aliases (or (mapv keyword aliases) [])
@@ -857,7 +762,7 @@
                                                     (edn/read-string)
                                                     (#(mapv keyword %)))))
                  (cond->
-                   (:workspace-root opts) (update :workspace-root (comp absolute ->path))))
+                   (:workspace-root opts) (update :workspace-root (comp fs/absolute fs/->path))))
 
         f (case cmd
             :deps deps

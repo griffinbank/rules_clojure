@@ -86,14 +86,14 @@ def clojure_jar_impl(ctx):
 
     # src_dir = ctx.actions.declare_directory("%s.srcs/" % ctx.label.name)
     output_jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
-    classes_dir = "%s.classes" % (printable_label(ctx.label))
+    classes_dir = ctx.actions.declare_directory("%s.classes" % (printable_label(ctx.label)))
 
     library_path = []
 
     java_deps = []
     runfiles = ctx.runfiles()
 
-    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime + [ctx.attr._shimdandy, ctx.attr._jar_lib]:
+    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime + ctx.attr._worker_runtime:
         if DefaultInfo in dep:
             runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
             runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
@@ -114,14 +114,14 @@ def clojure_jar_impl(ctx):
         deps = java_deps,
         runtime_deps = java_deps)
 
-    aot_ns = list(ctx.attr.aot)
+    aot_nses = list(ctx.attr.aot)
 
     input_files = ctx.files.srcs + ctx.files.resources
 
     if len(input_files):
         src_dir = restore_prefix(input_files[0], _target_path(input_files[0], ctx.attr.resource_strip_prefix))
     else:
-        src_dir = ""
+        src_dir = None
 
     classpath_files = toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
 
@@ -131,41 +131,35 @@ def clojure_jar_impl(ctx):
         if (f.path.endswith(".dylib") or f.path.endswith(".so")) and (f.path.rfind("solib_darwin") == -1):
             native_libs.append(f)
 
-    aot_ns = distinct(aot_ns)
+    aot_nses = distinct(aot_nses)
 
     javaopts_str = " ".join(ctx.attr.javacopts)
 
-    library_path_str = "-Djava.library.path=" + ":".join(library_path) if len(library_path) > 0 else ""
-
-    if len(library_path):
-        args.add_joined("-Djava.library.path=", library_path, join_with=":")
-
-    args={}
-    args["classes_dir"] = classes_dir
-    args["output_jar"] = output_jar.path
-    args["src_dir"] = src_dir
-    args["srcs"] = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.srcs]
-    args["resources"] = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.resources]
-    args["aot"] = aot_ns
-    args["classpath"]=[src_dir] + [f.path for f in classpath_files] + [f.path for f in ctx.files._shimdandy] + [f.path for f in ctx.files._jar_lib]
+    compile_args=struct(
+        classes_dir = classes_dir.path,
+        output_jar = output_jar.path,
+        src_dir = src_dir,
+        srcs = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.srcs],
+        resources = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.resources],
+        aot_nses = aot_nses,
+        classpath = [f.path for f in classpath_files] + [classes_dir.path] + [p for p in [src_dir] if p]
+    )
 
     args_file = ctx.actions.declare_file(argsfile_name(ctx.label))
     ctx.actions.write(
         output = args_file,
-        content = json.encode(args))
+        content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs + [args_file]
+    inputs = ctx.files.srcs + ctx.files.resources + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs + [args_file] + ctx.files._worker_runtime
 
     ctx.actions.run(
         executable=ctx.executable.worker,
         arguments=["--persistent_worker", "@%s" % args_file.path],
-        # arguments=["clojure.main", "-m" "rules-clojure.worker", "@%s" % args_file.path],
-        outputs = [output_jar],
+        outputs = [output_jar, classes_dir],
         inputs = inputs,
-        mnemonic = "ClojureJar",
+        mnemonic = "ClojureCompile",
         progress_message = "Compiling %s" % ctx.label,
-        execution_requirements={"supports-workers":"1",
-                                "requires-worker-protocol":"json"})
+        execution_requirements={"supports-workers":"1"})
 
     return [
         DefaultInfo(

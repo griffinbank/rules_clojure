@@ -11,11 +11,12 @@ clojure_library = rule(
         "compiledeps": attr.label_list(default = []),
         "javacopts": attr.string_list(default = [], allow_empty = True, doc = "Optional javac compiler options"),
         "worker": attr.label(default=Label("@rules_clojure//java/rules_clojure:ClojureWorker"), executable = True, cfg="host"),
-        "_shimdandy": attr.label_list(default=[Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_api"),
-
-                                               Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")]),
-        "_jar_lib": attr.label(default=Label("@rules_clojure//src/rules_clojure:jar-lib"), cfg="host"),
-
+        ## shimdandy-impl and anything that would pull in Clojure
+        ## are not allowed to be on the startup classpath of
+        ## ClojureWorker, so build these separately and pull them
+        ## in at runtime
+        "_worker_runtime": attr.label_list(default=[Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl"),
+                                                    Label("@rules_clojure//src/rules_clojure:jar-lib")], cfg="host")
     },
     provides = [JavaInfo],
     toolchains = ["@rules_clojure//:toolchain_type"],

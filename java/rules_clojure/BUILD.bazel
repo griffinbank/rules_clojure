@@ -5,15 +5,30 @@ java_library(
     srcs = ["ClojureWorker.java",
             "DynamicClassLoader.java"],
     deps = ["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_api",
-            "@rules_clojure_maven//:com_google_code_gson_gson"],
-    ## shimdandy-impl and Clojure are not allowed to be on the startup classpath
-    data = ["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
-            "//src/rules_clojure:jar-lib"])
+            "@rules_clojure_maven//:com_google_code_gson_gson",
+            ":worker_java_proto"])
 
 java_binary(
     name = "ClojureWorker",
     main_class = "rules_clojure.ClojureWorker",
-    runtime_deps = [
-        ":ClojureWorker-lib",
-    ],
+    runtime_deps = [":ClojureWorker-lib"])
+
+proto_library(
+    name = "worker_proto",
+    srcs = ["worker_protocol.proto"]
+)
+
+java_proto_library(
+    name = "worker_java_proto",
+    deps = [":worker_proto"],
+)
+
+proto_library(
+    name = "clojure_compile_proto",
+    srcs = ["clojure_compile.proto"]
+)
+
+java_proto_library(
+    name = "clojure_compile_java_proto",
+    deps = [":clojure_compile_proto"],
 )

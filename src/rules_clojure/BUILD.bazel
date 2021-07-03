@@ -16,21 +16,35 @@ clojure_library(
 
 java_library(
     name="jar-lib",
-    resources=["jar.clj"],
+    resources=["jar.clj", "fs.clj"],
     resource_strip_prefix="src",
     runtime_deps=["@rules_clojure_maven//:org_clojure_clojure",
                   "@rules_clojure_maven//:org_clojure_spec_alpha",
                   "@rules_clojure_maven//:org_clojure_core_specs_alpha",
                   "@rules_clojure_maven//:org_clojure_tools_namespace",
                   "@rules_clojure_maven//:org_clojure_java_classpath",
-                  "@rules_clojure_maven//:org_clojure_data_json"])
+                  "@rules_clojure_maven//:org_clojure_data_json",
+                  "//java/rules_clojure:worker_java_proto"])
 
 java_binary(
     name="worker",
     resources=["worker.clj"],
     resource_strip_prefix="src",
+    runtime_deps=[":jar-lib",
+                  "@rules_clojure_maven//:com_google_protobuf_protobuf_java",
+                  "@rules_clojure_maven//:org_clojure_data_json"],
     main_class="clojure.main",
     jvm_flags=["-Dclojure.main.report=stderr"],
+)
+
+java_binary(
+    name="worker_repl",
+    resources=["worker.clj"],
+    resource_strip_prefix="src",
+    runtime_deps=[":jar-lib"],
+    main_class="clojure.main",
+    args=["-e", "(clojure.main/repl)"],
+    jvm_flags=["-Dclojure.main.report=stderr"]
 )
 
 clojure_library(name= "testrunner",

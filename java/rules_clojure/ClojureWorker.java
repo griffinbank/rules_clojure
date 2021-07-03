@@ -27,23 +27,9 @@ import java.util.Map.Entry;
 import java.util.HashSet;
 import org.projectodd.shimdandy.ClojureRuntimeShim;
 import rules_clojure.DynamicClassLoader;
-
-class Input {
-    String path;
-    String digest;
-}
-
-class WorkRequest {
-    String[] arguments;
-    Input[] inputs;
-    Integer requestId;
-}
-
-class WorkResponse {
-    Integer exitCode;
-    String output;
-    Integer requestId;
-}
+import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
+import com.google.devtools.build.lib.worker.WorkerProtocol.Input;
+import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
 
 class ClojureCompileRequest {
     String[] aot;
@@ -77,53 +63,63 @@ class ClojureWorker  {
     public static void persistentWorkerMain(String[] args) throws Exception
     {
 	System.err.println("ClojureWorker persistentWorkerMain");
-
 	PrintStream real_stdout = System.out;
+	PrintStream real_stderr = System.err;
 	InputStream stdin = System.in;
+	ByteArrayOutputStream outStream = new ByteArrayOutputStream();
+	PrintStream out = new PrintStream(outStream, true, "UTF-8");
 
-	Gson gson = new GsonBuilder().create();
+	Reader stdin_reader = new InputStreamReader(stdin);
+	Writer stdout_writer = new OutputStreamWriter(out);
 
-	while (true) {
-	    ByteArrayOutputStream outStream = new ByteArrayOutputStream();
-	    PrintStream out = new PrintStream(outStream);
-	    System.setOut(out);
-	    System.setErr(out);
+	System.setOut(out);
 
-	    Reader stdin_reader = new InputStreamReader(stdin);
-	    Writer stdout_writer = new OutputStreamWriter(out);
-	    JsonReader gson_reader = new JsonReader(stdin_reader);
-	    JsonWriter gson_writer = new JsonWriter(stdout_writer);
+	try {
+	    while (true) {
+		outStream.reset();
 
-	    WorkRequest request = gson.fromJson(gson_reader, WorkRequest.class);
+		WorkRequest request = WorkRequest.parseDelimitedFrom(stdin);
 
-	    // System.err.println("request" + gson.toJson(request));
-	    // System.err.println("requestId" + request.requestId);
+		// The request will be null if stdin is closed.  We're
+		// not sure if this happens in TheRealWorld™ but it is
+		// useful for testing (to shut down a persistent
+		// worker process).
+		if (request == null) {
+		    real_stderr.println("null request, break");
+		    break;
+		}
 
-	    // The request will be null if stdin is closed.  We're
-	    // not sure if this happens in TheRealWorld™ but it is
-	    // useful for testing (to shut down a persistent
-	    // worker process).
-	    if (request == null) {
-		System.err.println("break");
-		break;
+		real_stderr.printf("request %s\n", request);
+
+		int code = 1;
+
+		try {
+		    System.setErr(out);
+		    Object ret = processRequest(request);
+		    code = 0;
+		} catch (Throwable e) {
+		    real_stderr.println(e.getMessage());
+		    e.printStackTrace(real_stderr);
+		    throw e;
+		}
+		finally {
+		    System.setErr(real_stderr);
+		    real_stderr.println(outStream.toString());
+		    real_stderr.flush();
+		}
+		out.flush();
+
+		WorkResponse.newBuilder()
+		    .setExitCode(code)
+		    .setOutput(outStream.toString())
+		    .build()
+		    .writeDelimitedTo(real_stdout);
 	    }
-
-	    int code = 0;
-
-	    try {
-		processRequest(request);
-	    } catch (Throwable e) {
-		System.err.println(e.getMessage());
-		e.printStackTrace(System.err);
-		code = 1;
-		throw e;
-	    }
-	    out.flush();
-
-	    WorkResponse response = new WorkResponse();
-	    response.exitCode = code;
-	    response.output = outStream.toString();
-	    real_stdout.println(gson.toJson(response));
+	}
+	catch (Throwable t){
+	    real_stderr.println(t.getMessage());
+	    t.printStackTrace(real_stderr);
+	    throw t;
 	}
     }
 
@@ -133,15 +129,17 @@ class ClojureWorker  {
 	HashSet<String> classpath = new HashSet<String>();
 	// the classpath will be: 1) directory paths and 2)
 	// JARs. Bazel will provide input digests for all src _files_
-	// but not src directories, so they will not be present in the
-	// cache key. Therefore, we will only reload when a jar changes digest
+	// but not src directories. If a source file changes, just
+	// `compile` will handle it. Therefore, we will only reload
+	// when a jar changes digest
 	for(String s: compile_request.classpath) {
 	    classpath.add(s);
 	}
+
 	HashMap<String,String> key = new HashMap<String,String>();
-	for(Input i : work_request.inputs) {
-	    if (classpath.contains(i.path)) {
-		key.put(i.path,i.digest);
+	for(Input i : work_request.getInputsList()) {
+	    if (classpath.contains(i.getPath())) {
+		key.put(i.getPath(),i.getDigest().toStringUtf8());
 	    }
 	}
 	return key;
@@ -149,7 +147,6 @@ class ClojureWorker  {
 
     public static RuntimeCache newRuntime(WorkRequest work_request, ClojureCompileRequest compile_request) throws Exception
     {
-	System.err.println("new runtime");
 	DynamicClassLoader cl = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
 	RuntimeCache cache = new RuntimeCache();
 
@@ -163,19 +160,8 @@ class ClojureWorker  {
 	return cache;
     }
 
-    public static List<URL> classpathUrls(ClojureCompileRequest req) throws Exception
-    {
-	ArrayList<URL> urls = new ArrayList<URL>();
-
-	for (String path : req.classpath){
-	    urls.add(new File(path).toURI().toURL());
-	}
-	return urls;
-    }
-
     public static void printClassPath()
     {
-	System.err.println("classpath:");
 	for (URL u : runtimeCache.classloader.getURLs()){
 	    System.err.println(u);
 	}
@@ -184,14 +170,15 @@ class ClojureWorker  {
     public static RuntimeCache getClojureRuntime(WorkRequest work_request) throws Exception
     {
 	Gson gson = new GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_DASHES).create();
-	ClojureCompileRequest compile_request = gson.fromJson(work_request.arguments[0],ClojureCompileRequest.class);
+	ClojureCompileRequest compile_request = gson.fromJson(work_request.getArguments(0),ClojureCompileRequest.class);
 
 	// Look at the inputs. If the new jars are a superset of the existing set, return the cached loader, otherwise create and return a new loader
 	if(runtimeCache == null) {
-	    System.err.println("cache = null, new runtime");
 	    return newRuntime(work_request, compile_request);
 	}
 	HashMap<String,String> request_key = getCacheKey(work_request, compile_request);
+
+	HashMap<String,String> existing_key = runtimeCache.key;
 
 	for(Entry<String,String> entry : request_key.entrySet()) {
 	    String path = entry.getKey();
@@ -204,27 +191,22 @@ class ClojureWorker  {
 		return runtimeCache;
 	    }
 	}
-	System.err.println("reusing runtime");
-	for(Entry<String,String> entry : request_key.entrySet()) {
-	    String path = entry.getKey();
+	for(String path : compile_request.classpath) {
 	    URL url = new File(path).toURI().toURL();
+
 	    runtimeCache.classloader.addURL(url);
 	}
 	runtimeCache.key = request_key;
 	return runtimeCache;
     }
 
-    public static void processRequest(WorkRequest request) throws Exception
+    public static Object processRequest(WorkRequest request) throws Exception
     {
 	runtimeCache = getClojureRuntime(request);
 	ClojureRuntimeShim runtime = runtimeCache.runtime;
-	try {
-	    runtime.require("rules-clojure.jar");
-	    runtime.invoke("rules-clojure.jar/compile!", request.arguments[0]);
-	} catch (Throwable t) {
-	    printClassPath();
-	    throw t;
-	}
+
+	runtime.require("rules-clojure.jar");
+	return runtime.invoke("rules-clojure.jar/compile-json", request.getArguments(0));
     }
 
     public static void ephemeralWorkerMain(String[] args)

@@ -1,3 +1,5 @@
+load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_proto_toolchains")
+
 def _clojure_toolchain(ctx):
     return [platform_common.ToolchainInfo(
         runtime = ctx.attr.classpath,
@@ -23,7 +25,7 @@ clojure_toolchain = rule(
                 "@rules_clojure_maven//:org_clojure_core_specs_alpha",
             ]),
         "_scripts": attr.label(
-            default = "//src/rules_clojure:toolchain_files",
+            default = "//java/rules_clojure:ClojureWorker",
         ),
         "jdk": attr.label(
             default = "@bazel_tools//tools/jdk:current_java_runtime",
@@ -33,4 +35,6 @@ clojure_toolchain = rule(
 )
 
 def rules_clojure_default_toolchain():
+    rules_proto_dependencies()
+    rules_proto_toolchains()
     native.register_toolchains("@rules_clojure//:rules_clojure_default_toolchain")
