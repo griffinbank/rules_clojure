@@ -12,33 +12,24 @@ Add the following to your `WORKSPACE`:
 
 ```skylark
 
-RULES_JVM_EXTERNAL_TAG = "4.0"
-RULES_JVM_EXTERNAL_SHA = "31701ad93dbfe544d597dbe62c9a1fdd76d81d8a9150c2bf1ecf928ecdf97169"
 
-http_archive(
-    name = "rules_jvm_external",
-    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
-    sha256 = RULES_JVM_EXTERNAL_SHA,
-    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG)
+RULES_CLOJURE_SHA = $CURRENT_SHA1
+http_archive(name = "rules_clojure",
+             strip_prefix = "rules_clojure-%s" % RULES_CLOJURE_SHA,
+             url = "https://github.com/griffinbank/rules_clojure/archive/%s.zip" % RULES_CLOJURE_SHA)
 
-load("@rules_jvm_external//:defs.bzl", "maven_install")
+load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies")
+rules_clojure_dependencies()
 
-load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
-
-git_repository(name = "rules_clojure",
-               commit = $CURRENT_SHA1,
-               remote = "https://github.com/griffinbank/rules_clojure.git")
-
-
-load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies", "rules_clojure_toolchains")
-load("@rules_clojure//:toolchains.bzl", "rules_clojure_toolchains")
+load("@rules_clojure//:toolchains.bzl", "rules_clojure_default_toolchain")
+rules_clojure_default_toolchain()
 ```
 
 Differs from [rules_clojure](https://github.com/simuons/rules_clojure) that it uses `java_library` and `java_binary` as much as possible.
 
 `clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code.
 
-
+For fast compilation, `clojure_library` is a Bazel persistent worker, which uses protobufs.
 
 ```
 clojure_library(
@@ -49,9 +40,12 @@ clojure_library(
     aot = ["foo.core"])
 ```
 
-`clojure_library` produces a Jar. `srcs` is list of file targets.
+It is likely you're using Bazel because you have large projects with long compile and or test steps. In general, rules_clojure attempts to AOT as much as possible by default.
+
+`clojure_library` produces a jar.
+`srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar (class files resulting from the AOT will be added to the jar).
 `deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc). `aot` is a list of namespaces to compile.
-`srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar. `resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use `resource_strip_prefix`, which is present in both the built-in `java_library`, and `clojure_library`.
+`resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use `resource_strip_prefix`, which behaves the same as in `java_library`.
 
 Because of clojure's general lack of concern about the difference between runtime and compile-time (e.g. AOT), all clojure rules accept `deps` only. Output jars will specify `deps` for both compile time and runtime dependencies (because a downstream library might depend on the library, and whether it's a `dep` or `runtime_dep` depends on whether the downstream library is AOTing or not.
 
@@ -63,7 +57,7 @@ clojure_repl(
     deps = [":foo"])
 ```
 
-Behaves as you'd expect.
+Behaves as you'd expect. Delegates to `java_binary` with `main_class clojure.main`.
 
 ### clojure_test
 
@@ -73,7 +67,7 @@ clojure_test(name = "bar_test.test",
 	srcs = ["bar_test"])
 ```
 
-Delegates to `java_test`, using `rules-clojure.testrunner`
+Delegates to `java_test`, using `rules-clojure.testrunner`. `clojure_test` runs all tests in a single namespace.
 
 ## tools.deps dependencies (optional)
 ```
@@ -136,14 +130,6 @@ Sometimes the dependency graph isn't complete, for example when using JVM librar
 ```
 
 put `:bazel {:extra-deps {}}` at the top level of your deps.edn file. `:extra-deps` will be merged in when running `gen_srcs`. Deps are a map of bazel labels to a map of extra fields to merge into `clojure_namespace` and imported deps. `:aot []` is also supported
-
-## Resources
-
-`gen_src` will automatically create a `clojure_library` target for `/resources`, relative to the deps.edn. If your project has more resources in the deps.edn file, using
-
-```clojure
-{:bazel {:resources ["resources" "dev-resources" "test-resources"]
-```
 
 ## Toolchains
 
