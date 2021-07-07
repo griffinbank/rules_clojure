@@ -1,5 +1,7 @@
 # Yet Another Clojure rules for [Bazel](https://bazel.build)
 
+Status: pre-release.
+
 ## Features
 - tools.deps support
 - native JVM libraries

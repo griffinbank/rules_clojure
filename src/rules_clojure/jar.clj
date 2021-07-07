@@ -156,7 +156,7 @@
     (binding [*compile-path* (str classes-dir "/")]
       (doseq [ns (topo-sort aot-nses)]
         (try
-          (non-transitive-compile ns)
+          (compile ns)
           (catch Throwable t
             (println "while compiling" ns)
             (pst/print-stack-trace t)
