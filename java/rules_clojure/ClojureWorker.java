@@ -26,7 +26,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.HashSet;
 import org.projectodd.shimdandy.ClojureRuntimeShim;
-import rules_clojure.DynamicClassLoader;
 import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
 import com.google.devtools.build.lib.worker.WorkerProtocol.Input;
 import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
@@ -35,6 +34,7 @@ class ClojureCompileRequest {
     String[] aot;
     String classes_dir;
     String[] classpath;
+    String[] shim_classpath;
     String output_jar;
     String src_dir;
     String[] srcs;
@@ -43,7 +43,6 @@ class ClojureCompileRequest {
 class RuntimeCache{
     // Classpath String to Digest
     HashMap<String,String> key;
-    DynamicClassLoader classloader;
     ClojureRuntimeShim runtime;
 }
 
@@ -88,8 +87,6 @@ class ClojureWorker  {
 		    real_stderr.println("null request, break");
 		    break;
 		}
-
-		real_stderr.printf("request %s\n", request);
 
 		int code = 1;
 
@@ -147,24 +144,16 @@ class ClojureWorker  {
 
     public static RuntimeCache newRuntime(WorkRequest work_request, ClojureCompileRequest compile_request) throws Exception
     {
-	DynamicClassLoader cl = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
+	DynamicClassLoader shim_cl = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
+	for(String path : compile_request.shim_classpath) {
+	    shim_cl.addURL(new File(path).toURI().toURL());
+	}
+
 	RuntimeCache cache = new RuntimeCache();
 
-	for(String path : compile_request.classpath) {
-	    cl.addURL(new File(path).toURI().toURL());
-	}
-
-	cache.classloader = cl;
-	cache.runtime = ClojureRuntimeShim.newRuntime(cl, "clojure-worker");
+	cache.runtime = ClojureRuntimeShim.newRuntime(shim_cl, "clojure-worker");
 	cache.key = getCacheKey(work_request, compile_request);
 	return cache;
-    }
-
-    public static void printClassPath()
-    {
-	for (URL u : runtimeCache.classloader.getURLs()){
-	    System.err.println(u);
-	}
     }
 
     public static RuntimeCache getClojureRuntime(WorkRequest work_request) throws Exception
@@ -190,11 +179,6 @@ class ClojureWorker  {
 		runtimeCache = newRuntime(work_request,compile_request);
 		return runtimeCache;
 	    }
-	}
-	for(String path : compile_request.classpath) {
-	    URL url = new File(path).toURI().toURL();
-
-	    runtimeCache.classloader.addURL(url);
 	}
 	runtimeCache.key = request_key;
 	return runtimeCache;

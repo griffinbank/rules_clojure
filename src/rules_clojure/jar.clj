@@ -11,11 +11,25 @@
             [clojure.tools.namespace.track :as track]
             [clojure.tools.namespace.dependency :as dep]
             [rules-clojure.fs :as fs])
-  (:import [java.io BufferedOutputStream FileOutputStream]
+  (:import clojure.lang.DynamicClassLoader
+           clojure.lang.RT
+           [java.io BufferedOutputStream FileOutputStream]
            [java.util.jar Manifest JarEntry JarFile JarOutputStream]
            [java.nio.file Files Path Paths FileSystem FileSystems LinkOption]
            [java.nio.file.attribute FileAttribute FileTime]
            java.time.Instant))
+
+
+;;; Classloader fun: classloaders form a hierarchy. _typically_ but not always, a classloader asks its parent to load a class, and if not, the current CL attempts to load. In normal clojure operation, `java -cp` creates a URLClassloader containing all URLs. `clojure.main` then creates a DynamicClassloader as a child of the URL classloader. When compiling,, clojure.lang.Compiler generates a classfile which is then loaded by the DCL.
+
+;;; When compiling, defprotocol creates new classes. If a compile reloads a protocol, that 1) breaks all existing users of the protocol. 2) Bad things happen if the protocol is loaded in two separate classloaders, because those are different class ids.
+
+;;; We want to keep the worker up and incrementally add classes. This is challenging: which classloader do we add URLs to? What happens to the existing compiled class when we add the compiled jar to the runtime for the next class?
+
+;;; clj-tuple assumes it is in the same loader as Clojure. Breaking that assumption causes: `class clojure.lang.PersistentUnrolledVector$Card1 tried to access field clojure.lang.APersistentVector._hash (clojure.lang.PersistentUnrolledVector$Card1 is in unnamed module of loader clojure.lang.DynamicClassLoader @52525845; clojure.lang.APersistentVector is in unnamed module of loader java.net.URLClassLoader @704921a5)`
+
+;;; Therefore, create a new classloader that derives from URLClassloader, but makes addURLs() public. This is the same behavior as clojure.lang.DynamicClassLoader, but DCL includes a cache cache which we do not want in the parent classloader.
+
 
 (def manifest
   (let [m (Manifest.)]
@@ -40,6 +54,17 @@
       (str/replace "-" "_")
       (#(fs/->path src-dir %))))
 
+(defn classpath []
+  ;; (assert (= classloader (RT/baseLoader)))
+  (cp/classpath))
+
+(defn classpath-nses []
+  (->>
+   (classpath)
+   (#(find/find-ns-decls % find/clj))
+   (map parse/name-from-ns-decl)))
+
+
 ;; See https://clojure.atlassian.net/browse/CLJ-2303. Compiling is an
 ;; unconditional `load`. Imagine two namespaces, A, B. A contains a
 ;; protocol. B depends on A and uses the protocol, and A hasn't been
@@ -48,11 +73,6 @@
 ;; breaks all usage of the protocol in B. Compile in topo-order to
 ;; avoid forced reloads.
 
-(defn classpath-nses []
-  (->>
-   (cp/classpath)
-   (#(find/find-ns-decls % find/clj))
-   (map parse/name-from-ns-decl)))
 
 ;; TODO: identify when a compile request causes a reload of an existing namespace, and reload all dependent namespaces, using tools.namespace.
 (defn topo-sort
@@ -64,18 +84,14 @@
           (= (set nses) (set %))]}
   (let [nses (set nses)
         graph (dep/graph)]
-    (->> (cp/classpath)
+    (->> (classpath)
          (#(find/find-ns-decls % find/clj))
          (filter (fn [decl]
                    (let [ns (parse/name-from-ns-decl decl)]
                      (contains? nses ns))))
          (reduce (fn [graph decl]
                    (let [ns (parse/name-from-ns-decl decl)
-                         ;; make sure the parent namespace is in the
-                         ;; graph or topo-sort will return an empty
-                         ;; list, not containing the parent. Pick
-                         ;; clojure.core as a dummy node
-                         graph (dep/depend graph ns 'clojure.core)]
+                         graph (dep/depend graph ns 'sentinel)]
                      (reduce (fn [graph dep]
                                (dep/depend graph ns dep)) graph (parse/deps-from-ns-decl decl)))) graph)
          (dep/topo-sort)
@@ -85,8 +101,10 @@
 (defn non-transitive-compile
   [ns]
   {:pre [(symbol? ns)]}
-  (->> (cp/classpath)
-       (find/find-ns-decls)
+  (when (contains? (loaded-libs) ns)
+    (println "WARNING compiling loaded lib" ns))
+  (->> (classpath)
+       (#(find/find-ns-decls % find/clj))
        (filter (fn [ns-decl]
                  (let [found-ns (-> ns-decl second)]
                    (assert (symbol? found-ns))
@@ -94,8 +112,8 @@
        (first)
        ((fn [ns-decl]
           (let [deps (parse/deps-from-ns-decl ns-decl)]
-            ;; (println "non-transitive-compile for ns" ns "require" deps)
             (doseq [d deps]
+              (println "non-transitive-compile" ns "require" d)
               (require d))
             (compile ns))))))
 
@@ -119,47 +137,43 @@
 (s/def ::compile (s/keys :req-un [::resources ::aot-nses ::classes-dir ::output-jar] :opt-un [::src-dir]))
 
 (defn aot-files
-  "Given the class-dir, post compiling `aot-ns`, return only the files that should go in the JAR"
+  "Given the class-dir, post compiling `aot-ns`, return the files that should go in the JAR"
   [classes-dir aot-ns]
-  (let [internal-name (str classes-dir "/" (-> aot-ns
-                                               (str/replace "-" "_")
-                                               (str/replace "." "/")))]
-    (->> classes-dir
-         .toFile
-         file-seq)))
+  (->> classes-dir
+       .toFile
+       file-seq))
 
-(s/fdef compile! :args ::compile)
-(defn compile!
-  ""
-  [{:keys [src-dir resources aot-nses classes-dir output-jar] :as args}]
-  (when-not (s/valid? ::compile args)
-    (println "args:" args)
-    (s/explain ::compile args)
-    (assert false))
+(defn all-nses []
+  (->> (classpath)
+       (#(find/find-namespaces % find/clj))))
 
-  (fs/ensure-directory classes-dir)
+(defn load-classpath [{:keys [classpath]}]
+  (doseq [c classpath]
+    (.addURL (RT/baseLoader) (-> c io/file .toURI .toURL))))
 
+(defn do-aot [{:keys [classes-dir aot-nses]}]
   (when (seq aot-nses)
     (binding [*compile-path* (str classes-dir "/")]
       (doseq [ns (topo-sort aot-nses)]
         (try
-          (compile ns)
+          (non-transitive-compile ns)
           (catch Throwable t
             (println "while compiling" ns)
             (pst/print-stack-trace t)
+            (throw t)))))))
 
-            (throw t))))))
-
+(defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses]}]
   (with-open [jar-os (-> output-jar .toFile FileOutputStream. BufferedOutputStream. JarOutputStream.)]
     (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
     (.write manifest jar-os)
     (.closeEntry jar-os)
     (doseq [r resources
             :let [full-path (fs/->path src-dir r)
-                  file (.toFile full-path)]]
+                  file (.toFile full-path)
+                  name (str (fs/path-relative-to src-dir full-path))]]
       (assert (fs/exists? full-path) (str full-path))
       (assert (.isFile file))
-      (put-next-entry! jar-os (str full-path) (Files/getLastModifiedTime full-path (into-array LinkOption [])))
+      (put-next-entry! jar-os name (Files/getLastModifiedTime full-path (into-array LinkOption [])))
       (io/copy file jar-os)
       (.closeEntry jar-os))
     (doseq [file (->> aot-nses
@@ -170,11 +184,28 @@
                   name (str (fs/path-relative-to classes-dir path))]]
       (put-next-entry! jar-os name (Files/getLastModifiedTime path (into-array LinkOption [])))
       (io/copy file jar-os)
-      (.closeEntry jar-os)))
+      (.closeEntry jar-os))))
+
+(s/fdef compile! :args ::compile)
+(defn compile!
+  ""
+  [{:keys [src-dir resources aot-nses classes-dir output-jar classpath] :as args}]
+  (when-not (s/valid? ::compile args)
+    (println "args:" args)
+    (s/explain ::compile args)
+    (assert false))
+
+  (fs/ensure-directory classes-dir)
+
+  (load-classpath (select-keys args [:classpath]))
+
+  (do-aot (select-keys args [:classes-dir :aot-nses]))
+  (create-jar (select-keys args [:src-dir :classes-dir :output-jar :resources :aot-nses]))
+
   true)
 
 (defn compile-json [json-str]
-  (let [{:keys [src_dir resources aot_nses classes_dir output_jar] :as args} (json/read-str json-str :key-fn keyword)
+  (let [{:keys [src_dir resources aot_nses classes_dir output_jar classpath] :as args} (json/read-str json-str :key-fn keyword)
         _ (assert classes_dir)
         _ (when (seq resources) (assert src_dir))
         classes-dir (fs/->path classes_dir)
@@ -183,6 +214,7 @@
         aot-nses (map symbol aot_nses)]
     (compile! (merge
                {:classes-dir classes-dir
+                :classpath classpath
                 :resources resources
                 :output-jar output-jar
                 :aot-nses aot-nses}

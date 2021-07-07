@@ -195,17 +195,25 @@
 
 (s/def ::dep-ns->label (s/map-of symbol? string?))
 
-(defn ->dep-ns->label [{:keys [basis] :as args}]
-  {:pre [(map? basis)]}
+(def no-aot '#{clojure.core})
+
+(defn aot-namespace? [deps-bazel ns]
+  (not (contains? (set/union no-aot (get-in deps-bazel [:no-aot])) ns)))
+
+(defn ->dep-ns->label [{:keys [basis deps-bazel deps-repo-tag] :as args}]
+  {:pre [(map? basis)
+         deps-bazel]}
   (->> basis
        :classpath
        (map (fn [[path {:keys [lib-name]}]]
-              (when lib-name
-                (let [nses (find/find-namespaces [(fs/path->file path)])]
-                  (->> nses
-                       (map (fn [n]
-                              [n (library->label lib-name)]))
-                       (into {}))))))
+               (when lib-name
+                 (let [nses (find/find-namespaces [(fs/path->file path)] find/clj)]
+                   (->> nses
+                        (map (fn [n]
+                               [n ;; if (aot-namespace? deps-bazel n)
+                                ;;  (internal-dep-ns-aot-label lib-name n)
+                                (library->label lib-name)]))
+                        (into {}))))))
        (filter identity)
        (apply merge)))
 
@@ -277,7 +285,7 @@
   (-> path
       str
       (JarFile.)
-      (find/find-ns-decls-in-jarfile)))
+      (find/find-ns-decls-in-jarfile find/clj)))
 
 (s/def ::class->jar (s/map-of symbol? fs/path?))
 (s/fdef ->class->jar :args (s/cat :b ::basis) :ret ::class->jar)
@@ -331,17 +339,16 @@
   [{:keys [deps-repo-tag jar->lib] :as args} jarpath]
   (str deps-repo-tag "//:" (->> jarpath (get! jar->lib) library->label)))
 
-(s/fdef ns->label :args (s/cat :a (s/keys :req-un [::src-ns->label ::dep-ns->label]) :n symbol?))
+(s/fdef ns->label :args (s/cat :a (s/keys :req-un [(or ::src-ns->label ::dep-ns->label)]) :n symbol?))
 (defn ns->label
   "given the ns-map and a namespace, return a map of `:src` or `:dep` to the file/jar where it is located"
   [{:keys [src-ns->label dep-ns->label deps-repo-tag] :as args} ns]
-  {:pre [(map? src-ns->label)]}
-  (let [label  (or (get src-ns->label ns)
+  (let [label (or (get src-ns->label ns)
                    (when-let [label (get dep-ns->label ns)]
                      (assert deps-repo-tag)
                      (str deps-repo-tag "//:" label)))]
-    (assert label (str "couldn't find label for " ns))
-    {:deps [label]}))
+    (when label
+      {:deps [label]})))
 
 (defn get-ns-decl [path]
   (let [form (-> path
@@ -352,19 +359,17 @@
     (when (and form (= 'ns (first form)))
       form)))
 
-(s/fdef ns-deps :args (s/cat :a (s/keys :req-un [::workspace-root ::jar->lib ::deps-repo-tag]) :p fs/path? :d ::ns-decl))
+(s/fdef ns-deps :args (s/cat :a (s/keys :req-un [::workspace-root ::jar->lib ::deps-repo-tag]) :d ::ns-decl))
 (defn ns-deps
   "Given the ns declaration for a .clj file, return a map of {:srcs [labels], :data [labels]} for all :require statements"
-  [{:keys [src-ns->label dep-ns->label workspace-root jar->lib deps-repo-tag] :as args} path ns-decl]
+  [{:keys [src-ns->label dep-ns->label workspace-root jar->lib deps-repo-tag] :as args} ns-decl]
   (try
     (->> ns-decl
          parse/deps-from-ns-decl
          (map (partial ns->label (select-keys args [:src-ns->label :dep-ns->label :deps-repo-tag])))
          (filter identity)
          (distinct)
-         (apply merge-with concat))
-    (catch Throwable t
-      (throw (ex-info "error" {:path path} t)))))
+         (apply merge-with (comp vec concat)))))
 
 (s/def ::ns-decl any?)
 
@@ -413,7 +418,7 @@
 (defn src-ns? [path]
   (not (test-ns? path)))
 
-(defn path->ns
+(defn path-
   "given the path to a .clj file, return the namespace"
   [path]
   {:post [(symbol? %)]}
@@ -487,7 +492,7 @@
             test-overrides (get-in deps-bazel [:extra-deps test-full-label])
             aot (or
                  (get overrides :aot)
-                 (if true ;; (requires-aot? ns-decl)
+                 (if (requires-aot? ns-decl)
                    [(str ns-name)]
                    []))]
         (when overrides
@@ -506,7 +511,7 @@
                                                                          :aot []})
                                                                       (when-let [strip-path (strip-path (select-keys args [:basis :workspace-root]) path)]
                                                                         {:resource_strip_prefix strip-path})
-                                                                   (ns-deps (select-keys args [:workspace-root :src-ns->label :dep-ns->label :jar->lib :deps-repo-tag]) path ns-decl)
+                                                                      (ns-deps (select-keys args [:workspace-root :src-ns->label :dep-ns->label :jar->lib :deps-repo-tag]) ns-decl)
                                                                    (ns-import-deps args ns-decl)
                                                                    (ns-gen-class-deps args ns-decl)
                                                                    overrides)
@@ -622,10 +627,10 @@
     (println "gen-source-paths" deps-edn-path)
     (gen-source-paths- args (source-paths (select-keys args [:aliases :basis :deps-edn-path :workspace-root])))))
 
-(s/fdef gen-deps-build :args (s/cat :a (s/keys :req-un [::deps-out-dir ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel])))
+(s/fdef gen-deps-build :args (s/cat :a (s/keys :req-un [::deps-out-dir ::dep-ns->label ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel])))
 (defn gen-deps-build
   "generates the BUILD file for @deps//: with a single target containing all deps.edn-resolved dependencies"
-  [{:keys [deps-out-dir deps-build-dir jar->lib lib->jar lib->deps deps-repo-tag deps-bazel] :as args}]
+  [{:keys [deps-out-dir deps-build-dir dep-ns->label jar->lib lib->jar lib->deps deps-repo-tag deps-bazel] :as args}]
   (println "writing to" (-> (fs/->path deps-build-dir "BUILD.bazel") fs/path->file))
   (spit (-> (fs/->path deps-build-dir "BUILD.bazel") fs/path->file)
         (str/join "\n\n" (concat
@@ -641,30 +646,41 @@
                                                                  (str ":" (library->label lib)))))
                                                extra-deps-key (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
                                                extra-deps (-> deps-bazel
-                                                              (get-in [:extra-deps extra-deps-key]))
-                                               aot (or
-                                                    (:aot extra-deps)
-                                                    (mapv str (find/find-namespaces [(fs/path->file jarpath)])))
-
-                                               extra-deps (dissoc extra-deps :aot)]
+                                                              (get-in [:extra-deps extra-deps-key]))]
                                            (when extra-deps
                                              (println lib "extra-deps:" extra-deps))
                                            (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
 
-                                           [(emit-bazel (list 'java_import (kwargs (merge-with into
-                                                                                               {:name (if (seq aot)
-                                                                                                        preaot
-                                                                                                        label)
-                                                                                                :jars [(fs/path-relative-to deps-build-dir jarpath)]}
-                                                                                               (when (seq deps)
-                                                                                                 {:deps deps
-                                                                                                  :runtime_deps deps})
-                                                                                               extra-deps))))
-                                            (when (seq aot)
-                                              (emit-bazel (list 'clojure_library (kwargs {:name label
-                                                                                          :deps [preaot]
-                                                                                          :aot aot}))))]
-                                           ))))))
+                                           (vec
+                                            (concat
+                                             [(emit-bazel (list 'java_import (kwargs (merge-with into
+                                                                                                 {:name label
+                                                                                                  :jars [(fs/path-relative-to deps-build-dir jarpath)]}
+                                                                                                 (when (seq deps)
+                                                                                                   {:deps deps
+                                                                                                    :runtime_deps deps})
+                                                                                                 extra-deps))))]
+                                             ;; (->> (find/find-ns-decls [(fs/path->file jarpath)] find/clj)
+                                             ;;      ;; markdown-to-hiccup contains a .cljs build, with two identical copies of `markdown/links.cljc`, and two distinct copies of `markdown/core.clj`. For correctness, probably need to get the path inside the jar, and remove files that aren't in the correct position to be loaded
+                                             ;;      (group-by parse/name-from-ns-decl)
+                                             ;;      vals
+                                             ;;      (map first)
+                                             ;;      (filter (fn [ns-decl]
+                                             ;;                (aot-namespace? deps-bazel (parse/name-from-ns-decl ns-decl))))
+                                             ;;      (map (fn [ns-decl]
+                                             ;;             (let [ns (parse/name-from-ns-decl ns-decl)]
+                                             ;;               (emit-bazel (list 'clojure_library (kwargs (->
+                                             ;;                                                           (merge-with
+                                             ;;                                                            into
+                                             ;;                                                            {:name (internal-dep-ns-aot-label lib ns)
+                                             ;;                                                             :aot [(str ns)]}
+                                             ;;                                                            {:deps [(str deps-repo-tag "//:" label)]}
+                                             ;;                                                            (ns-deps (select-keys args [:workspace-root :dep-ns->label :jar->lib :deps-repo-tag]) ns-decl))
+                                             ;;                                                           (as-> m
+                                             ;;                                                               (cond-> m
+                                             ;;                                                                 (seq (:deps m)) (update :deps (comp vec distinct))
+                                             ;;                                                                 (:deps m) (update :deps (comp vec distinct))))))))))))
+                                             ))))))))
         :encoding "UTF-8"))
 
 (defn gen-maven-install
@@ -713,9 +729,13 @@
         jar->lib (->jar->lib basis)
         lib->jar (set/map-invert jar->lib)
         class->jar (->class->jar basis)
-        lib->deps (->lib->deps basis)]
+        lib->deps (->lib->deps basis)
+        dep-ns->label (->dep-ns->label {:basis basis
+                                        :deps-bazel deps-bazel
+                                        :deps-repo-tag deps-repo-tag})]
 
-    (gen-deps-build {:deps-bazel deps-bazel
+    (gen-deps-build {:dep-ns->label dep-ns->label
+                     :deps-bazel deps-bazel
                      :deps-out-dir deps-out-dir
                      :deps-build-dir deps-build-dir
                      :deps-repo-tag deps-repo-tag
