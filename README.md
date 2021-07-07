@@ -35,19 +35,21 @@ For fast compilation, `clojure_library` is a Bazel persistent worker, which uses
 clojure_library(
     name = "libbbq",
     srcs = ["bbq.clj"],
-	deps = ["foo"],
-	resource_strip_prefix = ["src"],
+    deps = ["foo"],
+    resource_strip_prefix = ["src"],
     aot = ["foo.core"])
 ```
 
-It is likely you're using Bazel because you have large projects with long compile and or test steps. In general, rules_clojure attempts to AOT as much as possible by default.
+It is likely you're interested in using Bazel because you have large projects with long compile and or test steps. In general, rules_clojure attempts to AOT as much as possible, for speed.
 
 `clojure_library` produces a jar.
-`srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar (class files resulting from the AOT will be added to the jar).
-`deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc). `aot` is a list of namespaces to compile.
-`resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use `resource_strip_prefix`, which behaves the same as in `java_library`.
 
-Because of clojure's general lack of concern about the difference between runtime and compile-time (e.g. AOT), all clojure rules accept `deps` only. Output jars will specify `deps` for both compile time and runtime dependencies (because a downstream library might depend on the library, and whether it's a `dep` or `runtime_dep` depends on whether the downstream library is AOTing or not.
+- `srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar (class files resulting from the AOT will be added to the jar).
+- `deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc).
+- `aot` is a list of namespaces to compile.
+- `resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use `resource_strip_prefix`, which behaves the same as in `java_library`.
+
+Because of clojure's general lack of concern about the difference between runtime and compile-time (e.g. AOT), all clojure rules accept `deps` only. Output jars will use `deps` in both compile time and runtime dependencies (because a downstream library might depend on the library, and whether it's a `dep` or `runtime_dep` depends on whether the downstream library is AOTing or not.
 
 ### clojure_repl
 
@@ -67,7 +69,7 @@ clojure_test(name = "bar_test.test",
 	srcs = ["bar_test"])
 ```
 
-Delegates to `java_test`, using `rules-clojure.testrunner`. `clojure_test` runs all tests in a single namespace.
+Delegates to `java_test`, using `rules-clojure.testrunner`. Note that bazel defines a test as a script that returns exit code 0, so startup time is relevant. `clojure_test` runs all tests in a single namespace.
 
 ## tools.deps dependencies (optional)
 ```
@@ -103,7 +105,7 @@ Run `gen_srcs` again any time the ns declarations in the source tree change.
 
 ### Tests
 
-For files with paths containing `_test.clj`, gen-src defines both a `clojure_library` and `clojure_test`:
+For files with paths matching `_test.clj`, gen-src defines both a `clojure_library` and `clojure_test`:
 
 ```
 clojure_library(name = "bar_test",
@@ -125,11 +127,11 @@ Sometimes the dependency graph isn't complete, for example when using JVM librar
 
 ```clojure
 :bazel {:extra-deps {"@deps//:com_cognitect_aws_api" {:deps ["@deps//:com_cognitect_aws_endpoints"]}
-                      "//src/foo/foo_s3" {:deps ["@deps//:com_cognitect_aws_s3"]}
-					  "//src/bar/core" {:aot []}}}
+                      "//src/foo/foo_s3" {:deps ["@deps//:com_cognitect_aws_s3"]}}
+        :no-aot '#{foo.bar}}
 ```
 
-put `:bazel {:extra-deps {}}` at the top level of your deps.edn file. `:extra-deps` will be merged in when running `gen_srcs`. Deps are a map of bazel labels to a map of extra fields to merge into `clojure_namespace` and imported deps. `:aot []` is also supported
+put `:bazel {:extra-deps {}}` at the top level of your deps.edn file. `:extra-deps` will be merged in when running `gen_srcs`. Deps are a map of bazel labels to a map of extra fields to merge into `clojure_namespace` and imported deps. `:no-aot` is also supported.
 
 ## Toolchains
 
