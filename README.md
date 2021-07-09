@@ -123,6 +123,19 @@ clojure_test(name = "bar_test.test",
 
 Because Bazel requires target names to be unique within the same directory, the namespace target always matches the `ns`, while the `test` target is `$ns.test`, so the binary test target is `foo_test.test`. ¯\_(ツ)_/¯
 
+If a test namespace declaration contains any of the following metadata:
+- `:bazel.test/tags`
+- `:bazel.test/size`
+- `:bazel.test/timeout`
+
+those attributes will be added to the `clojure_test` target.
+```
+(ns foo.bar-test
+  {:bazel.test/tags [:integration]
+   :bazel.test/timeout :long}
+  (:require [...])
+
+
 ### extra deps
 
 Sometimes the dependency graph isn't complete, for example when using JVM libraries with native libraries, `:gen-class`, or some APIs that don't utilize `require`, e.g. [cognitect aws api](https://github.com/cognitect-labs/aws-api).

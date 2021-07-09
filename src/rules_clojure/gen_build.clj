@@ -1,6 +1,7 @@
 (ns rules-clojure.gen-build
   "Tools for generating BUILD.bazel files for clojure deps"
-  (:require [clojure.edn :as edn]
+  (:require [clojure.core.specs.alpha :as cs]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.spec.alpha :as s]
@@ -359,6 +360,13 @@
     (when (and form (= 'ns (first form)))
       form)))
 
+(defn get-ns-meta
+  "return any metadata attached to the namespace, or nil"
+  [ns-decl]
+  (assert (= 'ns (first ns-decl)))
+  (-> (s/conform ::cs/ns-form (rest ns-decl))
+      :attr-map))
+
 (s/fdef ns-deps :args (s/cat :a (s/keys :req-un [::workspace-root ::jar->lib ::deps-repo-tag]) :d ::ns-decl))
 (defn ns-deps
   "Given the ns declaration for a .clj file, return a map of {:srcs [labels], :data [labels]} for all :require statements"
@@ -485,6 +493,7 @@
     (if-let [[_ns ns-name & refs :as ns-decl] (get-ns-decl path)]
       (let [test? (test-ns? path)
             ns-label (str (fs/basename path))
+            ns-meta (get-ns-meta ns-decl)
             src-label (src->label {:workspace-root workspace-root} path)
             test-label (str (fs/basename path) ".test")
             overrides (get-in deps-bazel [:extra-deps src-label])
@@ -524,6 +533,12 @@
                                                       {:name test-label
                                                        :test_ns (str ns-name)
                                                        :deps [(str ":" ns-label)]}
+                                                      (when-let [tags (:bazel.test/tags ns-meta)]
+                                                        {:tags (vec (map name tags))})
+                                                      (when-let [size (:bazel.test/size ns-meta)]
+                                                        {:size (name size)})
+                                                      (when-let [timeout (:bazel.test/timeout ns-meta)]
+                                                        {:timeout (name timeout)})
                                                       test-overrides))))]))
          (filterv identity)))
       (println "WARNING: skipping" path "due to no ns declaration"))
