@@ -211,9 +211,9 @@
                  (let [nses (find/find-namespaces [(fs/path->file path)] find/clj)]
                    (->> nses
                         (map (fn [n]
-                               [n ;; if (aot-namespace? deps-bazel n)
-                                ;;  (internal-dep-ns-aot-label lib-name n)
-                                (library->label lib-name)]))
+                               [n (if (aot-namespace? deps-bazel n)
+                                    (internal-dep-ns-aot-label lib-name n)
+                                    (library->label lib-name))]))
                         (into {}))))))
        (filter identity)
        (apply merge)))
@@ -675,27 +675,28 @@
                                                                                                    {:deps deps
                                                                                                     :runtime_deps deps})
                                                                                                  extra-deps))))]
-                                             ;; (->> (find/find-ns-decls [(fs/path->file jarpath)] find/clj)
-                                             ;;      ;; markdown-to-hiccup contains a .cljs build, with two identical copies of `markdown/links.cljc`, and two distinct copies of `markdown/core.clj`. For correctness, probably need to get the path inside the jar, and remove files that aren't in the correct position to be loaded
-                                             ;;      (group-by parse/name-from-ns-decl)
-                                             ;;      vals
-                                             ;;      (map first)
-                                             ;;      (filter (fn [ns-decl]
-                                             ;;                (aot-namespace? deps-bazel (parse/name-from-ns-decl ns-decl))))
-                                             ;;      (map (fn [ns-decl]
-                                             ;;             (let [ns (parse/name-from-ns-decl ns-decl)]
-                                             ;;               (emit-bazel (list 'clojure_library (kwargs (->
-                                             ;;                                                           (merge-with
-                                             ;;                                                            into
-                                             ;;                                                            {:name (internal-dep-ns-aot-label lib ns)
-                                             ;;                                                             :aot [(str ns)]}
-                                             ;;                                                            {:deps [(str deps-repo-tag "//:" label)]}
-                                             ;;                                                            (ns-deps (select-keys args [:workspace-root :dep-ns->label :jar->lib :deps-repo-tag]) ns-decl))
-                                             ;;                                                           (as-> m
-                                             ;;                                                               (cond-> m
-                                             ;;                                                                 (seq (:deps m)) (update :deps (comp vec distinct))
-                                             ;;                                                                 (:deps m) (update :deps (comp vec distinct))))))))))))
-                                             ))))))))
+                                             (->> (find/find-ns-decls [(fs/path->file jarpath)] find/clj)
+                                                  ;; markdown-to-hiccup contains a .cljs build, with two identical copies of `markdown/links.cljc`, and two distinct copies of `markdown/core.clj`. For correctness, probably need to get the path inside the jar, and remove files that aren't in the correct position to be loaded
+                                                  (group-by parse/name-from-ns-decl)
+                                                  vals
+                                                  (map first)
+                                                  (filter (fn [ns-decl]
+                                                            (aot-namespace? deps-bazel (parse/name-from-ns-decl ns-decl))))
+                                                  (map (fn [ns-decl]
+                                                         (let [ns (parse/name-from-ns-decl ns-decl)]
+                                                           (emit-bazel (list 'clojure_library (kwargs (->
+                                                                                                       (merge-with
+                                                                                                        into
+                                                                                                        {:name (internal-dep-ns-aot-label lib ns)
+                                                                                                         :aot [(str ns)]}
+                                                                                                        {:deps [(str deps-repo-tag "//:" label)]
+                                                                                                         ;; TODO the source jar doesn't need to be in runtime_deps
+                                                                                                         :runtime_deps []}
+                                                                                                        (ns-deps (select-keys args [:workspace-root :dep-ns->label :jar->lib :deps-repo-tag]) ns-decl))
+                                                                                                       (as-> m
+                                                                                                           (cond-> m
+                                                                                                             (seq (:deps m)) (update :deps (comp vec distinct))
+                                                                                                             (:deps m) (update :deps (comp vec distinct))))))))))))))))))))
         :encoding "UTF-8"))
 
 (defn gen-maven-install

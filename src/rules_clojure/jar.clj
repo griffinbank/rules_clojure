@@ -20,11 +20,29 @@
            java.time.Instant))
 
 
-;;; Classloader fun: classloaders form a hierarchy. _typically_ but not always, a classloader asks its parent to load a class, and if not, the current CL attempts to load. In normal clojure operation, `java -cp` creates a URLClassloader containing all URLs. `clojure.main` then creates a DynamicClassloader as a child of the URL classloader. When compiling,, clojure.lang.Compiler generates a classfile which is then loaded by the DCL.
+;;; Clojure is a compiled language. When loading source files or evaling, the compiler generates a .class file, and then loads it via standard Java classloaders. During non-AOT, the .classfile is in memory without being written to disk.
 
-;;; When compiling, defprotocol creates new classes. If a compile reloads a protocol, that 1) breaks all existing users of the protocol. 2) Bad things happen if the protocol is loaded in two separate classloaders, because those are different class ids.
+;;; When AOT'ing, the compiler writes a .class that corresponds to the name of the source file. `foo-bar.core` will produce a file `foo_bar/core.class`.
 
-;;; We want to keep the worker up and incrementally add classes. This is challenging: which classloader do we add URLs to? What happens to the existing compiled class when we add the compiled jar to the runtime for the next class?
+;;; Classloaders form a hierarchy. A classloader usually asks its parent to load a class, and if the parent can't, the current CL attempts to load. In normal clojure operation, `java -cp` creates a URLClassloader containing all URLs. `clojure.main` then creates a clojure.lang.DynamicClassLoader as a child of the URL classloader.
+
+;;; DCL contains a _static_ (class-wide!) class cache.
+
+;;; clojure.lang.Compiler contains its own private DCL.
+
+;;; To load a namespace, clojure.lang.RT looks for both `foo-bar/core.clj` and `foo_bar/core.class` on the classpath. If only the class file is present, it is loaded. If only the source exists, it is compiled and then loaded. If both are present, the one with the newer file modification time is loaded.
+
+;;; In normal operation, if foo-bar.core was AOT'd, it will be loaded by the URLClassloader (because the .classfile exists). If it had to be compiled, it will be loaded by the DCL.
+
+;;; In the JVM, classes are not unique by name, they are unique by name, _per classloader_. Two classes with the same name in different classloaders will not be identical, which breaks protocols, among other things.
+
+;;; When compiling, defprotocol creates new classes. If a compile reloads a protocol, that breaks all existing users of the protocol. If the protocol is loaded in two separate classloaders, that will break some users.
+
+;;; If an AOT'd ns contains a protocol, the resulting classfile should appear in exactly one jar (if the classfiles appear in multiple jars, there's a chance both definitions could get loaded, and then some users of the protocol will break).
+
+;;; When compiling a user of the protocol, the compiled definition must be on the classpath (because the user needs to refer to the AOT'd class id, not the src class id)
+
+;;; We want to keep the worker up and incrementally load code in the same worker, because reloading is expensive. This is challenging: which classloader do we add URLs to? What happens to the existing compiled class when we add the compiled jar to the runtime for the next class?
 
 ;;; clj-tuple assumes it is in the same loader as Clojure. Breaking that assumption causes: `class clojure.lang.PersistentUnrolledVector$Card1 tried to access field clojure.lang.APersistentVector._hash (clojure.lang.PersistentUnrolledVector$Card1 is in unnamed module of loader clojure.lang.DynamicClassLoader @52525845; clojure.lang.APersistentVector is in unnamed module of loader java.net.URLClassLoader @704921a5)`
 
@@ -98,6 +116,14 @@
          (filter (fn [ns]
                    (contains? nses ns))))))
 
+(defn compile-with-clean-classloader [ns]
+  ;; we don't want to 'taint' the clojure DCL with any compiled classes, because those will be separate class ids
+
+  (let [cl (DynamicClassLoader. (-> (Thread/currentThread) .getContextClassLoader))]
+    (-> (Thread/currentThread) (.setContextClassLoader cl))
+    (compile ns)
+    (remove-ns ns)))
+
 (defn non-transitive-compile
   [ns]
   {:pre [(symbol? ns)]}
@@ -115,7 +141,7 @@
             (doseq [d deps]
               (println "non-transitive-compile" ns "require" d)
               (require d))
-            (compile ns))))))
+            (compile-with-clean-classloader ns))))))
 
 ;; directory, root where all src and resources will be found
 (s/def ::src-dir fs/path?)
