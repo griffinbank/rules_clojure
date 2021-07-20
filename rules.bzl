@@ -5,6 +5,8 @@ clojure_library = rule(
     attrs = {
         "srcs": attr.label_list(default = [], allow_files = True),
         "deps": attr.label_list(default = [], providers = [[JavaInfo]]),
+        "runtime_deps": attr.label_list(default = [], providers = [[JavaInfo]]),
+        "data": attr.label_list(default = [], allow_files = True),
         "resources": attr.label_list(default=[], allow_files=True),
         "aot": attr.string_list(default = [], doc = "namespaces to be compiled"),
         "resource_strip_prefix": attr.string(default = ""),

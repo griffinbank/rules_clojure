@@ -183,6 +183,11 @@
       (str/replace #"-" "_")
       (str/replace #"[^\w]" "_")))
 
+(defn internal-dep-aot-label
+  "Given a dep library and a namespace inside it, return the name of the AOT target"
+  [lib]
+  (str "aot_" (library->label lib)))
+
 (defn internal-dep-ns-aot-label
   "Given a dep library and a namespace inside it, return the name of the AOT target"
   [lib ns]
@@ -501,7 +506,7 @@
             test-overrides (get-in deps-bazel [:extra-deps test-full-label])
             aot (or
                  (get overrides :aot)
-                 (if (requires-aot? ns-decl)
+                 (if (not test?)
                    [(str ns-name)]
                    []))]
         (when overrides
@@ -683,16 +688,18 @@
                                                   (filter (fn [ns-decl]
                                                             (aot-namespace? deps-bazel (parse/name-from-ns-decl ns-decl))))
                                                   (map (fn [ns-decl]
-                                                         (let [ns (parse/name-from-ns-decl ns-decl)]
+                                                         (let [ns (parse/name-from-ns-decl ns-decl)
+                                                               extra-deps (-> deps-bazel (get-in [:extra-deps (str deps-repo-tag "//:" (internal-dep-ns-aot-label lib ns))]))]
                                                            (emit-bazel (list 'clojure_library (kwargs (->
                                                                                                        (merge-with
                                                                                                         into
                                                                                                         {:name (internal-dep-ns-aot-label lib ns)
-                                                                                                         :aot [(str ns)]}
-                                                                                                        {:deps [(str deps-repo-tag "//:" label)]
+                                                                                                         :aot [(str ns)]
+                                                                                                         :deps [(str deps-repo-tag "//:" label)]
                                                                                                          ;; TODO the source jar doesn't need to be in runtime_deps
                                                                                                          :runtime_deps []}
-                                                                                                        (ns-deps (select-keys args [:workspace-root :dep-ns->label :jar->lib :deps-repo-tag]) ns-decl))
+                                                                                                        (ns-deps (select-keys args [:workspace-root :dep-ns->label :jar->lib :deps-repo-tag]) ns-decl)
+                                                                                                        extra-deps)
                                                                                                        (as-> m
                                                                                                            (cond-> m
                                                                                                              (seq (:deps m)) (update :deps (comp vec distinct))

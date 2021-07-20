@@ -1,5 +1,8 @@
 package rules_clojure;
 
+import com.google.devtools.build.lib.worker.WorkerProtocol.Input;
+import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
+import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -18,37 +21,54 @@ import java.io.PrintStream;
 import java.io.Reader;
 import java.io.Writer;
 import java.net.URL;
-import java.util.Arrays;
-import java.util.HashMap;
 import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
+import java.util.Arrays;
+import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map.Entry;
+import java.util.Map;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import org.projectodd.shimdandy.ClojureRuntimeShim;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import com.google.devtools.build.lib.worker.WorkerProtocol.Input;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
+
+// Clojure is a compiled language. When loading source files or evaling, the compiler generates a .class file, and then loads it via standard Java classloaders. During non-AOT, the .classfile is in memory without being written to disk.
+
+// When AOT'ing, the compiler writes a .class that corresponds to the name of the source file. `foo-bar.core` will produce a file `foo_bar/core.class`.
+
+// Classloaders form a hierarchy. A classloader usually asks its parent to load a class, and if the parent can't, the current CL attempts to load. In normal clojure operation, `java -cp` creates a URLClassloader containing all URLs. `clojure.main` then creates a clojure.lang.DynamicClassLoader as a child of the URL classloader. Finally, clojure.lang.Compiler creates its own private DCL
+
+// To load a namespace, clojure.lang.RT looks for both `foo-bar/core.clj` and `foo_bar/core.class` on the classpath. If only the class file is present, it is loaded. If only the source exists, it is compiled and then loaded. If both are present, the one with the newer file modification time is loaded.
+
+// In normal operation, if foo-bar.core was AOT'd, it will be loaded by the URLClassloader (because the .classfile exists). If it had to be compiled, it will be loaded by the compiler's DCL.
+
+// In the JVM, classes are not unique by name, they are unique by name, _per classloader_. Two classes with the same name in different classloaders will not be identical, which breaks protocols, among other things.
+
+// DCL contains a static class cache, shared by all instances in the same classloader (static class variables are shared among all instances of the same class, _from the same classloader_)
+
+// When compiling, defprotocol creates new classes. If a compile reloads a protocol, that breaks all existing users of the protocol. If the protocol is loaded in two separate classloaders, that will break some users.
+
+// If an AOT'd ns contains a protocol, the resulting classfile should appear in exactly one jar (if the classfiles appear in multiple jars, there's a chance both definitions could get loaded, and then some users of the protocol will break).
+
+// When compiling a user of the protocol, the compiled definition must be on the classpath (because the user needs to refer to the AOT'd class id, not the src class id)
+
+// We want to keep the worker up and incrementally load code in the same worker, because reloading the environment is expensive.
+
+// therefore: create a mostly-persistent classloader containing all jars that compile requests have asked for. If a compile request reloads an already-loaded namespace, return `::reload`, to create a new environment
 
 class ClojureCompileRequest {
     String[] aot;
     String classes_dir;
     String[] classpath;
-    String[] shim_classpath;
     String output_jar;
     String src_dir;
     String[] srcs;
 }
 
-class RuntimeCache{
-    // Classpath String to Digest
-    HashMap<String,String> key;
-    ClojureRuntimeShim runtime;
-}
-
 class ClojureWorker  {
 
-    private static RuntimeCache runtimeCache = null;
+    public static DynamicClassLoader classloader = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
 
     public static void main(String [] args) throws Exception
     {
@@ -120,77 +140,30 @@ class ClojureWorker  {
 	}
     }
 
-    public static HashMap<String,String> getCacheKey(WorkRequest work_request,ClojureCompileRequest compile_request)
+    public static ClojureRuntimeShim newRuntime(WorkRequest work_request, ClojureCompileRequest compile_request) throws Exception
     {
-	// returns a map of classpath string to digests
-	HashSet<String> classpath = new HashSet<String>();
-	// the classpath will be: 1) directory paths and 2)
-	// JARs. Bazel will provide input digests for all src _files_
-	// but not src directories. If a source file changes, just
-	// `compile` will handle it. Therefore, we will only reload
-	// when a jar changes digest
-	for(String s: compile_request.classpath) {
-	    classpath.add(s);
+	for(String path : compile_request.classpath) {
+	    classloader.addURL(new File(path).toURI().toURL());
 	}
 
-	HashMap<String,String> key = new HashMap<String,String>();
-	for(Input i : work_request.getInputsList()) {
-	    if (classpath.contains(i.getPath())) {
-		key.put(i.getPath(),i.getDigest().toStringUtf8());
-	    }
-	}
-	return key;
+	return ClojureRuntimeShim.newRuntime(classloader, "clojure-worker");
+
     }
 
-    public static RuntimeCache newRuntime(WorkRequest work_request, ClojureCompileRequest compile_request) throws Exception
-    {
-	DynamicClassLoader shim_cl = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
-	for(String path : compile_request.shim_classpath) {
-	    shim_cl.addURL(new File(path).toURI().toURL());
-	}
-
-	RuntimeCache cache = new RuntimeCache();
-
-	cache.runtime = ClojureRuntimeShim.newRuntime(shim_cl, "clojure-worker");
-	cache.key = getCacheKey(work_request, compile_request);
-	return cache;
-    }
-
-    public static RuntimeCache getClojureRuntime(WorkRequest work_request) throws Exception
+    public static Object processRequest(WorkRequest work_request) throws Exception
     {
 	Gson gson = new GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_DASHES).create();
 	ClojureCompileRequest compile_request = gson.fromJson(work_request.getArguments(0),ClojureCompileRequest.class);
 
-	// Look at the inputs. If the new jars are a superset of the existing set, return the cached loader, otherwise create and return a new loader
-	if(runtimeCache == null) {
-	    return newRuntime(work_request, compile_request);
-	}
-	HashMap<String,String> request_key = getCacheKey(work_request, compile_request);
-
-	HashMap<String,String> existing_key = runtimeCache.key;
-
-	for(Entry<String,String> entry : request_key.entrySet()) {
-	    String path = entry.getKey();
-	    String request_digest = entry.getValue();
-	    String cache_digest = runtimeCache.key.get(path);
-	    if ((cache_digest != null) && (!cache_digest.equals(request_digest))) {
-		System.err.println(String.format("digests differ on %s, %s vs. %s",path, request_digest, cache_digest));
-		runtimeCache.runtime.close();
-		runtimeCache = newRuntime(work_request,compile_request);
-		return runtimeCache;
-	    }
-	}
-	runtimeCache.key = request_key;
-	return runtimeCache;
-    }
-
-    public static Object processRequest(WorkRequest request) throws Exception
-    {
-	runtimeCache = getClojureRuntime(request);
-	ClojureRuntimeShim runtime = runtimeCache.runtime;
+	ClojureRuntimeShim runtime = newRuntime(work_request, compile_request);
 
 	runtime.require("rules-clojure.jar");
-	return runtime.invoke("rules-clojure.jar/compile-json", request.getArguments(0));
+	String ret = (String) runtime.invoke("rules-clojure.jar/compile-json", work_request.getArguments(0));
+	if(ret.equals(":rules-clojure.jar/reload")) {
+	    System.err.println("reloading");
+	    classloader = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
+	}
+	return ret;
     }
 
     public static void ephemeralWorkerMain(String[] args)

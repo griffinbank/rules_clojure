@@ -84,7 +84,6 @@ def clojure_jar_impl(ctx):
 
     toolchain = ctx.toolchains["@rules_clojure//:toolchain_type"]
 
-    # src_dir = ctx.actions.declare_directory("%s.srcs/" % ctx.label.name)
     output_jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
     classes_dir = ctx.actions.declare_directory("%s.classes" % (printable_label(ctx.label)))
 
@@ -93,24 +92,17 @@ def clojure_jar_impl(ctx):
     java_deps = []
     runfiles = ctx.runfiles()
 
-    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.compiledeps + toolchain.runtime:
+    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.runtime_deps + ctx.attr.data + ctx.attr.compiledeps + toolchain.runtime:
         if DefaultInfo in dep:
-            runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
             runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
+            runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
         if JavaInfo in dep:
             java_deps.append(dep[JavaInfo])
 
-    shim_deps = []
-    for dep in ctx.attr._worker_runtime:
-        if JavaInfo in dep:
-            shim_deps.append(dep[JavaInfo])
-
     runfiles = ctx.runfiles()
 
-    for dep in ctx.attr.srcs + ctx.attr.deps:
-        if DefaultInfo in dep:
-            runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
-            runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
+    dep_info = java_common.merge(java_deps)
+    shim_info = java_common.merge([d[JavaInfo] for d in ctx.attr._worker_runtime if JavaInfo in d])
 
     java_info = JavaInfo(
         output_jar = output_jar,
@@ -128,10 +120,9 @@ def clojure_jar_impl(ctx):
     else:
         src_dir = None
 
-    classpath_files = toolchain.files.runtime + java_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps
-
-    shim_deps = JavaInfo(output_jar=output_jar, compile_jar=output_jar, runtime_deps = shim_deps).transitive_runtime_deps.to_list()
-    shim_classpath = [f.path for f in shim_deps]
+    classpath = dep_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps + toolchain.files.runtime + shim_info.transitive_runtime_deps.to_list() + [classes_dir]
+    classpath = [f.path for f in classpath]
+    classpath = classpath + [p for p in [src_dir] if p]
 
     native_libs = []
     for f in runfiles.files.to_list():
@@ -150,16 +141,14 @@ def clojure_jar_impl(ctx):
         srcs = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.srcs],
         resources = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.resources],
         aot_nses = aot_nses,
-        classpath = [f.path for f in classpath_files] + [classes_dir.path] + [p for p in [src_dir] if p],
-        shim_classpath = shim_classpath
-    )
+        classpath = classpath)
 
     args_file = ctx.actions.declare_file(argsfile_name(ctx.label))
     ctx.actions.write(
         output = args_file,
         content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + toolchain.files.scripts + java_common.merge(java_deps).transitive_runtime_deps.to_list() + toolchain.files.jdk + native_libs + [args_file] + ctx.files._worker_runtime
+    inputs = ctx.files.srcs + ctx.files.resources + dep_info.transitive_runtime_deps.to_list() + toolchain.files.scripts + toolchain.files.jdk + native_libs + [args_file] + ctx.files._worker_runtime
 
     ctx.actions.run(
         executable=ctx.executable.worker,

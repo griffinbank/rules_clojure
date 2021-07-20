@@ -19,36 +19,6 @@
            [java.nio.file.attribute FileAttribute FileTime]
            java.time.Instant))
 
-
-;;; Clojure is a compiled language. When loading source files or evaling, the compiler generates a .class file, and then loads it via standard Java classloaders. During non-AOT, the .classfile is in memory without being written to disk.
-
-;;; When AOT'ing, the compiler writes a .class that corresponds to the name of the source file. `foo-bar.core` will produce a file `foo_bar/core.class`.
-
-;;; Classloaders form a hierarchy. A classloader usually asks its parent to load a class, and if the parent can't, the current CL attempts to load. In normal clojure operation, `java -cp` creates a URLClassloader containing all URLs. `clojure.main` then creates a clojure.lang.DynamicClassLoader as a child of the URL classloader.
-
-;;; DCL contains a _static_ (class-wide!) class cache.
-
-;;; clojure.lang.Compiler contains its own private DCL.
-
-;;; To load a namespace, clojure.lang.RT looks for both `foo-bar/core.clj` and `foo_bar/core.class` on the classpath. If only the class file is present, it is loaded. If only the source exists, it is compiled and then loaded. If both are present, the one with the newer file modification time is loaded.
-
-;;; In normal operation, if foo-bar.core was AOT'd, it will be loaded by the URLClassloader (because the .classfile exists). If it had to be compiled, it will be loaded by the DCL.
-
-;;; In the JVM, classes are not unique by name, they are unique by name, _per classloader_. Two classes with the same name in different classloaders will not be identical, which breaks protocols, among other things.
-
-;;; When compiling, defprotocol creates new classes. If a compile reloads a protocol, that breaks all existing users of the protocol. If the protocol is loaded in two separate classloaders, that will break some users.
-
-;;; If an AOT'd ns contains a protocol, the resulting classfile should appear in exactly one jar (if the classfiles appear in multiple jars, there's a chance both definitions could get loaded, and then some users of the protocol will break).
-
-;;; When compiling a user of the protocol, the compiled definition must be on the classpath (because the user needs to refer to the AOT'd class id, not the src class id)
-
-;;; We want to keep the worker up and incrementally load code in the same worker, because reloading is expensive. This is challenging: which classloader do we add URLs to? What happens to the existing compiled class when we add the compiled jar to the runtime for the next class?
-
-;;; clj-tuple assumes it is in the same loader as Clojure. Breaking that assumption causes: `class clojure.lang.PersistentUnrolledVector$Card1 tried to access field clojure.lang.APersistentVector._hash (clojure.lang.PersistentUnrolledVector$Card1 is in unnamed module of loader clojure.lang.DynamicClassLoader @52525845; clojure.lang.APersistentVector is in unnamed module of loader java.net.URLClassLoader @704921a5)`
-
-;;; Therefore, create a new classloader that derives from URLClassloader, but makes addURLs() public. This is the same behavior as clojure.lang.DynamicClassLoader, but DCL includes a cache cache which we do not want in the parent classloader.
-
-
 (def manifest
   (let [m (Manifest.)]
     (doto (.getMainAttributes m)
@@ -60,20 +30,14 @@
   ;; present, Clojure loads the one with the newer file modification
   ;; time. This completely breaks reproducible builds because we can't
   ;; set the modified-time to 0 on .class files. Setting to zero means
-  ;; if anything on the classpath includes the .clj version, it will
-  ;; be loaded because its last-modified timestamp will be non-zero
+  ;; if anything on the classpath includes the .clj version, the .clj
+  ;; will be loaded because its last-modified timestamp will be
+  ;; non-zero
   (.putNextEntry target
                  (doto (JarEntry. name)
                    (.setLastModifiedTime last-modified-time))))
 
-(defn ns->path [src-dir ns]
-  (-> ns
-      str
-      (str/replace "-" "_")
-      (#(fs/->path src-dir %))))
-
 (defn classpath []
-  ;; (assert (= classloader (RT/baseLoader)))
   (cp/classpath))
 
 (defn classpath-nses []
@@ -92,7 +56,10 @@
 ;; avoid forced reloads.
 
 
-;; TODO: identify when a compile request causes a reload of an existing namespace, and reload all dependent namespaces, using tools.namespace.
+(defn classpath-nses []
+  (->> (classpath)
+       (find/find-namespaces)))
+
 (defn topo-sort
   "Given a seq of namespaces to compile, return them in topo sorted order"
   [nses]
@@ -116,19 +83,40 @@
          (filter (fn [ns]
                    (contains? nses ns))))))
 
-(defn compile-with-clean-classloader [ns]
-  ;; we don't want to 'taint' the clojure DCL with any compiled classes, because those will be separate class ids
+(defn get-context-classloader []
+  (-> (Thread/currentThread) .getContextClassLoader))
 
-  (let [cl (DynamicClassLoader. (-> (Thread/currentThread) .getContextClassLoader))]
-    (-> (Thread/currentThread) (.setContextClassLoader cl))
-    (compile ns)
-    (remove-ns ns)))
+(defn protocol? [val]
+  (and (map? val)
+       (class? (:on val))
+       (class? (:on-interface val))
+       (map? (:sigs val))))
+
+(defn contains-protocols? [ns]
+  (->> ns
+       ns-interns
+       vals
+       (some protocol?)))
+
+(defn deftype? [ns v]
+  (and (class? v)
+       (-> v
+           (.getName)
+           (str/starts-with? (munge (name ns))))
+       (= (count (str/split (.getName v) #"\."))
+          (inc (count (str/split (name ns) #"\."))))))
+
+(defn contains-deftypes? [ns]
+  (->> ns
+       ns-map
+       vals
+       (some (fn [v]
+               (deftype? ns v)))))
 
 (defn non-transitive-compile
+  "By default, `compile` compiles all dependencies of ns. This is non-deterministic, so require all dependencies first. Returns ::reload when ClojureWorker should discard the environment"
   [ns]
   {:pre [(symbol? ns)]}
-  (when (contains? (loaded-libs) ns)
-    (println "WARNING compiling loaded lib" ns))
   (->> (classpath)
        (#(find/find-ns-decls % find/clj))
        (filter (fn [ns-decl]
@@ -139,9 +127,16 @@
        ((fn [ns-decl]
           (let [deps (parse/deps-from-ns-decl ns-decl)]
             (doseq [d deps]
-              (println "non-transitive-compile" ns "require" d)
-              (require d))
-            (compile-with-clean-classloader ns))))))
+              (try
+                (require d)
+                (catch Exception e
+                  (throw (ex-info "while requiring" {:ns d} e)))))
+            (let [already-loaded? (contains? (loaded-libs) ns)]
+              (println "compile" ns)
+              (compile ns)
+              (when (or (contains-protocols? ns)
+                        (contains-deftypes? ns))
+                ::reload)))))))
 
 ;; directory, root where all src and resources will be found
 (s/def ::src-dir fs/path?)
@@ -173,20 +168,22 @@
   (->> (classpath)
        (#(find/find-namespaces % find/clj))))
 
-(defn load-classpath [{:keys [classpath]}]
-  (doseq [c classpath]
-    (.addURL (RT/baseLoader) (-> c io/file .toURI .toURL))))
-
 (defn do-aot [{:keys [classes-dir aot-nses]}]
   (when (seq aot-nses)
     (binding [*compile-path* (str classes-dir "/")]
-      (doseq [ns (topo-sort aot-nses)]
-        (try
-          (compile ns)
-          (catch Throwable t
-            (println "while compiling" ns)
-            (pst/print-stack-trace t)
-            (throw t)))))))
+      (->> aot-nses
+           topo-sort
+           (map (fn [ns]
+                  (try
+                    (non-transitive-compile ns)
+                    (catch Throwable t
+                      (println "while compiling" ns)
+                      (println "classpath:" (str/join "\n" (classpath)))
+                      (pst/print-stack-trace t)
+                      (throw t)))))
+           (doall)
+           (filter identity)
+           first))))
 
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses]}]
   (with-open [jar-os (-> output-jar .toFile FileOutputStream. BufferedOutputStream. JarOutputStream.)]
@@ -223,12 +220,9 @@
 
   (fs/ensure-directory classes-dir)
 
-  (load-classpath (select-keys args [:classpath]))
-
-  (do-aot (select-keys args [:classes-dir :aot-nses]))
-  (create-jar (select-keys args [:src-dir :classes-dir :output-jar :resources :aot-nses]))
-
-  true)
+  (let [needs-reload? (do-aot (select-keys args [:classes-dir :aot-nses]))]
+    (create-jar (select-keys args [:src-dir :classes-dir :output-jar :resources :aot-nses]))
+    (str needs-reload?)))
 
 (defn compile-json [json-str]
   (let [{:keys [src_dir resources aot_nses classes_dir output_jar classpath] :as args} (json/read-str json-str :key-fn keyword)
