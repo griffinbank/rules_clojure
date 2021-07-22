@@ -51,7 +51,7 @@ It is likely you're interested in using Bazel because you have large projects wi
 - `aot` is a list of namespaces to compile.
 - `resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use `resource_strip_prefix`, which behaves the same as in `java_library`.
 
-Because of clojure's general lack of concern about the difference between runtime and compile-time (e.g. AOT), all clojure rules accept `deps` only. Output jars will use `deps` in both compile time and runtime dependencies (because a downstream library might depend on the library, and whether it's a `dep` or `runtime_dep` depends on whether the downstream library is AOTing or not.
+Because of Clojure's general lack of concern about the difference between runtime and compile-time (e.g. AOT), all Clojure rules accept `deps` only. Output jars will use `deps` in both compile time and runtime dependencies (because a downstream library might depend on the library, and whether it's a `dep` or `runtime_dep` depends on whether the downstream library is AOTing or not.
 
 ### clojure_repl
 
@@ -134,7 +134,7 @@ those attributes will be added to the `clojure_test` target.
   {:bazel.test/tags [:integration]
    :bazel.test/timeout :long}
   (:require [...])
-
+```
 
 ### extra deps
 

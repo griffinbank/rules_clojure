@@ -90,16 +90,14 @@ def clojure_jar_impl(ctx):
     library_path = []
 
     java_deps = []
-    runfiles = ctx.runfiles()
 
-    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.runtime_deps + ctx.attr.data + ctx.attr.compiledeps + toolchain.runtime:
-        if DefaultInfo in dep:
-            runfiles = runfiles.merge(dep[DefaultInfo].data_runfiles)
-            runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
+    runfiles = ctx.runfiles(files = ctx.files.data)
+
+    all_targets = ctx.attr.srcs + ctx.attr.deps + ctx.attr.runtime_deps + ctx.attr.data + ctx.attr.compiledeps + toolchain.runtime
+    for dep in all_targets:
+        runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
         if JavaInfo in dep:
             java_deps.append(dep[JavaInfo])
-
-    runfiles = ctx.runfiles()
 
     dep_info = java_common.merge(java_deps)
     shim_info = java_common.merge([d[JavaInfo] for d in ctx.attr._worker_runtime if JavaInfo in d])
@@ -110,6 +108,11 @@ def clojure_jar_impl(ctx):
         source_jar = None,
         deps = java_deps,
         runtime_deps = java_deps)
+
+    default_info = DefaultInfo(
+        files = depset([output_jar]),
+        runfiles = runfiles,
+    )
 
     aot_nses = list(ctx.attr.aot)
 
@@ -148,7 +151,7 @@ def clojure_jar_impl(ctx):
         output = args_file,
         content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + dep_info.transitive_runtime_deps.to_list() + toolchain.files.scripts + toolchain.files.jdk + native_libs + [args_file] + ctx.files._worker_runtime
+    inputs = ctx.files.srcs + ctx.files.resources + dep_info.transitive_deps.to_list() + dep_info.transitive_runtime_deps.to_list() + toolchain.files.scripts + toolchain.files.jdk + native_libs + [args_file] + ctx.files._worker_runtime
 
     ctx.actions.run(
         executable=ctx.executable.worker,
@@ -160,9 +163,6 @@ def clojure_jar_impl(ctx):
         execution_requirements={"supports-workers":"1"})
 
     return [
-        DefaultInfo(
-            files = depset([output_jar]),
-            runfiles = runfiles,
-        ),
+        default_info,
         java_info
     ]
