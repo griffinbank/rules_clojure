@@ -459,26 +459,13 @@
                (str/replace "-" "_")
                (str/replace "." "/")) "." extension))
 
-(s/fdef resource-paths :args (s/cat :a (s/keys :req-un [::aliases ::basis ::workspace-root])) :ret (s/coll-of fs/path?))
-(defn resource-paths
-  "Returns the set paths"
-  [{:keys [basis aliases workspace-root] :as args}]
+(defn ignore-paths
+  [{:keys [basis workspace-root] :as args}]
   (->>
-   (concat
-    (:bazel/resources basis)
-    (mapcat (fn [a]
-              (get-in basis [:aliases a :bazel/resources])) aliases))
-   (distinct)
+   (get-in basis [:bazel :ignore])
    (map (fn [p]
-          (assert p)
-          (assert workspace-root)
-          (fs/->path workspace-root p)))))
-
-(s/fdef resource-labels :args (s/cat :a (s/keys :req-un [::basis ::workspace-root ::aliases])) :ret (s/coll-of string?))
-(defn resource-labels [{:keys [basis workspace-root aliases] :as args}]
-  (->> (resource-paths args)
-       (mapv (fn [p]
-               (str "//" (fs/path-relative-to workspace-root p))))))
+          (fs/->path workspace-root p)))
+   (set)))
 
 (defn strip-path
   "Given a"
@@ -622,13 +609,13 @@
 (defn source-paths
   "return the set of source directories on the classpath"
   [{:keys [basis deps-edn-path aliases] :as args}]
-  (let [resource-paths (set (resource-paths (select-keys args [:aliases :basis :workspace-root])))]
+  (let [ignore (ignore-paths (select-keys args [:basis :workspace-root]))]
     (->>
      (:paths basis)
      (map (fn [path]
             (fs/->path (fs/dirname deps-edn-path) path)))
      (remove (fn [path]
-               (contains? resource-paths path))))))
+               (contains? ignore path))))))
 
 (s/fdef gen-source-paths :args (s/cat :a (s/keys :req-un [::deps-edn-path ::deps-out-dir ::deps-repo-tag ::basis ::jar->lib ::deps-bazel ::workspace-root]
                                                  :opt-un [::aliases ])))
