@@ -132,7 +132,6 @@
                 (catch Exception e
                   (throw (ex-info "while requiring" {:ns d} e)))))
             (let [already-loaded? (contains? (loaded-libs) ns)]
-              (println "compile" ns)
               (compile ns)
               (when (or (contains-protocols? ns)
                         (contains-deftypes? ns))

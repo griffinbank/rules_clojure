@@ -55,7 +55,7 @@ import org.projectodd.shimdandy.ClojureRuntimeShim;
 
 // We want to keep the worker up and incrementally load code in the same worker, because reloading the environment is expensive.
 
-// therefore: create a mostly-persistent classloader containing all jars that compile requests have asked for. If a compile request reloads an already-loaded namespace, return `::reload`, to create a new environment
+// therefore: create a mostly-persistent classloader containing all jars that compile requests have asked for. If a compile request does anything that requires reloading, such as compiling a deftype or protocol, return `::reload`, to create a new environment
 
 class ClojureCompileRequest {
     String[] aot;
@@ -160,7 +160,6 @@ class ClojureWorker  {
 	runtime.require("rules-clojure.jar");
 	String ret = (String) runtime.invoke("rules-clojure.jar/compile-json", work_request.getArguments(0));
 	if(ret.equals(":rules-clojure.jar/reload")) {
-	    System.err.println("reloading");
 	    classloader = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
 	}
 	return ret;
