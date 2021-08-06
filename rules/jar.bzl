@@ -82,8 +82,6 @@ def printable_label(label):
 
 def clojure_jar_impl(ctx):
 
-    toolchain = ctx.toolchains["@rules_clojure//:toolchain_type"]
-
     output_jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
     classes_dir = ctx.actions.declare_directory("%s.classes" % (printable_label(ctx.label)))
 
@@ -93,7 +91,7 @@ def clojure_jar_impl(ctx):
 
     runfiles = ctx.runfiles(files = ctx.files.data)
 
-    all_targets = ctx.attr.srcs + ctx.attr.deps + ctx.attr.runtime_deps + ctx.attr.data + ctx.attr.compiledeps + toolchain.runtime
+    all_targets = ctx.attr.srcs + ctx.attr.deps + ctx.attr.runtime_deps + ctx.attr.data + ctx.attr.compiledeps
     for dep in all_targets:
         runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
         if JavaInfo in dep:
@@ -123,7 +121,7 @@ def clojure_jar_impl(ctx):
     else:
         src_dir = None
 
-    classpath = dep_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps + toolchain.files.runtime + shim_info.transitive_runtime_deps.to_list() + [classes_dir]
+    classpath = dep_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps + shim_info.transitive_runtime_deps.to_list() + [classes_dir]
     classpath = [f.path for f in classpath]
     classpath = classpath + [p for p in [src_dir] if p]
 
@@ -151,7 +149,7 @@ def clojure_jar_impl(ctx):
         output = args_file,
         content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + dep_info.transitive_deps.to_list() + dep_info.transitive_runtime_deps.to_list() + toolchain.files.scripts + toolchain.files.jdk + native_libs + [args_file] + ctx.files._worker_runtime
+    inputs = ctx.files.srcs + ctx.files.resources + dep_info.transitive_deps.to_list() + dep_info.transitive_runtime_deps.to_list() + native_libs + [args_file] + ctx.files._worker_runtime
 
     ctx.actions.run(
         executable=ctx.executable.worker,
