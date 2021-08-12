@@ -114,7 +114,10 @@
                (deftype? ns v)))))
 
 (defn non-transitive-compile
-  "By default, `compile` compiles all dependencies of ns. This is non-deterministic, so require all dependencies first. Returns ::reload when ClojureWorker should discard the environment"
+  "By default, `compile` compiles all dependencies of ns. This is
+  non-deterministic, so require all dependencies
+  first. Returns ::reload when ClojureWorker should discard the
+  environment"
   [ns]
   {:pre [(symbol? ns)]}
   (->> (classpath)
@@ -131,11 +134,10 @@
                 (require d)
                 (catch Exception e
                   (throw (ex-info "while requiring" {:ns d} e)))))
-            (let [already-loaded? (contains? (loaded-libs) ns)]
-              (compile ns)
-              (when (or (contains-protocols? ns)
-                        (contains-deftypes? ns))
-                ::reload)))))))
+            (compile ns)
+            (when (or (contains-protocols? ns)
+                      (contains-deftypes? ns))
+              ::reload))))))
 
 ;; directory, root where all src and resources will be found
 (s/def ::src-dir fs/path?)

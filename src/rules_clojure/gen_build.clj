@@ -518,8 +518,8 @@
                                                                    overrides)
                                                           (as-> m
                                                               (cond-> m
-                                                                (seq (:deps m)) (update :deps (comp vec distinct))
-                                                                (:deps m) (update :deps (comp vec distinct))))))))]
+                                                                (seq (:deps m)) (update :deps (comp vec sort distinct))
+                                                                (:deps m) (update :deps (comp vec sort distinct))))))))]
           (when test?
             [(emit-bazel (list 'clojure_test (kwargs (merge
                                                       {:name test-label
@@ -538,16 +538,25 @@
       (println "while processing" path)
       (throw t))))
 
+(defn dir->filegroup-label [{:keys [workspace-root]} dir]
+  (str "//" (fs/path-relative-to workspace-root dir) ":__files"))
+
 (s/fdef gen-dir :args (s/cat :a (s/keys :req-un [::workspace-root ::basis ::jar->lib ::deps-repo-tag]) :f fs/path?))
 (defn gen-dir
   "given a source directory, write a BUILD.bazel for all .clj files in the directory. non-recursive"
-  [args dir]
+  [{:keys [workspace-root] :as args} dir]
   (assert (map? (:src-ns->label args)))
+  (assert workspace-root)
   (let [paths (->> dir
                    fs/ls
                    (filter (fn [path]
                              (-> path .toFile fs/clj-file?)))
                    doall)
+        subdirs (->> dir
+                     fs/ls
+                     (filter (fn [p]
+                               (and (fs/directory? (.toFile p))
+                                    (fs/exists? (fs/->path p "BUILD.bazel"))))))
         rules (->> paths
                    (mapcat (fn [p]
                              (ns-rules args p)))
@@ -558,7 +567,14 @@
                      (emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library" "clojure_test"))
                      "\n"
                      "\n"
-                     (str/join "\n\n" rules))]
+                     (str/join "\n\n" rules)
+                     "\n"
+                     "\n"
+                     (emit-bazel (list 'filegroup (kwargs {:name "__files"
+                                                           :srcs (mapv (fn [p]
+                                                                         (fs/path-relative-to dir p)) paths)
+                                                           :data (mapv (fn [p]
+                                                                         (dir->filegroup-label {:workspace-root workspace-root} p)) subdirs)}))))]
     (-> dir
         (fs/->path "BUILD.bazel")
         fs/path->file
@@ -576,6 +592,9 @@
                  (-> path .toFile fs/clj-file?)))
        (map fs/dirname)
        (distinct)
+       (concat paths)
+       (sort-by (comp count str))
+       (reverse)
        (map (fn [dir]
               (gen-dir args dir)))
        (dorun)))

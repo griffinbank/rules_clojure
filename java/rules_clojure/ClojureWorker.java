@@ -33,29 +33,63 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import org.projectodd.shimdandy.ClojureRuntimeShim;
 
-// Clojure is a compiled language. When loading source files or evaling, the compiler generates a .class file, and then loads it via standard Java classloaders. During non-AOT, the .classfile is in memory without being written to disk.
+// Clojure is a compiled language. When loading source files or
+// evaling, the compiler generates a .class file, and then loads it
+// via standard Java classloaders. During non-AOT, the .classfile is
+// in memory without being written to disk.
 
-// When AOT'ing, the compiler writes a .class that corresponds to the name of the source file. `foo-bar.core` will produce a file `foo_bar/core.class`.
+// When AOT'ing, the compiler writes a .class that corresponds to the
+// name of the source file. The clojure namespace `foo-bar.core` will
+// produce a file `foo_bar/core.class`.
 
-// Classloaders form a hierarchy. A classloader usually asks its parent to load a class, and if the parent can't, the current CL attempts to load. In normal clojure operation, `java -cp` creates a URLClassloader containing all URLs. `clojure.main` then creates a clojure.lang.DynamicClassLoader as a child of the URL classloader. Finally, clojure.lang.Compiler creates its own private DCL
+// Classloaders form a hierarchy. A classloader usually asks its
+// parent to load a class, and if the parent can't, the current CL
+// attempts to load. In normal clojure operation, `java -cp` creates a
+// URLClassloader containing URLs pointing at jars and source
+// dirs. `clojure.main` then creates a clojure.lang.DynamicClassLoader
+// as a child of the URL classloader. Finally, clojure.lang.Compiler
+// creates its own private DCL
 
-// To load a namespace, clojure.lang.RT looks for both `foo-bar/core.clj` and `foo_bar/core.class` on the classpath. If only the class file is present, it is loaded. If only the source exists, it is compiled and then loaded. If both are present, the one with the newer file modification time is loaded.
+// To load a namespace, clojure.lang.RT looks for both
+// `foo-bar/core.clj` and `foo_bar/core.class` on the classpath. If
+// only the class file is present, it is loaded. If only the source
+// exists, it is compiled and then loaded. If both are present, the
+// one with the newer file modification time is loaded.
 
-// In normal operation, if foo-bar.core was AOT'd, it will be loaded by the URLClassloader (because the .classfile exists). If it had to be compiled, it will be loaded by the compiler's DCL.
+// In normal operation, if foo-bar.core was AOT'd, it will be loaded
+// by the URLClassloader (because the .classfile exists). If it had to
+// be compiled, it will be loaded by the compiler's DCL.
 
-// In the JVM, classes are not unique by name, they are unique by name, _per classloader_. Two classes with the same name in different classloaders will not be identical, which breaks protocols, among other things.
+// In the JVM, classes are not unique, they are unique _per
+// classloader_. Two classes with the same name in different
+// classloaders will not be identical, which breaks protocols, among
+// other things.
 
-// DCL contains a static class cache, shared by all instances in the same classloader (static class variables are shared among all instances of the same class, _from the same classloader_)
+// DCL contains a static class cache, shared by all instances in the
+// same classloader (static class variables are shared among all
+// instances of the same class, _from the same classloader_)
 
-// When compiling, defprotocol creates new classes. If a compile reloads a protocol, that breaks all existing users of the protocol. If the protocol is loaded in two separate classloaders, that will break some users.
+// When compiling, defprotocol and deftype/defrecord create new
+// classes. If a compile reloads a protocol, that breaks all existing
+// users of the protocol. If the protocol is loaded in two separate
+// classloaders, that will break some users.
 
-// If an AOT'd ns contains a protocol, the resulting classfile should appear in exactly one jar (if the classfiles appear in multiple jars, there's a chance both definitions could get loaded, and then some users of the protocol will break).
+// If an AOT'd ns contains a protocol, the resulting classfile should
+// appear in exactly one jar (if the classfiles appear in multiple
+// jars, there's a chance both definitions could get loaded, and then
+// some users of the protocol will break).
 
-// When compiling a user of the protocol, the compiled definition must be on the classpath (because the user needs to refer to the AOT'd class id, not the src class id)
+// When compiling a user of the protocol, the compiled definition must
+// be on the classpath (because the user needs to refer to the AOT'd
+// class id, not the src class id)
 
-// We want to keep the worker up and incrementally load code in the same worker, because reloading the environment is expensive.
+// We want to keep the worker up and incrementally load code in the
+// same worker, because reloading the environment is expensive.
 
-// therefore: create a mostly-persistent classloader containing all jars that compile requests have asked for. If a compile request does anything that requires reloading, such as compiling a deftype or protocol, return `::reload`, to create a new environment
+// therefore: create a mostly-persistent classloader containing all
+// jars that compile requests have asked for. If a compile request
+// does anything that requires reloading, such as compiling a deftype
+// or protocol, return `::reload`, to create a new environment
 
 class ClojureCompileRequest {
     String[] aot;

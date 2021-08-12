@@ -8,7 +8,6 @@ def _clojure_toolchain(ctx):
         scripts = {s.basename: s for s in ctx.files._scripts},
         jdk = ctx.attr.jdk,
         java = ctx.attr.jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
-        java_runfiles = ctx.attr.jdk[java_common.JavaRuntimeInfo].java_executable_runfiles_path,
         files = struct(
             runtime = ctx.files.classpath,
             scripts = ctx.files._scripts,
