@@ -13,7 +13,7 @@
             [rules-clojure.fs :as fs])
   (:import clojure.lang.DynamicClassLoader
            clojure.lang.RT
-           [java.io BufferedOutputStream FileOutputStream]
+           [java.io BufferedOutputStream FileOutputStream File]
            [java.util.jar Manifest JarEntry JarFile JarOutputStream]
            [java.nio.file Files Path Paths FileSystem FileSystems LinkOption]
            [java.nio.file.attribute FileAttribute FileTime]
@@ -187,28 +187,34 @@
            first))))
 
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses]}]
-  (with-open [jar-os (-> output-jar .toFile FileOutputStream. BufferedOutputStream. JarOutputStream.)]
-    (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
-    (.write manifest jar-os)
-    (.closeEntry jar-os)
-    (doseq [r resources
-            :let [full-path (fs/->path src-dir r)
-                  file (.toFile full-path)
-                  name (str (fs/path-relative-to src-dir full-path))]]
-      (assert (fs/exists? full-path) (str full-path))
-      (assert (.isFile file))
-      (put-next-entry! jar-os name (Files/getLastModifiedTime full-path (into-array LinkOption [])))
-      (io/copy file jar-os)
-      (.closeEntry jar-os))
-    (doseq [file (->> aot-nses
-                      (mapcat (fn [ns] (aot-files classes-dir ns)))
-                      (distinct))
-            :when (.isFile file)
-            :let [path (.toPath file)
-                  name (str (fs/path-relative-to classes-dir path))]]
-      (put-next-entry! jar-os name (Files/getLastModifiedTime path (into-array LinkOption [])))
-      (io/copy file jar-os)
-      (.closeEntry jar-os))))
+  (let [temp (File/createTempFile (fs/filename output-jar) "jar")]
+    (with-open [jar-os (-> temp FileOutputStream. BufferedOutputStream. JarOutputStream.)]
+      (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
+      (.write manifest jar-os)
+      (.closeEntry jar-os)
+      (doseq [r resources
+              :let [full-path (fs/->path src-dir r)
+                    file (.toFile full-path)
+                    name (str (fs/path-relative-to src-dir full-path))]]
+        (assert (fs/exists? full-path) (str full-path))
+        (assert (.isFile file))
+        (put-next-entry! jar-os name (Files/getLastModifiedTime full-path (into-array LinkOption [])))
+        (io/copy file jar-os)
+        (.closeEntry jar-os))
+      (doseq [file (->> aot-nses
+                        (mapcat (fn [ns]
+                                  {:post [(do (when (not (seq %))
+                                                (println "ERROR no files from compiling" ns)) true)
+                                          (seq %)]}
+                                  (aot-files classes-dir ns)))
+                        (distinct))
+              :when (.isFile file)
+              :let [path (.toPath file)
+                    name (str (fs/path-relative-to classes-dir path))]]
+        (put-next-entry! jar-os name (Files/getLastModifiedTime path (into-array LinkOption [])))
+        (io/copy file jar-os)
+        (.closeEntry jar-os)))
+    (fs/mv (.toPath temp) output-jar)))
 
 (s/fdef compile! :args ::compile)
 (defn compile!

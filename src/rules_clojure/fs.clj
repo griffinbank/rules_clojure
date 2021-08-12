@@ -2,7 +2,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str])
   (:import java.io.File
-           [java.nio.file Files Path Paths FileSystem FileSystems]))
+           [java.nio.file CopyOption Files FileSystem FileSystems Path Paths StandardCopyOption]))
 
 (defn path? [x]
   (instance? Path x))
@@ -112,3 +112,7 @@
 (defn clj-file? [file]
   (and (normal-file? file)
        (contains? #{"clj" "cljc"} (-> file file->path extension))))
+
+(s/fdef mv :args (s/cat :s path? :d path?))
+(defn mv [src dest]
+  (Files/move src dest (into-array CopyOption [StandardCopyOption/ATOMIC_MOVE])))
