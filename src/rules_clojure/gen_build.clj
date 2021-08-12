@@ -592,7 +592,7 @@
                  (-> path .toFile fs/clj-file?)))
        (map fs/dirname)
        (distinct)
-       (concat paths)
+       (concat (filter fs/exists? paths))
        (sort-by (comp count str))
        (reverse)
        (map (fn [dir]
