@@ -564,12 +564,12 @@
                                                                 (seq (:deps m)) (update :deps (comp vec sort distinct))
                                                                 (:deps m) (update :deps (comp vec sort distinct))))))))]
           (when test?
-            [(emit-bazel (list 'clojure_test (kwargs (merge
-                                                      {:name test-label
-                                                       :test_ns (str ns-name)
-                                                       :deps [(str ":" ns-label)]}
-                                                      clojure-test-args
-                                                      ns-test-meta))))]))
+            [(emit-bazel (list 'clojure_test (kwargs (merge-with into
+                                                                 {:name test-label
+                                                                  :test_ns (str ns-name)
+                                                                  :deps [(str ":" ns-label)]}
+                                                                 clojure-test-args
+                                                                 ns-test-meta))))]))
          (filterv identity)))
       (println "WARNING: skipping" path "due to no ns declaration"))
     (catch Throwable t

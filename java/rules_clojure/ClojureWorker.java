@@ -155,8 +155,11 @@ class ClojureWorker  {
 		}
 		finally {
 		    System.setErr(real_stderr);
-		    real_stderr.println(outStream.toString());
-		    real_stderr.flush();
+		    String out_str = outStream.toString();
+		    if (out_str.length() > 0) {
+			real_stderr.println(out_str);
+			real_stderr.flush();
+		    }
 		}
 		out.flush();
 
