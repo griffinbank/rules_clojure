@@ -113,6 +113,10 @@
   (and (normal-file? file)
        (contains? #{"clj" "cljc"} (-> file file->path extension))))
 
+(defn cljs-file? [file]
+  (and (normal-file? file)
+       (contains? #{"cljc" "cljs"} (-> file file->path extension))))
+
 (s/fdef mv :args (s/cat :s path? :d path?))
 (defn mv [src dest]
   (Files/move src dest (into-array CopyOption [StandardCopyOption/ATOMIC_MOVE])))

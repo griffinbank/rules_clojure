@@ -53,14 +53,30 @@
   (throw-if-not! (seq coll) "no first in coll" {:coll coll})
   (first coll))
 
+(defn validate! [spec val]
+  (if (s/valid? spec val)
+    val
+    (throw (ex-info "value does not conform" (s/explain-data spec val)))))
+
 (defn emit-bazel-dispatch [x]
   (class x))
 
 (defrecord KeywordArgs [x])
 
-(s/fdef kwargs :args (s/cat :x map?))
+(defn kwargs? [x]
+  (instance? KeywordArgs x))
+
+(s/fdef kwargs :args (s/cat :x ::bazel) :ret kwargs?)
 (defn kwargs [x]
+  (validate! ::bazel x)
   (->KeywordArgs x))
+
+(s/def ::bazel-atom (s/or :s string? :k keyword? :p fs/path? :b boolean?))
+(s/def ::bazel-map (s/map-of ::bazel-atom ::bazel))
+(s/def ::bazel-vector (s/coll-of ::bazel))
+(s/def ::fn-args (s/or :b ::bazel :kw kwargs?))
+(s/def ::bazel-fn (s/cat :s symbol? :a (s/* ::fn-args)))
+(s/def ::bazel (s/or :ba ::bazel-atom :m ::bazel-map :v ::bazel-vector :f ::bazel-fn))
 
 (defmulti emit-bazel* #'emit-bazel-dispatch)
 
@@ -112,9 +128,13 @@
                 (interpose ",")
                 (apply str)) "}"))
 
+
+
+(s/fdef emit-bazel :args (s/cat :x ::bazel) :ret string?)
 (defn emit-bazel
   "Given a string name and a dictionary of arguments, return a string of bazel"
   [x]
+  (validate! ::bazel x)
   (emit-bazel* x))
 
 (defn resolve-src-location
@@ -135,15 +155,25 @@
 
 (s/def ::target string?)
 (s/def ::target-info (s/map-of keyword? any?))
-(s/def ::extra-deps (s/map-of ::target ::target-info))
-(s/def ::deps-bazel (s/keys :opt-un [::extra-deps]))
+(s/def ::deps (s/map-of ::target ::target-info))
+
+(s/def ::clojure_library ::target-info)
+(s/def ::clojure_test ::target-info)
+(s/def ::ignore (s/coll-of string?))
+(s/def ::no-aot (s/coll-of symbol?))
+
+(s/def ::deps-bazel (s/keys :opt-un [::clojure_library
+                                     ::clojure_test
+                                     ::deps
+                                     ::ignore
+                                     ::no-aot]))
 
 (defn parse-deps-bazel
   "extra data under `:bazel` in a deps.edn file for controlling gen-build. Supported keys:
 
-  :extra-deps - (map-of bazel-target to (s/keys :opt-un [:srcs :deps])), extra targets to include on a clojure_library. This is useful for e.g. adding native library dependencies onto a .clj file"
+  :deps - (map-of bazel-target to (s/keys :opt-un [:srcs :deps])), extra targets to include on a clojure_library. This is useful for e.g. adding native library dependencies onto a .clj file"
   [read-deps]
-  {:post [(s/valid? ::deps-bazel %)]}
+  {:post [(validate! ::deps-bazel %)]}
   (or (:bazel read-deps) {}))
 
 (defn find-nses [classpath]
@@ -488,18 +518,29 @@
             ns-meta (get-ns-meta ns-decl)
             src-label (src->label {:workspace-root workspace-root} path)
             test-label (str (fs/basename path) ".test")
-            overrides (get-in deps-bazel [:extra-deps src-label])
-            test-full-label (str "//" (fs/path-relative-to workspace-root (fs/dirname path)) ":" (str (fs/basename path) ".test"))
-            test-overrides (get-in deps-bazel [:extra-deps test-full-label])
-            aot (or
-                 (get overrides :aot)
-                 (if (not test?)
-                   [(str ns-name)]
-                   []))]
-        (when overrides
-          (println ns-name "extra-info:" overrides))
-        (when test-overrides
-          (println ns-name "test extra-info:" test-overrides))
+            clojure-library-args (get-in deps-bazel [:clojure_library])
+            clojure-test-args (get-in deps-bazel [:clojure_test])
+            ns-library-meta (-> ns-meta
+                                (get :bazel/clojure_library)
+                                (as-> $
+                                    (cond-> $
+                                      (:deps $) (update :deps (partial mapv name))
+                                      (:runtime_deps $) (update :runtime_deps (partial mapv name)))))
+            ns-test-meta (-> ns-meta
+                             (get :bazel/clojure_test)
+                             (as-> $
+                                 (cond-> $
+                                   (:tags $) (update :tags (partial mapv name))
+                                   (:size $) (update :size name)
+                                   (:timeout $) (update :timeout name))))
+
+            aot (if (not test?)
+                  [(str ns-name)]
+                  [])]
+        (when ns-library-meta
+          (println ns-name "extra:" ns-library-meta))
+        (when ns-test-meta
+          (println ns-name "test extra:" ns-test-meta))
         (->>
          (concat
           [(emit-bazel (list 'clojure_library (kwargs (-> (merge-with into
@@ -512,10 +553,12 @@
                                                                          :aot []})
                                                                       (when-let [strip-path (strip-path (select-keys args [:basis :workspace-root]) path)]
                                                                         {:resource_strip_prefix strip-path})
+
                                                                       (ns-deps (select-keys args [:workspace-root :src-ns->label :dep-ns->label :jar->lib :deps-repo-tag]) ns-decl)
-                                                                   (ns-import-deps args ns-decl)
-                                                                   (ns-gen-class-deps args ns-decl)
-                                                                   overrides)
+                                                                      (ns-import-deps args ns-decl)
+                                                                      (ns-gen-class-deps args ns-decl)
+                                                                      clojure-library-args
+                                                                      ns-library-meta)
                                                           (as-> m
                                                               (cond-> m
                                                                 (seq (:deps m)) (update :deps (comp vec sort distinct))
@@ -525,13 +568,8 @@
                                                       {:name test-label
                                                        :test_ns (str ns-name)
                                                        :deps [(str ":" ns-label)]}
-                                                      (when-let [tags (:bazel.test/tags ns-meta)]
-                                                        {:tags (vec (map name tags))})
-                                                      (when-let [size (:bazel.test/size ns-meta)]
-                                                        {:size (name size)})
-                                                      (when-let [timeout (:bazel.test/timeout ns-meta)]
-                                                        {:timeout (name timeout)})
-                                                      test-overrides))))]))
+                                                      clojure-test-args
+                                                      ns-test-meta))))]))
          (filterv identity)))
       (println "WARNING: skipping" path "due to no ns declaration"))
     (catch Throwable t
@@ -670,11 +708,11 @@
                                                deps (->> (get lib->deps lib)
                                                          (mapv (fn [lib]
                                                                  (str ":" (library->label lib)))))
-                                               extra-deps-key (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
-                                               extra-deps (-> deps-bazel
-                                                              (get-in [:extra-deps extra-deps-key]))]
-                                           (when extra-deps
-                                             (println lib "extra-deps:" extra-deps))
+                                               external-label (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
+                                               extra-args (-> deps-bazel
+                                                              (get-in [:deps external-label]))]
+                                           (when extra-args
+                                             (println lib "extra-args:" extra-args))
                                            (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
 
                                            (vec
@@ -685,7 +723,7 @@
                                                                                                  (when (seq deps)
                                                                                                    {:deps deps
                                                                                                     :runtime_deps deps})
-                                                                                                 extra-deps))))]
+                                                                                                 extra-args))))]
                                              (->> (find/find-ns-decls [(fs/path->file jarpath)] find/clj)
                                                   ;; markdown-to-hiccup contains a .cljs build, with two identical copies of `markdown/links.cljc`, and two distinct copies of `markdown/core.clj`. For correctness, probably need to get the path inside the jar, and remove files that aren't in the correct position to be loaded
                                                   (group-by parse/name-from-ns-decl)
@@ -695,7 +733,7 @@
                                                             (aot-namespace? deps-bazel (parse/name-from-ns-decl ns-decl))))
                                                   (map (fn [ns-decl]
                                                          (let [ns (parse/name-from-ns-decl ns-decl)
-                                                               extra-deps (-> deps-bazel (get-in [:extra-deps (str deps-repo-tag "//:" (internal-dep-ns-aot-label lib ns))]))]
+                                                               extra-deps (-> deps-bazel (get-in [:deps (str deps-repo-tag "//:" (internal-dep-ns-aot-label lib ns))]))]
                                                            (emit-bazel (list 'clojure_library (kwargs (->
                                                                                                        (merge-with
                                                                                                         into

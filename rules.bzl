@@ -63,6 +63,5 @@ def clojure_test(name, *, test_ns, deps=[], runtime_deps=[], **kwargs):
                      runtime_deps = deps + runtime_deps + ["@rules_clojure//src/rules_clojure:testrunner"],
                      use_testrunner = False,
                      main_class="clojure.main",
-                     jvm_flags=["-Dclojure.main.report=stderr"],
                      args = ["-m", "rules-clojure.testrunner", test_ns],
                      **kwargs)
