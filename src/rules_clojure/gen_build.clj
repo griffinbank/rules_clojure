@@ -576,26 +576,28 @@
       (println "while processing" path)
       (throw t))))
 
-(defn dir->filegroup-label [{:keys [workspace-root]} dir]
-  (str "//" (fs/path-relative-to workspace-root dir) ":__files"))
-
 (s/fdef gen-dir :args (s/cat :a (s/keys :req-un [::workspace-root ::basis ::jar->lib ::deps-repo-tag]) :f fs/path?))
 (defn gen-dir
   "given a source directory, write a BUILD.bazel for all .clj files in the directory. non-recursive"
   [{:keys [workspace-root] :as args} dir]
   (assert (map? (:src-ns->label args)))
   (assert workspace-root)
-  (let [paths (->> dir
-                   fs/ls
-                   (filter (fn [path]
-                             (-> path .toFile fs/clj-file?)))
-                   doall)
+  (let [clj-paths (->> dir
+                       fs/ls
+                       (filter (fn [path]
+                                 (-> path .toFile fs/clj-file?)))
+                       doall)
+        cljs-paths (->> dir
+                        fs/ls
+                        (filter (fn [path]
+                                  (-> path .toFile fs/cljs-file?)))
+                        doall)
         subdirs (->> dir
                      fs/ls
                      (filter (fn [p]
                                (and (fs/directory? (.toFile p))
                                     (fs/exists? (fs/->path p "BUILD.bazel"))))))
-        rules (->> paths
+        rules (->> clj-paths
                    (mapcat (fn [p]
                              (ns-rules args p)))
                    doall)
@@ -608,11 +610,18 @@
                      (str/join "\n\n" rules)
                      "\n"
                      "\n"
-                     (emit-bazel (list 'filegroup (kwargs {:name "__files"
+                     (emit-bazel (list 'filegroup (kwargs {:name "__clj_files"
                                                            :srcs (mapv (fn [p]
-                                                                         (fs/path-relative-to dir p)) paths)
+                                                                         (fs/path-relative-to dir p)) clj-paths)
                                                            :data (mapv (fn [p]
-                                                                         (dir->filegroup-label {:workspace-root workspace-root} p)) subdirs)}))))]
+                                                                         (str "//" (fs/path-relative-to workspace-root p) ":__clj_files")) subdirs)})))
+                     "\n"
+                     "\n"
+                     (emit-bazel (list 'filegroup (kwargs {:name "__cljs_files"
+                                                           :srcs (mapv (fn [p]
+                                                                         (fs/path-relative-to dir p)) cljs-paths)
+                                                           :data (mapv (fn [p]
+                                                                         (str "//" (fs/path-relative-to workspace-root p) ":__cljs_files")) subdirs)}))))]
     (-> dir
         (fs/->path "BUILD.bazel")
         fs/path->file
