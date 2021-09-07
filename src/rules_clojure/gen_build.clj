@@ -420,6 +420,7 @@
 (defn ns-import-deps
   "Given the ns declaration for a .clj file, return a map of {:srcs [labels], :data [labels]} for all :import statements"
   [{:keys [deps-repo-tag class->jar jar->lib] :as args} ns-decl]
+  (assert class->jar)
   (let [[_ns _name & refs] ns-decl]
     (->> refs
          (filter (fn [r]
@@ -587,6 +588,8 @@
                        (filter (fn [path]
                                  (-> path .toFile fs/clj-file?)))
                        doall)
+        clj-labels (->> clj-paths
+                        (map (comp str fs/basename)))
         cljs-paths (->> dir
                         fs/ls
                         (filter (fn [path]
@@ -610,18 +613,18 @@
                      (str/join "\n\n" rules)
                      "\n"
                      "\n"
-                     (emit-bazel (list 'filegroup (kwargs {:name "__clj_files"
-                                                           :srcs (mapv (fn [p]
-                                                                         (fs/path-relative-to dir p)) clj-paths)
-                                                           :data (mapv (fn [p]
-                                                                         (str "//" (fs/path-relative-to workspace-root p) ":__clj_files")) subdirs)})))
+                     (emit-bazel (list 'clojure_library (kwargs {:name "__clj_files"
+                                                                 :resources (mapv fs/filename clj-paths)
+                                                                 :resource_strip_prefix (strip-path (select-keys args [:basis :workspace-root]) dir)
+                                                                 :deps (mapv (fn [p]
+                                                                               (str "//" (fs/path-relative-to workspace-root p) ":__clj_files")) subdirs)})))
                      "\n"
                      "\n"
-                     (emit-bazel (list 'filegroup (kwargs {:name "__cljs_files"
-                                                           :srcs (mapv (fn [p]
-                                                                         (fs/path-relative-to dir p)) cljs-paths)
-                                                           :data (mapv (fn [p]
-                                                                         (str "//" (fs/path-relative-to workspace-root p) ":__cljs_files")) subdirs)}))))]
+                     (emit-bazel (list 'clojure_library (kwargs {:name "__cljs_files"
+                                                                 :resources (mapv fs/filename cljs-paths)
+                                                                 :resource_strip_prefix (strip-path (select-keys args [:basis :workspace-root]) dir)
+                                                                 :deps (mapv (fn [p]
+                                                                               (str "//" (fs/path-relative-to workspace-root p) ":__cljs_files")) subdirs)}))))]
     (-> dir
         (fs/->path "BUILD.bazel")
         fs/path->file
@@ -756,7 +759,12 @@
                                                                                                        (as-> m
                                                                                                            (cond-> m
                                                                                                              (seq (:deps m)) (update :deps (comp vec distinct))
-                                                                                                             (:deps m) (update :deps (comp vec distinct))))))))))))))))))))
+                                                                                                             (:deps m) (update :deps (comp vec distinct))))))))))))))))))
+                          [(emit-bazel (list 'clojure_library (kwargs
+                                                               {:name "__all"
+                                                                :deps (->> jar->lib
+                                                                           (mapv (comp library->label val)))})))]))
+
         :encoding "UTF-8"))
 
 (defn gen-maven-install

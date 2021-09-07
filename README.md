@@ -109,8 +109,6 @@ clojure_gen_srcs(
 
 Run `gen_srcs` again any time the ns declarations in the source tree change.
 
-`gen_srcs` also creates a `filegroup` target named `__files` containing all source files in the directory, and all subpackages. ```//src:__files``` includes all src files under `src`, which can be used for e.g. `clojure_repl`.
-
 Adding
 
 ```
@@ -167,6 +165,13 @@ put `:bazel {:deps {}}` at the top level of your deps.edn file. `:deps` will be 
 ```
 
 Instructs gen-build to not AOT that namespace
+
+### Coarse dependencies
+
+`gen_srcs` also creates two `clojure_library` targets named `__clj_files`  and `__cljs_files` containing all source files in the directory, and all subpackages. ```//src:__clj_files``` includes all src files under `src`, which can be used for e.g. `clojure_repl`. This target is also useful static analysis.
+
+Note `__clj_files` does not include dependencies. Use `@deps//:__all` to pull in all dependencies. Use `__clj_files` and `@deps//:__all` sparingly, by necessity they will be dirty any time any src file or dependency changes.
+
 
 ## deps.edn options
 
