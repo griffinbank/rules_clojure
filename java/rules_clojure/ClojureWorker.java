@@ -35,10 +35,10 @@ import org.projectodd.shimdandy.ClojureRuntimeShim;
 
 // Clojure is a compiled language. When loading source files or
 // evaling, the compiler generates a .class file, and then loads it
-// via standard Java classloaders. During non-AOT, the .classfile is
-// in memory without being written to disk.
+// via standard Java classloaders. During non-AOT operation, the
+// .classfile exists in memory without being written to disk.
 
-// When AOT'ing, the compiler writes a .class that corresponds to the
+// When AOT'ing, the compiler writes a .class file that corresponds to the
 // name of the source file. The clojure namespace `foo-bar.core` will
 // produce a file `foo_bar/core.class`.
 
@@ -51,10 +51,11 @@ import org.projectodd.shimdandy.ClojureRuntimeShim;
 // creates its own private DCL
 
 // To load a namespace, clojure.lang.RT looks for both
-// `foo-bar/core.clj` and `foo_bar/core.class` on the classpath. If
-// only the class file is present, it is loaded. If only the source
-// exists, it is compiled and then loaded. If both are present, the
-// one with the newer file modification time is loaded.
+// `foo-bar/core.clj` and `foo_bar/core.class`, starting from the
+// classloader that contains 'this' clojure.lang.RT. If only the class
+// file is present, it is loaded. If only the source exists, it is
+// compiled and then loaded. If both are present, the one with the
+// newer file modification time is loaded.
 
 // In normal operation, if foo-bar.core was AOT'd, it will be loaded
 // by the URLClassloader (because the .classfile exists). If it had to
@@ -71,15 +72,15 @@ import org.projectodd.shimdandy.ClojureRuntimeShim;
 
 // When compiling, defprotocol and deftype/defrecord create new
 // classes. If a compile reloads a protocol, that breaks all existing
-// users of the protocol. If the protocol is loaded in two separate
+// users of the protocol. If the class is loaded in two separate
 // classloaders, that will break some users.
 
-// If an AOT'd ns contains a protocol, the resulting classfile should
-// appear in exactly one jar (if the classfiles appear in multiple
-// jars, there's a chance both definitions could get loaded, and then
-// some users of the protocol will break).
+// If an AOT'd ns contains a protocol or deftype, the resulting
+// classfile should appear in exactly one jar (if the classfiles
+// appear in multiple jars, there's a chance both definitions could
+// get loaded, and then some users will break).
 
-// When compiling a user of the protocol, the compiled definition must
+// When AOT'ing a consumer of a protocol, the compiled definition must
 // be on the classpath (because the user needs to refer to the AOT'd
 // class id, not the src class id)
 
@@ -87,9 +88,15 @@ import org.projectodd.shimdandy.ClojureRuntimeShim;
 // same worker, because reloading the environment is expensive.
 
 // therefore: create a mostly-persistent classloader containing all
-// jars that compile requests have asked for. If a compile request
-// does anything that requires reloading, such as compiling a deftype
-// or protocol, return `::reload`, to create a new environment
+// jars that compile requests have asked for.
+
+// we compile in Clojure because it's easier and more powerful.
+
+// compile-json has three return values:
+
+// nil: compilation returned successfully
+// ::reload - compilation was successful, and this environment should be thrown away before the next compile
+// ::restart - the new compilation request is incompatible with the existing environment. Throw away the environment and try again with a clean env.
 
 class ClojureCompileRequest {
     String[] aot;
@@ -196,6 +203,12 @@ class ClojureWorker  {
 
 	runtime.require("rules-clojure.jar");
 	String ret = (String) runtime.invoke("rules-clojure.jar/compile-json", work_request.getArguments(0));
+
+	if(ret.equals(":rules-clojure.jar/restart")) {
+	    classloader = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
+	    return processRequest(work_request);
+	}
+
 	if(ret.equals(":rules-clojure.jar/reload")) {
 	    classloader = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
 	}

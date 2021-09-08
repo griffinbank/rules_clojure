@@ -229,7 +229,40 @@
 
   (let [needs-reload? (do-aot (select-keys args [:classes-dir :aot-nses]))]
     (create-jar (select-keys args [:src-dir :classes-dir :output-jar :resources :aot-nses]))
-    (str needs-reload?)))
+    needs-reload?))
+
+(defn find-sources [cp]
+  (concat
+   (->> cp
+        (filter (fn [f] (cp/jar-file? (io/file f))))
+        (mapcat (fn [jar]
+                  (map (fn [src]
+                         [jar src]) (find/sources-in-jar (JarFile. jar))))))
+   (->> cp
+        (filter (fn [f] (.isDirectory (io/file f))))
+        (mapcat (fn [dir]
+                  (map (fn [src]
+                         [dir src]) (find/find-sources-in-dir (io/file dir))))))))
+
+(defn data-readers-on-classpath
+  "Given the classpath, return the set of jars and dirs that contain data_readers.clj"
+  [cp]
+  (->> (find-sources cp)
+       (filter (fn [[f src]]
+                 (= "data_readers.clj" src)))
+       (map first)
+       seq))
+
+(defn reload-data-readers
+  "data_readers.clj is special. It is loaded once at clojure startup, so if a new compile request comes in with new data_readers, return ::restart"
+  [old-classpath new-classpath]
+  (assert new-classpath)
+  (let [old (data-readers-on-classpath old-classpath)
+        new (data-readers-on-classpath new-classpath)]
+    (when (and old new (not= old new))
+      ::restart)))
+
+(def old-classpath (atom nil))
 
 (defn compile-json [json-str]
   (let [{:keys [src_dir resources aot_nses classes_dir output_jar classpath] :as args} (json/read-str json-str :key-fn keyword)
@@ -239,11 +272,16 @@
         resources (map fs/->path resources)
         output-jar (fs/->path output_jar)
         aot-nses (map symbol aot_nses)]
-    (compile! (merge
-               {:classes-dir classes-dir
-                :classpath classpath
-                :resources resources
-                :output-jar output-jar
-                :aot-nses aot-nses}
-               (when src_dir
-                 {:src-dir (fs/->path src_dir)})))))
+    (str
+     (if-let [ret (reload-data-readers @old-classpath classpath)]
+       ret
+       (let [ret (compile! (merge
+                            {:classes-dir classes-dir
+                             :classpath classpath
+                             :resources resources
+                             :output-jar output-jar
+                             :aot-nses aot-nses}
+                            (when src_dir
+                              {:src-dir (fs/->path src_dir)})))]
+         (reset! old-classpath classpath)
+         ret)))))
