@@ -253,19 +253,6 @@
        (map first)
        seq))
 
-(defn reload-data-readers
-  "data_readers.clj is special. It is loaded once at clojure startup, so if a new compile request comes in with new data_readers, return ::restart"
-  [old-classpath new-classpath]
-  (assert new-classpath)
-  (let [old-readers (data-readers-on-classpath old-classpath)
-        new-readers (data-readers-on-classpath new-classpath)]
-    ;; if old-classpath is nil then this is a new clojure runtime, we don't
-    ;; need to restart. If this compile doesn't use readers, we don't
-    ;; need to restart. If this build has readers, and the list is
-    ;; different, we do need to restart
-    (when (and old-classpath new-readers (not= old-readers new-readers))
-      ::restart)))
-
 (def old-classpath (atom nil))
 
 (defn compile-json [json-str]
@@ -276,16 +263,15 @@
         resources (map fs/->path resources)
         output-jar (fs/->path output_jar)
         aot-nses (map symbol aot_nses)]
+    (#'clojure.core/load-data-readers)
     (str
-     (if-let [ret (reload-data-readers @old-classpath classpath)]
-       ret
-       (let [ret (compile! (merge
-                            {:classes-dir classes-dir
-                             :classpath classpath
-                             :resources resources
-                             :output-jar output-jar
-                             :aot-nses aot-nses}
-                            (when src_dir
-                              {:src-dir (fs/->path src_dir)})))]
-         (reset! old-classpath classpath)
-         ret)))))
+     (let [ret (compile! (merge
+                          {:classes-dir classes-dir
+                           :classpath classpath
+                           :resources resources
+                           :output-jar output-jar
+                           :aot-nses aot-nses}
+                          (when src_dir
+                            {:src-dir (fs/->path src_dir)})))]
+       (reset! old-classpath classpath)
+       ret))))
