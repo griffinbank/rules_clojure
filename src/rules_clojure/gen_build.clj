@@ -638,11 +638,8 @@
   (->> paths
        (mapcat (fn [path]
                  (fs/ls-r path)))
-       (filter (fn [path]
-                 (-> path .toFile fs/clj-file?)))
        (map fs/dirname)
        (distinct)
-       (concat (filter fs/exists? paths))
        (sort-by (comp count str))
        (reverse)
        (map (fn [dir]
