@@ -613,18 +613,31 @@
                      (str/join "\n\n" rules)
                      "\n"
                      "\n"
-                     (emit-bazel (list 'clojure_library (kwargs {:name "__clj_files"
+                     (emit-bazel (list 'clojure_library (kwargs {:name "__clj_lib"
                                                                  :resources (mapv fs/filename clj-paths)
                                                                  :resource_strip_prefix (strip-path (select-keys args [:basis :workspace-root]) dir)
                                                                  :deps (mapv (fn [p]
-                                                                               (str "//" (fs/path-relative-to workspace-root p) ":__clj_files")) subdirs)})))
+                                                                               (str "//" (fs/path-relative-to workspace-root p) ":__clj_lib")) subdirs)})))
                      "\n"
                      "\n"
-                     (emit-bazel (list 'clojure_library (kwargs {:name "__cljs_files"
+                     (emit-bazel (list 'filegroup (kwargs {:name "__clj_files"
+                                                           :srcs (mapv fs/filename clj-paths)
+                                                           :data (mapv (fn [p]
+                                                                         (str "//" (fs/path-relative-to workspace-root p) ":__clj_files")) subdirs)})))
+                     "\n"
+                     "\n"
+                     (emit-bazel (list 'clojure_library (kwargs {:name "__cljs_lib"
                                                                  :resources (mapv fs/filename cljs-paths)
                                                                  :resource_strip_prefix (strip-path (select-keys args [:basis :workspace-root]) dir)
                                                                  :deps (mapv (fn [p]
-                                                                               (str "//" (fs/path-relative-to workspace-root p) ":__cljs_files")) subdirs)}))))]
+                                                                               (str "//" (fs/path-relative-to workspace-root p) ":__cljs_lib")) subdirs)})))
+                     "\n"
+                     "\n"
+                     (emit-bazel (list 'filegroup (kwargs {:name "__cljs_files"
+                                                           :srcs (mapv fs/filename cljs-paths)
+                                                           :data (mapv (fn [p]
+                                                                         (str "//" (fs/path-relative-to workspace-root p) ":__cljs_files")) subdirs)})))
+                     "\n")]
     (-> dir
         (fs/->path "BUILD.bazel")
         fs/path->file
