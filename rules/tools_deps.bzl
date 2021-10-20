@@ -61,6 +61,20 @@ def _add_deps_edn(repository_ctx):
 def aliases_str(aliases):
     return str("[" + " ".join([ (":%s" % (a)) for a in aliases]) + "]")
 
+def _java_binary_unwrapper(ctx):
+    #https://github.com/bazelbuild/bazel/issues/10067
+    return DefaultInfo(files=depset([ctx.executable.bin]), runfiles=ctx.attr.bin[DefaultInfo].default_runfiles)
+
+java_binary_unwrapper = rule(_java_binary_unwrapper,
+                             attrs={"bin": attr.label(executable=True, cfg="exec")})
+
+def java_binary_solo(name, **kwargs):
+    ### Same as native.java_binary, but return only the binary (not the jar) as output
+    wrapped = name + "_wrapped"
+    native.java_binary(name=wrapped, **kwargs)
+    java_binary_unwrapper(name=name,
+                          bin=wrapped)
+
 def _run_gen_build(repository_ctx):
     home = repository_ctx.os.environ["HOME"]
     repository_ctx.symlink("/"+ home + "/.m2/repository", repository_ctx.path("repository"))
@@ -123,10 +137,28 @@ clojure_tools_deps = repository_rule(
              "_jdk": attr.label(default = "@bazel_tools//tools/jdk:current_java_runtime",
                                 providers = [java_common.JavaRuntimeInfo])})
 
-def clojure_gen_deps(name, deps_edn, aliases, deps_repo_tag):
+def clojure_gen_deps(name):
     native.sh_binary(name=name,
                      srcs=["@deps//scripts:gen_deps.sh"])
 
-def clojure_gen_srcs(name, deps_edn, aliases, deps_repo_tag):
+def clojure_gen_srcs(name, **kwargs):
     native.sh_binary(name=name,
-                     srcs=["@deps//scripts:gen_srcs.sh"])
+                     srcs=["@deps//scripts:gen_srcs.sh"],
+                     **kwargs)
+
+def clojure_gen_namespace_loader(name, output_filename, output_ns_name, output_fn_name, in_dirs, exclude_nses, platform, deps_edn):
+    bin_name = name + "_java_bin"
+    java_binary_solo(name=bin_name,
+                     main_class="rules_clojure.gen_build",
+                     runtime_deps=["@rules_clojure//src/rules_clojure:gen_build"])
+
+    native.sh_binary(name=name,
+                     srcs=[bin_name],
+                     data=[deps_edn],
+                     args=["ns-loader",
+                           ":output-filename", output_filename,
+                           ":output-ns-name", output_ns_name,
+                           ":output-fn-name", output_fn_name,
+                           ":in-dirs", "[%s]" % " ".join(["\\\"%s\\\"" % d for d in in_dirs]),
+                           ":exclude-nses", "[%s]" % " ".join(exclude_nses),
+                           ":platform", platform])

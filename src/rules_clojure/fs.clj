@@ -115,7 +115,7 @@
 
 (defn cljs-file? [file]
   (and (normal-file? file)
-       (contains? #{"cljc" "cljs" "js"} (-> file file->path extension))))
+       (contains? #{"clj" "cljc" "cljs" "js"} (-> file file->path extension))))
 
 (s/fdef mv :args (s/cat :s path? :d path?))
 (defn mv [src dest]

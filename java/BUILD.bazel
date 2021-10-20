@@ -6,26 +6,14 @@ load("@rules_proto//proto:defs.bzl", "proto_library")
 java_library(
     name = "ClojureWorker-lib",
     srcs = glob(["ClojureWorker.java"]),
-    deps = [
-        # "//src/main/java/com/google/devtools/build/lib/actions:execution_requirements",
-        # "//src/main/java/com/google/devtools/common/options",
-        # "//third_party:gson",
-        # "//third_party:guava",
-        ":worker_protocol_protobuf_java",
-    ],
-)
+    deps = [":worker_protocol_protobuf_java"])
 
 java_binary(
     name = "ClojureWorker",
     main_class = "rules_clojure.ClojureWorker",
-    runtime_deps = [
-        ":ClojureWorker-lib",
-    ],
-)
+    runtime_deps = [":ClojureWorker-lib"])
 
-FILES = [
-    "worker_protocol",
-]
+FILES = ["worker_protocol"]
 
 [proto_library(
     name = s + "_proto",
