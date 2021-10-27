@@ -1,11 +1,11 @@
 package(default_visibility = ["//visibility:public"])
 
-exports_files(glob(["*.clj"]))
-
 load("//:rules.bzl", "clojure_library", "clojure_binary")
 
+exports_files(glob(["*.clj"]))
+
 clojure_library(
-    name= "gen_build",
+    name= "libgen_build",
     srcs=["gen_build.clj", "fs.clj"],
     resource_strip_prefix = "src",
     deps=["@rules_clojure_maven//:org_clojure_clojure",
@@ -15,6 +15,10 @@ clojure_library(
           "@rules_clojure_maven//:org_clojure_tools_deps_alpha",
           "@rules_clojure_maven//:org_clojure_data_json"],
     aot=["rules-clojure.fs","rules-clojure.gen-build"])
+
+java_binary(name="gen_build",
+            main_class="rules_clojure.gen_build",
+            runtime_deps=[":libgen_build"])
 
 java_library(
     name="jar-lib",

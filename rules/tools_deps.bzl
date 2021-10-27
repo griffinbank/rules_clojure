@@ -61,41 +61,16 @@ def _add_deps_edn(repository_ctx):
 def aliases_str(aliases):
     return str("[" + " ".join([ (":%s" % (a)) for a in aliases]) + "]")
 
-def _java_binary_unwrapper(ctx):
-    #https://github.com/bazelbuild/bazel/issues/10067
-    return DefaultInfo(files=depset([ctx.executable.bin]), runfiles=ctx.attr.bin[DefaultInfo].default_runfiles)
-
-java_binary_unwrapper = rule(_java_binary_unwrapper,
-                             attrs={"bin": attr.label(executable=True, cfg="exec")})
-
-def java_binary_solo(name, **kwargs):
-    ### Same as native.java_binary, but return only the binary (not the jar) as output
-    wrapped = name + "_wrapped"
-    native.java_binary(name=wrapped, **kwargs)
-    java_binary_unwrapper(name=name,
-                          bin=wrapped)
-
-def _run_gen_build(repository_ctx):
+def _run_gen_deps(repository_ctx):
     home = repository_ctx.os.environ["HOME"]
     repository_ctx.symlink("/"+ home + "/.m2/repository", repository_ctx.path("repository"))
-
-    repository_ctx.file(repository_ctx.path("scripts/BUILD"),
-                        content = """
-package(default_visibility = ["//visibility:public"])
-
-sh_binary(name="gen_deps",
-          srcs=["gen_deps.sh"])
-
-sh_binary(name="gen_srcs",
-          srcs=["gen_srcs.sh"])
-""")
 
     repository_ctx.file(repository_ctx.path("scripts/gen_deps.sh"),
                         executable = True,
                         content = """#!/usr/bin/env bash
  set -euxo pipefail;
  cd {working_dir};
- {clojure} -Srepro -J-Dclojure.main.report=stderr -m rules-clojure.gen-build deps :deps-edn-path "{deps_edn_path}" :deps-out-dir "{deps_out_dir}" :deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" :aliases "{aliases}"
+ {clojure} -J-Dclojure.main.report=stderr rules-clojure.gen-build deps :deps-edn-path "{deps_edn_path}" :deps-out-dir "{deps_out_dir}" :deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" :aliases "{aliases}"
 
  """.format(clojure = repository_ctx.path(clj_path),
             deps_repo_tag = "@" + repository_ctx.attr.name,
@@ -105,27 +80,37 @@ sh_binary(name="gen_srcs",
             working_dir = repository_ctx.path(repository_ctx.attr._rc_deps_edn).dirname,
             aliases = aliases_str(repository_ctx.attr.aliases)))
 
-    repository_ctx.file(repository_ctx.path("scripts/gen_srcs.sh"),
+def _run_gen_build(repository_ctx):
+    print("gen-build repository:", repository_ctx.path("repository"))
+    repository_ctx.file(repository_ctx.path("scripts/BUILD.bazel"),
                         executable = True,
-                        content = """#!/usr/bin/env bash
- set -euxo pipefail;
- cd {working_dir};
- {clojure} -Srepro -J-Dclojure.main.report=stderr -m rules-clojure.gen-build srcs :deps-edn-path "{deps_edn_path}" :deps-out-dir "{deps_out_dir}" deps-build-dir "{deps_build_dir}" :deps-repo-tag "{deps_repo_tag}" :aliases "{aliases}" :workspace-root ${{BUILD_WORKSPACE_DIRECTORY}}
+                        content = """
+package(default_visibility = ["//visibility:public"])
 
- """.format(clojure = repository_ctx.path(clj_path),
+java_binary(name="gen_srcs",
+    main_class="rules_clojure.gen_build",
+    runtime_deps=["@rules_clojure//src/rules_clojure:libgen_build"],
+    args=["srcs",
+          ":deps-edn-path", "{deps_edn_path}",
+          ":repository-dir", "{repository_dir}",
+          ":deps-build-dir", "{deps_build_dir}",
+          ":deps-repo-tag", "{deps_repo_tag}",
+          ":aliases", "\\"{aliases}\\""],
+    data=["{deps_edn_label}"])
+
+ """.format(gen_build = "gen-build", # repository_ctx.path(repository_ctx.attr._gen_build),
             deps_repo_tag = "@" + repository_ctx.attr.name,
+            deps_edn_label = repository_ctx.attr.deps_edn,
             deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
-            deps_out_dir = repository_ctx.path("repository"),
+            repository_dir = repository_ctx.path("repository"),
             deps_build_dir = repository_ctx.path(""),
             working_dir = repository_ctx.path(repository_ctx.attr._rc_deps_edn).dirname,
             aliases = aliases_str(repository_ctx.attr.aliases)))
-
-    repository_ctx.execute(["scripts/gen_deps.sh", "deps"],
-                           quiet = False)
 
 def _tools_deps_impl(repository_ctx):
     _install_tools_deps(repository_ctx)
     _add_deps_edn(repository_ctx)
+    _run_gen_deps(repository_ctx)
     _run_gen_build(repository_ctx)
 
 clojure_tools_deps = repository_rule(
@@ -142,20 +127,14 @@ def clojure_gen_deps(name):
                      srcs=["@deps//scripts:gen_deps.sh"])
 
 def clojure_gen_srcs(name, **kwargs):
-    native.sh_binary(name=name,
-                     srcs=["@deps//scripts:gen_srcs.sh"],
-                     **kwargs)
+    native.alias(name=name,
+                 actual= "@deps//scripts:gen_srcs")
 
 def clojure_gen_namespace_loader(name, output_filename, output_ns_name, output_fn_name, in_dirs, exclude_nses, platform, deps_edn):
-    bin_name = name + "_java_bin"
-    java_binary_solo(name=bin_name,
-                     main_class="rules_clojure.gen_build",
-                     runtime_deps=["@rules_clojure//src/rules_clojure:gen_build"])
-
-    native.sh_binary(name=name,
-                     srcs=[bin_name],
-                     data=[deps_edn],
-                     args=["ns-loader",
+    native.java_binary(name=name,
+                       runtime_deps=["@rules_clojure//src/rules_clojure:libgen_build"],
+                       data=[deps_edn],
+                       args=["ns-loader",
                            ":output-filename", output_filename,
                            ":output-ns-name", output_ns_name,
                            ":output-fn-name", output_fn_name,

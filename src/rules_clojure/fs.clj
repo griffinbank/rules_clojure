@@ -24,7 +24,7 @@
         d (if (string? d)
             (Paths/get d (into-array String []))
             d)]
-    (assert d)
+    (assert d (str "path does not exist:" d))
     (reduce (fn [^Path p dir] (.resolve p dir)) d (rest dirs))))
 
 (defn file->path [f]
