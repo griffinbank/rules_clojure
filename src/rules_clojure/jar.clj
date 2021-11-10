@@ -171,7 +171,8 @@
 
 (defn do-aot [{:keys [classes-dir aot-nses]}]
   (when (seq aot-nses)
-    (binding [*compile-path* (str classes-dir "/")]
+    (binding [*compile-files* true
+              *compile-path* (str classes-dir "/")]
       (->> aot-nses
            topo-sort
            (map (fn [ns]
