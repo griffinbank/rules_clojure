@@ -21,6 +21,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load ("//:repositories.bzl", "rules_clojure_dependencies")
 rules_clojure_dependencies()
 
+load("@rules_clojure//:toolchains.bzl", "rules_clojure_default_toolchain")
+rules_clojure_default_toolchain()
+
 http_archive(
     name = "rules_proto",
     sha256 = "8e7d59a5b12b233be5652e3d29f42fba01c7cbab09f6b3a8d0a57ed6d1e9a0da",

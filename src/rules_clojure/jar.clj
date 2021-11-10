@@ -60,6 +60,46 @@
   (->> (classpath)
        (find/find-namespaces)))
 
+(defn ->queue []
+  (clojure.lang.PersistentQueue/EMPTY))
+
+;; (defn peek [^clojure.lang.PersistentQueue q]
+;;   (.peek q))
+
+;; (defn pop [^clojure.lang.PersistentQueue q]
+;;   (.pop q))
+
+(defn ->all-ns-decls []
+  (->> (classpath)
+       (#(find/find-ns-decls % find/clj))))
+
+(def all-ns-decls (->all-ns-decls))
+
+(defn get-ns-decl [ns]
+  (->> all-ns-decls
+       (filter (fn [ns-decl]
+                 (= ns (parse/name-from-ns-decl ns-decl))))
+       (first)))
+
+(defn deps-of-ns [ns]
+  (mapcat #'parse/deps-from-ns-form (get-ns-decl ns)))
+
+(defn transitive-deps [ns]
+  (loop [ns ns
+         tdeps (list)
+         stack (list ns)
+         seen #{}]
+    (if-let [ns (first stack)]
+      (if (not (contains? seen ns))
+        (let [stack (pop stack)
+              tdeps (conj tdeps ns)
+              deps (deps-of-ns ns)
+              stack (into stack (reverse deps))
+              seen (conj seen ns)]
+          (recur (peek stack) tdeps stack seen))
+        (recur (peek stack) tdeps (pop stack) seen))
+      tdeps)))
+
 (defn topo-sort
   "Given a seq of namespaces to compile, return them in topo sorted order"
   [nses]
