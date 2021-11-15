@@ -492,11 +492,11 @@
                (str/replace "." "/")) "." extension))
 
 (defn ignore-paths
-  [{:keys [basis workspace-root] :as args}]
+  [{:keys [basis deps-edn-path] :as args}]
   (->>
    (get-in basis [:bazel :ignore])
    (map (fn [p]
-          (fs/->path workspace-root p)))
+          (fs/->path (fs/dirname deps-edn-path) p)))
    (set)))
 
 (defn strip-path
@@ -693,7 +693,7 @@
   "return the set of source directories on the classpath"
   [{:keys [basis deps-edn-path aliases] :as args}]
   {:post [%]}
-  (let [ignore (ignore-paths (select-keys args [:basis :workspace-root]))]
+  (let [ignore (ignore-paths (select-keys args [:basis :deps-edn-path]))]
     (->>
      (:paths basis)
      (map (fn [path]
