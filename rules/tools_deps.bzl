@@ -114,9 +114,9 @@ clojure_tools_deps = repository_rule(
 
 def clojure_gen_deps(name):
     native.alias(name=name,
-                 actual= "@deps//scripts:gen_srcs")
+                 actual= "@deps//scripts:gen_deps")
 
-def clojure_gen_srcs(name, **kwargs):
+def clojure_gen_srcs(name):
     native.alias(name=name,
                  actual= "@deps//scripts:gen_srcs")
 
