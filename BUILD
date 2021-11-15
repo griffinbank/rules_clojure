@@ -1,4 +1,5 @@
-load("@rules_clojure//:toolchains.bzl", "clojure_toolchain")
+load(":toolchains.bzl", "clojure_toolchain")
+load(":rules.bzl", "clojure_repl")
 
 package(default_visibility = ["//visibility:public"])
 exports_files(glob(["deps.edn", "src/main/resources/**/*.clj"]))

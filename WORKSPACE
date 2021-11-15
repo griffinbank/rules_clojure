@@ -21,7 +21,7 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load ("//:repositories.bzl", "rules_clojure_dependencies")
 rules_clojure_dependencies()
 
-load("@rules_clojure//:toolchains.bzl", "rules_clojure_default_toolchain")
+load("//:toolchains.bzl", "rules_clojure_default_toolchain")
 rules_clojure_default_toolchain()
 
 http_archive(

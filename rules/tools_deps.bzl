@@ -1,4 +1,4 @@
-load("@rules_clojure//:rules.bzl", "clojure_library", "clojure_binary")
+load("//:rules.bzl", "clojure_library", "clojure_binary")
 
 CLJ_VERSIONS_MAC = {
     "1.10.1.763": ("https://download.clojure.org/install/clojure-tools-1.10.1.763.tar.gz", "2a3ec8a6c3639035c2bba10945ae9007ab0dc9136766b95d2161f354e62a4d10")
