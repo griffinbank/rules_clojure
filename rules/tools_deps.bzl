@@ -46,8 +46,12 @@ java_binary(name="gen_srcs",
             working_dir = repository_ctx.path(repository_ctx.attr._rc_deps_edn).dirname,
             aliases = aliases_str(repository_ctx.attr.aliases)))
 
+def _symlink_repository(repository_ctx):
+    repository_ctx.symlink(repository_ctx.os.environ["HOME"] + "/.m2/repository", repository_ctx.path("repository"))
+
 def _tools_deps_impl(repository_ctx):
     _add_deps_edn(repository_ctx)
+    _symlink_repository(repository_ctx)
     _run_gen_build(repository_ctx)
 
 clojure_tools_deps = repository_rule(
