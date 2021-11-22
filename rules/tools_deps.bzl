@@ -10,7 +10,6 @@ def aliases_str(aliases):
     return str("[" + " ".join([ (":%s" % (a)) for a in aliases]) + "]")
 
 def _run_gen_build(repository_ctx):
-    print("gen-build repository:", repository_ctx.path("repository"))
     repository_ctx.file(repository_ctx.path("scripts/BUILD.bazel"),
                         executable = True,
                         content = """

@@ -63,8 +63,8 @@ def clojure_test(name, *, test_ns, deps=[], runtime_deps=[], **kwargs):
     native.java_test(name=name,
                      runtime_deps = deps + runtime_deps + ["@rules_clojure//src/rules_clojure:testrunner"],
                      use_testrunner = False,
-                     main_class="clojure.main",
-                     args = ["-m", "rules-clojure.testrunner", test_ns],
+                     main_class="rules_clojure.testrunner",
+                     args = [test_ns],
                      **kwargs)
 
 def cljs_impl(ctx):
