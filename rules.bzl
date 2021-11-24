@@ -62,10 +62,7 @@ def clojure_test(name, *, test_ns, deps=[], runtime_deps=[], **kwargs):
 
 def cljs_impl(ctx):
 
-    runfiles = ctx.runfiles(files=ctx.files.data + ctx.files.clj_binary)
-    targets = ctx.attr.data + ctx.attr.compile_opts_files + [ctx.attr.clj_binary]
-    for dep in targets:
-        runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
+    runfiles = ctx.runfiles(files=[])
 
     inputs = ctx.files.data + ctx.files.compile_opts_files
 
@@ -99,8 +96,7 @@ _cljs_library = rule(
              "compile_opts_files": attr.label_list(allow_files=True, default=[]),
              "compile_opts_strs": attr.string_list(default=[]),
              "clj_binary": attr.label(executable=True, cfg="exec"),
-             "outs": attr.output_list(),
-             },
+             "outs": attr.output_list()},
     provides = [],
     implementation = cljs_impl)
 
