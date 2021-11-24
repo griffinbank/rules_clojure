@@ -27,15 +27,8 @@ clojure_library = rule(
 )
 
 def clojure_binary(name, **kwargs):
-    deps = []
-    runtime_deps = []
-    if "deps" in kwargs:
-        deps = kwargs["deps"]
-        kwargs.pop("deps")
-
-    if "runtime_deps" in kwargs:
-        runtime_deps = kwargs["runtime_deps"]
-        kwargs.pop("runtime_deps")
+    deps = kwargs.pop("deps", [])
+    runtime_deps = kwargs.pop("runtime_deps", [])
 
     native.java_binary(name=name,
                        runtime_deps = deps + runtime_deps,
