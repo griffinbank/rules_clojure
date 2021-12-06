@@ -128,9 +128,9 @@
 
 (defn protocol? [val]
   (and (map? val)
-       (class? (:on val))
        (class? (:on-interface val))
-       (map? (:sigs val))))
+       (map? (:sigs val))
+       (map? (:method-map val))))
 
 (defn contains-protocols? [ns]
   (->> ns
