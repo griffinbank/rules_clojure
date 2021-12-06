@@ -108,14 +108,6 @@
 (defn jar? [path]
   (= "jar" (extension path)))
 
-(s/fdef clj-file? :args (s/cat :f file?) :ret boolean?)
-(defn clj-file? [file]
-  (and (normal-file? file)
-       (contains? #{"clj" "cljc"} (-> file file->path extension))))
-
-(defn cljs-file? [file]
-  (and (normal-file? file)
-       (contains? #{"clj" "cljc" "cljs" "js"} (-> file file->path extension))))
 
 (s/fdef mv :args (s/cat :s path? :d path?))
 (defn mv [src dest]
