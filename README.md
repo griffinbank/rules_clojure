@@ -211,17 +211,19 @@ In deps.edn, any fields under :clojure_library and :clojure_test will be added t
 ## CLJS support
 
 ```
-clojure_library(name="bar",
-                resources=["bar.cljs", "bar.cljc"],
-				resource_strip_prefix="src/")
+clojure_library(
+  name="bar",
+  resources=["bar.cljs", "bar.cljc"],
+  resource_strip_prefix="src/")
 
-cljs_library(name="release",
-             deps=["@deps//:foo",
-                   ":bar"],
-             compile_opts_files=[":build.edn"],
-			 compile_opts_strs=["{:output-to \"$(BINDIR)/frontend/release/index.js\" :output-dir \"$(BINDIR)/frontend/release\"}"]
-             data=["//:node_modules"],
-             outs=["out/index.js"])
+cljs_library(
+  name="release",
+  deps=["@deps//:foo",
+        ":bar"],
+  compile_opts_files=[":build.edn"],
+  compile_opts_strs=["{:output-to \"$(BINDIR)/frontend/release/index.js\" :output-dir \"$(BINDIR)/frontend/release\"}"]
+  data=["//:node_modules"],
+  outs=["out/index.js"])
 ```
 
 Uses `java_binary` and `cljs.main` to compile clojurescript. `deps` is JVM deps to put on the classpath. Supports `compile_opts_files` for build.edn files, and `compile_opts_strs` for EDN strings.
@@ -235,22 +237,24 @@ When gen-build runs, if a directory contains both `foo.clj` and `foo.cljs`, they
 ### CLJS Testing
 
 ```
-clojure_gen_namespace_loader(name="gen_cljs_all_tests",
-                             output_filename="test/frontend/all_test_namespaces.cljc",
-                             output_fn_name="all-namespaces",
-                             output_ns_name="frontend.all-test-namespaces",
-                             exclude_nses=["frontend.test-runner"],
-                             platform=":cljs",
-                             in_dirs=["test"],
-                             deps_edn="//:deps.edn")
+clojure_gen_namespace_loader(
+  name="gen_cljs_all_tests",
+  output_filename="test/frontend/all_test_namespaces.cljc",
+  output_fn_name="all-namespaces",
+  output_ns_name="frontend.all-test-namespaces",
+  exclude_nses=["frontend.test-runner"],
+  platform=":cljs",
+  in_dirs=["test"],
+  deps_edn="//:deps.edn")
 
 
-cljs_library(name="karma",
-             deps=["//test/frontend:test_runner"],
-             compile_opts_files=[":build-karma.edn"],
-             compile_opts_strs=["{:output-to \"$(BINDIR)/frontend/karma-out/index.js\" :output-dir \"$(BINDIR)/frontend/karma-out\"}"],
-             data=["@frontend_npm//:node_modules"],
-             outs=["karma-out/index.js"])
+cljs_library(
+  name="karma",
+  deps=["//test/frontend:test_runner"],
+  compile_opts_files=[":build-karma.edn"],
+  compile_opts_strs=["{:output-to \"$(BINDIR)/frontend/karma-out/index.js\" :output-dir \"$(BINDIR)/frontend/karma-out\"}"],
+  data=["@frontend_npm//:node_modules"],
+  outs=["karma-out/index.js"])
 ```
 
 

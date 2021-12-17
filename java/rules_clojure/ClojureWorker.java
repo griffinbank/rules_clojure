@@ -34,30 +34,34 @@ import java.util.jar.JarFile;
 import org.projectodd.shimdandy.ClojureRuntimeShim;
 
 // Clojure is a compiled language. When loading source files or
-// evaling, the compiler generates a .class file, and then loads it
-// via standard Java classloaders. During non-AOT operation, the
-// .classfile exists in memory without being written to disk.
+// evaling, the Clojure compiler generates a .class file, and then
+// loads it via standard Java classloaders. During non-AOT operation,
+// the .classfile exists in memory without being written to disk.
 
 // When AOT'ing, the compiler writes a .class file that corresponds to the
 // name of the source file. The clojure namespace `foo-bar.core` will
 // produce a file `foo_bar/core.class`.
 
-// Classloaders form a hierarchy. A classloader usually asks its
-// parent to load a class, and if the parent can't, the current CL
-// attempts to load. In normal clojure operation, `java -cp` creates a
+// Classloaders form a hierarchy. A classloader first asks its parent
+// to load a class, and if the parent can't, the current CL attempts
+// to load. In normal clojure operation, `java -cp` creates a
 // URLClassloader containing URLs pointing at jars and source
 // dirs. `clojure.main` then creates a clojure.lang.DynamicClassLoader
 // as a child of the URL classloader. Finally, clojure.lang.Compiler
-// creates its own private DCL
+// creates its own private c.l.DCL.
 
-// To load a namespace, clojure.lang.RT looks for both
-// `foo-bar/core.clj` and `foo_bar/core.class`, starting from the
-// classloader that contains 'this' clojure.lang.RT. If only the class
-// file is present, it is loaded. If only the source exists, it is
-// compiled and then loaded. If both are present, the one with the
-// newer file modification time is loaded.
+// Classloaders are also responsible for loading resources, using the
+// same hierarchy.
 
-// In normal operation, if foo-bar.core was AOT'd, it will be loaded
+// When executing `(load "foo-bar.core")`, clojure.lang.RT/load looks
+// for the resources `foo-bar/core.clj` and `foo_bar/core.class`,
+// starting from the classloader that contains 'this'
+// clojure.lang.RT. If only the class file is present, it is
+// loaded. If only the source exists, it is compiled and then
+// loaded. If both are present, the one with the newer file
+// modification time is loaded.
+
+// If foo-bar.core was AOT'd, it will be loaded
 // by the URLClassloader (because the .classfile exists). If it had to
 // be compiled, it will be loaded by the compiler's DCL.
 
@@ -72,31 +76,33 @@ import org.projectodd.shimdandy.ClojureRuntimeShim;
 
 // When compiling, defprotocol and deftype/defrecord create new
 // classes. If a compile reloads a protocol, that breaks all existing
-// users of the protocol. If the class is loaded in two separate
-// classloaders, that will break some users.
+// users of the protocol loaded by the DCL or a child CL. If the class
+// is loaded in two separate classloaders, that will break some users.
 
 // If an AOT'd ns contains a protocol or deftype, the resulting
 // classfile should appear in exactly one jar (if the classfiles
 // appear in multiple jars, there's a chance both definitions could
 // get loaded, and then some users will break).
 
-// When AOT'ing a consumer of a protocol, the compiled definition must
-// be on the classpath (because the user needs to refer to the AOT'd
-// class id, not the src class id)
+// When loading an AOT'd use of a protocol, the
+// definition must be AOT'd and on the classpath (because otherwise
+// the definition will be loaded from source, and the source and
+// consumer protocol definitions will be in separate classloaders, and therefore be not=
 
 // We want to keep the worker up and incrementally load code in the
-// same worker, because reloading the environment is expensive.
+// same worker, because reloading the environment on every namespace
+// is slow.
 
 // therefore: create a mostly-persistent classloader containing all
-// jars that compile requests have asked for.
+// jars that compile requests have asked for. When AOT'ing, keeping
+// both the source and AOT classes in the classloader hierarchy around
+// can cause us to violate one of the above rules, so periodically
+// we'll have to discard the classloader and start over.
 
-// we compile in Clojure because it's easier and more powerful.
+// rules-clojure.jar/compile-json has two return values:
 
-// compile-json has three return values:
-
-// nil: compilation returned successfully
+// nil compilation returned successfully
 // ::reload - compilation was successful, and this environment should be thrown away before the next compile
-// ::restart - the new compilation request is incompatible with the existing environment. Throw away the environment and try again with a clean env.
 
 class ClojureCompileRequest {
     String[] aot;
@@ -156,7 +162,7 @@ class ClojureWorker  {
 		    Object ret = processRequest(request);
 		    code = 0;
 		} catch (Throwable e) {
-		    real_stderr.println(e.getMessage());
+		    real_stderr.println("throwable: " + e.getMessage());
 		    e.printStackTrace(real_stderr);
 		    throw e;
 		}
@@ -164,8 +170,7 @@ class ClojureWorker  {
 		    System.setErr(real_stderr);
 		    String out_str = outStream.toString();
 		    if (out_str.length() > 0) {
-			real_stderr.println(out_str);
-			real_stderr.flush();
+			real_stderr.println("worker stderr:" + out_str);
 		    }
 		}
 		out.flush();

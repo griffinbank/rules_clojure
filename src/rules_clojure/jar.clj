@@ -2,6 +2,7 @@
   (:require [clojure.data.json :as json]
             [clojure.java.classpath :as cp]
             [clojure.java.io :as io]
+            [clojure.set :as set]
             [clojure.stacktrace :as pst]
             [clojure.string :as str]
             [clojure.spec.alpha :as s]
@@ -55,19 +56,9 @@
 ;; breaks all usage of the protocol in B. Compile in topo-order to
 ;; avoid forced reloads.
 
-
 (defn classpath-nses []
   (->> (classpath)
        (find/find-namespaces)))
-
-(defn ->queue []
-  (clojure.lang.PersistentQueue/EMPTY))
-
-;; (defn peek [^clojure.lang.PersistentQueue q]
-;;   (.peek q))
-
-;; (defn pop [^clojure.lang.PersistentQueue q]
-;;   (.pop q))
 
 (defn ->all-ns-decls []
   (->> (classpath)
@@ -105,7 +96,7 @@
   [nses]
   {:pre [(every? symbol? nses)]
    :post [(do (when-not (= (set nses) (set %))
-                (println "jar/topo-sort:" (set nses) (set %))) true)
+                (println "jar/topo-sort: in" (set nses) "out" (set %) "missing:" (set/difference (set nses) (set %)))) true)
           (= (set nses) (set %))]}
   (let [nses (set nses)
         graph (dep/graph)]
@@ -268,9 +259,9 @@
 
   (fs/ensure-directory classes-dir)
 
-  (let [needs-reload? (do-aot (select-keys args [:classes-dir :aot-nses]))]
+  (let [ret (do-aot (select-keys args [:classes-dir :aot-nses]))]
     (create-jar (select-keys args [:src-dir :classes-dir :output-jar :resources :aot-nses]))
-    needs-reload?))
+    ret))
 
 (defn find-sources [cp]
   (concat
@@ -297,6 +288,7 @@
 (def old-classpath (atom nil))
 
 (defn compile-json [json-str]
+  {:post [(or (= "" %) (= (str ::reload) %))]}
   (let [{:keys [src_dir resources aot_nses classes_dir output_jar classpath] :as args} (json/read-str json-str :key-fn keyword)
         _ (assert classes_dir)
         _ (when (seq resources) (assert src_dir))

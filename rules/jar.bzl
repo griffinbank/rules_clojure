@@ -82,6 +82,9 @@ def printable_label(label):
 
 def clojure_jar_impl(ctx):
 
+    if (len(ctx.attr.srcs) > 0 and len(ctx.attr.aot) == 0):
+        fail("srcs but no AOT")
+
     output_jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
     classes_dir = ctx.actions.declare_directory("%s.classes" % (printable_label(ctx.label)))
 
@@ -98,7 +101,7 @@ def clojure_jar_impl(ctx):
             java_deps.append(dep[JavaInfo])
 
     dep_info = java_common.merge(java_deps)
-    shim_info = java_common.merge([d[JavaInfo] for d in ctx.attr._worker_runtime if JavaInfo in d])
+    shim_info = java_common.merge([d[JavaInfo] for d in ctx.attr.worker_runtime if JavaInfo in d])
 
     java_info = JavaInfo(
         output_jar = output_jar,
@@ -149,7 +152,7 @@ def clojure_jar_impl(ctx):
         output = args_file,
         content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + dep_info.transitive_deps.to_list() + dep_info.transitive_runtime_deps.to_list() + native_libs + [args_file] + ctx.files._worker_runtime
+    inputs = ctx.files.srcs + ctx.files.resources + dep_info.transitive_deps.to_list() + dep_info.transitive_runtime_deps.to_list() + native_libs + [args_file] + ctx.files.worker_runtime
 
     ctx.actions.run(
         executable=ctx.executable.worker,

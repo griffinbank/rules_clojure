@@ -4,28 +4,26 @@ load("//:rules.bzl", "clojure_library", "clojure_binary")
 
 exports_files(glob(["*.clj"]))
 
+clojure_library(name="fs",
+                srcs=["fs.clj"],
+                aot=["rules-clojure.fs"],
+                resource_strip_prefix="src",
+                deps=["@rules_clojure_maven//:org_clojure_clojure",
+                      "@rules_clojure_maven//:org_clojure_spec_alpha",
+                      "@rules_clojure_maven//:org_clojure_core_specs_alpha"])
+
 clojure_library(
     name= "libgen_build",
-    srcs=["gen_build.clj", "fs.clj"],
+    srcs=["gen_build.clj"],
     resource_strip_prefix = "src",
     deps=["@rules_clojure_maven//:org_clojure_clojure",
           "@rules_clojure_maven//:org_clojure_spec_alpha",
           "@rules_clojure_maven//:org_clojure_core_specs_alpha",
           "@rules_clojure_maven//:org_clojure_tools_namespace",
           "@rules_clojure_maven//:org_clojure_tools_deps_alpha",
-          "@rules_clojure_maven//:org_clojure_data_json"],
-    aot=["rules-clojure.fs",
-         "rules-clojure.gen-build",
-         "clojure.string",
-         "clojure.spec.gen.alpha",
-         "clojure.walk",
-         "clojure.spec.alpha",
-         "clojure.core.specs.alpha",
-         "clojure.edn",
-         "clojure.java.io",
-         "clojure.pprint",
-         "clojure.spec.test.alpha",
-         "clojure.set",
+          "@rules_clojure_maven//:org_clojure_data_json",
+          ":fs"],
+    aot=["rules-clojure.gen-build",
          "clojure.tools.deps.alpha.extensions",
          "clojure.tools.deps.alpha.util.session",
          "clojure.tools.deps.alpha.util.io",
@@ -43,15 +41,15 @@ clojure_library(
          "clojure.tools.namespace.dependency",
          "clojure.tools.namespace.track",
          "clojure.tools.namespace.file",
-         "clojure.java.classpath",
-         "clojure.tools.namespace.find"])
+         "clojure.tools.namespace.find",
+         "clojure.java.classpath"])
 
 java_binary(name="gen_build",
             main_class="rules_clojure.gen_build",
             runtime_deps=[":libgen_build"])
 
 java_library(
-    name="jar-lib",
+    name="jar-lib-bootstrap",
     resources=["jar.clj", "fs.clj"],
     resource_strip_prefix="src",
     runtime_deps=["@rules_clojure_maven//:org_clojure_clojure",
@@ -62,26 +60,33 @@ java_library(
                   "@rules_clojure_maven//:org_clojure_data_json",
                   "//java/rules_clojure:worker_java_proto"])
 
-java_binary(
-    name="worker_bootstrap",
-    resources=["worker.clj"],
-    resource_strip_prefix="src",
-    runtime_deps=[":jar-lib",
-                  "@rules_clojure_maven//:com_google_protobuf_protobuf_java",
-                  "@rules_clojure_maven//:org_clojure_data_json"],
-    main_class="clojure.main",
-    jvm_flags=["-Dclojure.main.report=stderr"],
-)
-
-java_binary(
-    name="worker_repl",
-    resources=["worker.clj"],
-    resource_strip_prefix="src",
-    runtime_deps=[":jar-lib"],
-    main_class="clojure.main",
-    args=["-e", "(clojure.main/repl)"],
-    jvm_flags=["-Dclojure.main.report=stderr"]
-)
+clojure_library(
+    name="jar-lib",
+    deps=["jar-lib-bootstrap"],
+    aot=["rules-clojure.fs",
+         "clojure.tools.namespace.find",
+         "clojure.tools.namespace.dependency",
+         "clojure.tools.namespace.track",
+         "clojure.tools.reader.default-data-readers",
+         "clojure.tools.reader.impl.commons",
+         "clojure.tools.reader.impl.inspect",
+         "clojure.tools.reader.impl.errors",
+         "clojure.tools.reader.impl.utils",
+         "clojure.tools.reader.reader-types",
+         "clojure.tools.reader",
+         "clojure.tools.namespace.parse",
+         "clojure.tools.namespace.file",
+         "clojure.spec.gen.alpha",
+         "clojure.spec.alpha",
+         "clojure.stacktrace",
+         "clojure.set",
+         "clojure.string",
+         "clojure.java.io",
+         "clojure.java.classpath",
+         "clojure.data.json",
+         "rules-clojure.jar"],
+    worker_runtime=["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
+                     "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"])
 
 clojure_library(name= "testrunner",
                 srcs=["testrunner.clj"],
