@@ -151,24 +151,17 @@
   environment"
   [ns]
   {:pre [(symbol? ns)]}
-  (->> (classpath)
-       (#(find/find-ns-decls % find/clj))
-       (filter (fn [ns-decl]
-                 (let [found-ns (-> ns-decl second)]
-                   (assert (symbol? found-ns))
-                   (= ns found-ns))))
-       (first)
-       ((fn [ns-decl]
-          (let [deps (parse/deps-from-ns-decl ns-decl)]
-            (doseq [d deps]
-              (try
-                (require d)
-                (catch Exception e
-                  (throw (ex-info "while requiring" {:ns d} e)))))
-            (compile ns)
-            (when (or (contains-protocols? ns)
-                      (contains-deftypes? ns))
-              ::reload))))))
+  (let [decl (get-ns-decl ns)
+        deps (parse/deps-from-ns-decl decl)]
+    (doseq [d deps]
+      (try
+        (require d)
+        (catch Exception e
+          (throw (ex-info "while requiring" {:ns d} e)))))
+    (compile ns)
+    (when (or (contains-protocols? ns)
+              (contains-deftypes? ns))
+      ::reload)))
 
 ;; directory, root where all src and resources will be found
 (s/def ::src-dir fs/path?)
@@ -191,7 +184,7 @@
 
 (defn aot-files
   "Given the class-dir, post compiling `aot-ns`, return the files that should go in the JAR"
-  [classes-dir aot-ns]
+  [classes-dir]
   (->> classes-dir
        .toFile
        file-seq))
@@ -202,8 +195,7 @@
 
 (defn do-aot [{:keys [classes-dir aot-nses]}]
   (when (seq aot-nses)
-    (binding [*compile-files* true
-              *compile-path* (str classes-dir "/")]
+    (binding [*compile-path* (str classes-dir "/")]
       (->> aot-nses
            topo-sort
            (map (fn [ns]
@@ -233,13 +225,7 @@
         (put-next-entry! jar-os name (Files/getLastModifiedTime full-path (into-array LinkOption [])))
         (io/copy file jar-os)
         (.closeEntry jar-os))
-      (doseq [file (->> aot-nses
-                        (mapcat (fn [ns]
-                                  {:post [(do (when (not (seq %))
-                                                (println "ERROR no files from compiling" ns)) true)
-                                          (seq %)]}
-                                  (aot-files classes-dir ns)))
-                        (distinct))
+      (doseq [file (aot-files classes-dir)
               :when (.isFile file)
               :let [path (.toPath file)
                     name (str (fs/path-relative-to classes-dir path))]]
@@ -257,8 +243,7 @@
     (s/explain ::compile args)
     (assert false))
 
-  (fs/ensure-directory classes-dir)
-
+  (fs/clean-directory classes-dir)
   (let [ret (do-aot (select-keys args [:classes-dir :aot-nses]))]
     (create-jar (select-keys args [:src-dir :classes-dir :output-jar :resources :aot-nses]))
     ret))

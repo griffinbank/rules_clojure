@@ -1,6 +1,7 @@
 (ns rules-clojure.fs
   (:require [clojure.spec.alpha :as s]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [clojure.java.io :as io])
   (:import java.io.File
            [java.nio.file CopyOption Files FileSystem FileSystems Path Paths StandardCopyOption]))
 
@@ -112,3 +113,16 @@
 (s/fdef mv :args (s/cat :s path? :d path?))
 (defn mv [src dest]
   (Files/move src dest (into-array CopyOption [StandardCopyOption/ATOMIC_MOVE])))
+
+(defn rm-rf [^Path dir]
+  (while (seq (ls dir))
+    (doseq [f (ls dir)]
+      (if (directory? f)
+        (do (rm-rf f)
+            (.delete f))
+        (.delete f))))
+  (.delete (path->file dir)))
+
+(defn clean-directory [path]
+  (rm-rf path)
+  (create-directories path))
