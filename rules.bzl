@@ -19,8 +19,13 @@ clojure_library = rule(
         ## Clojure are not allowed to be on the startup classpath of
         ## ClojureWorker, so build these separately and pull them in
         ## at runtime
+        "jar_runtime": attr.label_list(default=[Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl"),
+                                                Label("@rules_clojure//src/rules_clojure:jar-lib")], cfg="host"),
         "worker_runtime": attr.label_list(default=[Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl"),
-                                                    Label("@rules_clojure//src/rules_clojure:jar-lib")], cfg="host")
+                                                   #TODO toolchain here
+                                                   Label("@rules_clojure_maven//:org_clojure_clojure"),
+                                                   Label("@rules_clojure_maven//:org_clojure_spec_alpha"),
+                                                   Label("@rules_clojure_maven//:org_clojure_core_specs_alpha")], cfg="host")
     },
     provides = [JavaInfo],
     toolchains = ["@rules_clojure//:toolchain_type"],

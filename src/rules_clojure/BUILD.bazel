@@ -6,7 +6,7 @@ exports_files(glob(["*.clj"]))
 
 java_library(
     name="jar-lib-bootstrap",
-    resources=["jar.clj", "fs.clj"],
+    resources=["jar.clj", "fs.clj", "compile.clj"],
     resource_strip_prefix="src",
     runtime_deps=["@rules_clojure_maven//:org_clojure_clojure",
                   "@rules_clojure_maven//:org_clojure_spec_alpha",
@@ -21,12 +21,13 @@ clojure_library(
     srcs=["fs.clj"],
     resource_strip_prefix="src",
     aot=["rules-clojure.fs"],
-    worker_runtime=["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
-                    "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"])
+    jar_runtime=["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
+                 "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"])
 
 clojure_library(
     name="jar-lib",
     deps=["jar-lib-bootstrap", "fs"],
+    resources=["compile.clj"],
     aot=["clojure.tools.namespace.find",
          "clojure.tools.namespace.dependency",
          "clojure.tools.namespace.track",
@@ -48,8 +49,8 @@ clojure_library(
          "clojure.java.classpath",
          "clojure.data.json",
          "rules-clojure.jar"],
-    worker_runtime=["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
-                     "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"])
+    jar_runtime=["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
+                 "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"])
 
 clojure_library(
     name= "libgen_build",
@@ -98,3 +99,11 @@ clojure_library(name= "testrunner",
 ## files needed for the clj toolchain
 filegroup(name="toolchain_files",
           srcs= glob(["*.clj"]) + ["//:deps.edn"])
+
+java_binary(name="repl",
+               main_class="clojure.main",
+               args=["-r"],
+               runtime_deps=["@rules_clojure_maven//:v1/https/repo1.maven.org/maven2/org/clojure/clojure/1.10.3/clojure-1.10.3.jar",
+                             "@rules_clojure_maven//:v1/https/repo1.maven.org/maven2/org/clojure/core.specs.alpha/0.2.56/core.specs.alpha-0.2.56.jar",
+                             "@rules_clojure_maven//:v1/https/repo1.maven.org/maven2/org/clojure/spec.alpha/0.2.194/spec.alpha-0.2.194.jar",
+                             "jar-lib-bootstrap"])

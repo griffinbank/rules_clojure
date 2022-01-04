@@ -27,6 +27,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Map.Entry;
 import java.util.Map;
 import java.util.jar.JarEntry;
@@ -99,15 +100,27 @@ import org.projectodd.shimdandy.ClojureRuntimeShim;
 // can cause us to violate one of the above rules, so periodically
 // we'll have to discard the classloader and start over.
 
-// rules-clojure.jar/compile-json has two return values:
+// the clojure compiler works by binding *compile-files* true and then
+// calling `load`. `load` looks for either the source file or
+// .class. If the .class file is present and has a newer file
+// modification time, it is loaded as a normal java class. Otherwise
+// if the src file is present the compiler runs, and .class files are
+// produced as a side effect of the load. If the .class file is
+// loaded, the compiler will not run and no .class files will be
+// produced.
 
-// nil compilation returned successfully
-// ::reload - compilation was successful, and this environment should be thrown away before the next compile
+// rules-clojure.jar has dependencies to implement non-transitive
+// compilation. rules clojure also wants to be AOT'd, for speed. It is
+// possible for dependencies to conflict between rules-clojure and
+// client code. Therefore, use two classloaders, to create separate
+// environments: one to generate the compilation script and assemble
+// jars, and a second to do compilation.
 
 class ClojureCompileRequest {
     String[] aot;
     String classes_dir;
-    String[] classpath;
+    String[] compile_classpath;
+    String[] jar_classpath;
     String output_jar;
     String src_dir;
     String[] srcs;
@@ -115,7 +128,11 @@ class ClojureCompileRequest {
 
 class ClojureWorker  {
 
-    public static DynamicClassLoader classloader = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
+    public static DynamicClassLoader jar_classloader = null;
+    public static ClojureRuntimeShim jar_runtime = null;
+
+    public static DynamicClassLoader compile_classloader = null;
+    public static ClojureRuntimeShim compile_runtime = null;
 
     public static void main(String [] args) throws Exception
     {
@@ -159,7 +176,7 @@ class ClojureWorker  {
 
 		try {
 		    System.setErr(out);
-		    Object ret = processRequest(request);
+		    processRequest(request);
 		    code = 0;
 		} catch (Throwable e) {
 		    real_stderr.println("throwable: " + e.getMessage());
@@ -189,35 +206,64 @@ class ClojureWorker  {
 	}
     }
 
-    public static ClojureRuntimeShim newRuntime(WorkRequest work_request, ClojureCompileRequest compile_request) throws Exception
+    public static void ensureJarRuntime(WorkRequest work_request, ClojureCompileRequest compile_request) throws Exception
     {
-	for(String path : compile_request.classpath) {
-	    classloader.addURL(new File(path).toURI().toURL());
-	}
+        if (Objects.isNull(jar_classloader)) {
+            jar_classloader = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
 
-	return ClojureRuntimeShim.newRuntime(classloader, "clojure-worker");
 
+            for(String path : compile_request.jar_classpath) {
+                jar_classloader.addURL(new File(path).toURI().toURL());
+            }
+
+            jar_runtime = ClojureRuntimeShim.newRuntime(jar_classloader, "jar-worker");
+        }
     }
 
-    public static Object processRequest(WorkRequest work_request) throws Exception
+    public static void ensureCompileRuntime(WorkRequest work_request, ClojureCompileRequest compile_request) throws Exception
+    {
+        if (Objects.isNull(compile_classloader)) {
+            compile_classloader = new DynamicClassLoader(ClassLoader.getSystemClassLoader());
+        }
+
+        for(String path : compile_request.compile_classpath) {
+            compile_classloader.addURL(new File(path).toURI().toURL());
+        }
+
+        compile_runtime = ClojureRuntimeShim.newRuntime(compile_classloader, "compile-worker");
+    }
+
+    public static void processRequest(WorkRequest work_request) throws Exception
     {
 	Gson gson = new GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_DASHES).create();
 	ClojureCompileRequest compile_request = gson.fromJson(work_request.getArguments(0),ClojureCompileRequest.class);
 
-	ClojureRuntimeShim runtime = newRuntime(work_request, compile_request);
+        ensureJarRuntime(work_request, compile_request);
+        ensureCompileRuntime(work_request, compile_request);
 
-	runtime.require("rules-clojure.jar");
-	String ret = (String) runtime.invoke("rules-clojure.jar/compile-json", work_request.getArguments(0));
+        jar_runtime.require("rules-clojure.jar");
 
-	if(ret.equals(":rules-clojure.jar/restart")) {
-	    classloader = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
-	    return processRequest(work_request);
-	}
+        String json = work_request.getArguments(0);
+        Object compile_script = jar_runtime.invoke("rules-clojure.jar/get-compilation-script-json", json);
 
-	if(ret.equals(":rules-clojure.jar/reload")) {
-	    classloader = new DynamicClassLoader(ClojureWorker.class.getClassLoader());
-	}
-	return ret;
+        compile_runtime.require("clojure.core");
+        Object read_script = compile_runtime.invoke("clojure.core/read-string", compile_script);
+
+        try{
+            Object compile_ret = compile_runtime.invoke("clojure.core/eval", read_script);
+
+            if(!Objects.isNull(compile_ret) && compile_ret.equals(":rules-clojure.compile/reload")) {
+                compile_runtime.close();
+                compile_classloader = null;
+            }
+        }
+        catch (Throwable t) {
+            System.err.println("req:" + json);
+            System.err.println("script:" + read_script.toString());
+            throw t;
+        }
+
+        String jar_ret = (String) jar_runtime.invoke("rules-clojure.jar/create-jar-json", work_request.getArguments(0));
     }
 
     public static void ephemeralWorkerMain(String[] args)

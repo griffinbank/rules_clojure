@@ -235,6 +235,30 @@
 
 (def no-aot '#{clojure.core})
 
+(defn jar-files [path]
+  (-> (JarFile. (str path))
+      (.entries)
+      (enumeration-seq)))
+
+(defn jar-classes
+  "given the path to a jar, return a list of classes contained"
+  [path]
+  (->>
+   (jar-files path)
+   (map (fn [e]
+          (when-let [[_ class-name] (re-find #"(.+).class$" (.getName e))]
+            class-name)))
+   (filter identity)
+   (map (fn [e]
+          (-> e
+              (str/replace "/" ".")
+              symbol)))))
+
+(defn is-aoted?
+  [jar ns]
+  (let [class-file (-> ns (#'clojure.core/root-resource) (.substring  1) (str "__init.class"))]
+    (some #(= class-file (.getName %)) (jar-files jar))))
+
 (defn aot-namespace? [deps-bazel ns]
   (not (contains? (set/union no-aot (get-in deps-bazel [:no-aot])) ns)))
 
@@ -248,7 +272,7 @@
               (when lib-name
                 {:clj (->> (find/find-namespaces [(fs/path->file path)] find/clj)
                            (map (fn [n]
-                                  [n (if (aot-namespace? deps-bazel n)
+                                  [n (if (and (aot-namespace? deps-bazel n) (not (is-aoted? path n)))
                                        (internal-dep-ns-aot-label lib-name n)
                                        (library->label lib-name))]))
                            (into {}))
@@ -290,22 +314,6 @@
   "Return a map of library name to jar"
   [jar->lib]
   (set/map-invert jar->lib))
-
-(defn jar-classes
-  "given the path to a jar, return a list of classes contained"
-  [path]
-  (-> (JarFile. (str path))
-      (.entries)
-      (enumeration-seq)
-      (->>
-       (map (fn [e]
-              (when-let [[_ class-name] (re-find #"(.+).class$" (.getName e))]
-                class-name)))
-       (filter identity)
-       (map (fn [e]
-              (-> e
-                  (str/replace "/" ".")
-                  symbol))))))
 
 (defn jar-nses [path]
   (-> path

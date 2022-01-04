@@ -38,130 +38,60 @@
                  (doto (JarEntry. name)
                    (.setLastModifiedTime last-modified-time))))
 
-(defn classpath []
-  (cp/classpath))
-
-(defn classpath-nses []
-  (->>
-   (classpath)
-   (#(find/find-ns-decls % find/clj))
-   (map parse/name-from-ns-decl)))
-
-
 ;; See https://clojure.atlassian.net/browse/CLJ-2303. Compiling is an
 ;; unconditional `load`. Imagine two namespaces, A, B. A contains a
 ;; protocol. B depends on A and uses the protocol, and A hasn't been
 ;; `require`d yet. Compiling B, A, causes (load B) (load A) (load
 ;; A)). The second load of A redefines any protocols, which then
 ;; breaks all usage of the protocol in B. Compile in topo-order to
-;; avoid forced reloads.
-
-(defn classpath-nses []
-  (->> (classpath)
-       (find/find-namespaces)))
-
-(defn ->all-ns-decls []
-  (->> (classpath)
-       (#(find/find-ns-decls % find/clj))))
-
-(def all-ns-decls (->all-ns-decls))
-
-(defn get-ns-decl [ns]
-  (->> all-ns-decls
-       (filter (fn [ns-decl]
-                 (= ns (parse/name-from-ns-decl ns-decl))))
-       (first)))
-
-(defn deps-of-ns [ns]
-  (mapcat #'parse/deps-from-ns-form (get-ns-decl ns)))
-
-(defn transitive-deps [ns]
-  (loop [ns ns
-         tdeps (list)
-         stack (list ns)
-         seen #{}]
-    (if-let [ns (first stack)]
-      (if (not (contains? seen ns))
-        (let [stack (pop stack)
-              tdeps (conj tdeps ns)
-              deps (deps-of-ns ns)
-              stack (into stack (reverse deps))
-              seen (conj seen ns)]
-          (recur (peek stack) tdeps stack seen))
-        (recur (peek stack) tdeps (pop stack) seen))
-      tdeps)))
+;; avoid reloads.
 
 (defn topo-sort
-  "Given a seq of namespaces to compile, return them in topo sorted order"
-  [nses]
-  {:pre [(every? symbol? nses)]
-   :post [(do (when-not (= (set nses) (set %))
-                (println "jar/topo-sort: in" (set nses) "out" (set %) "missing:" (set/difference (set nses) (set %)))) true)
-          (= (set nses) (set %))]}
-  (let [nses (set nses)
-        graph (dep/graph)]
-    (->> (classpath)
+  "Return nses on the classpath in topo-sorted order"
+  [classpath]
+  {:pre [(every? fs/file? classpath)]}
+  (let [graph (dep/graph)]
+    (->> classpath
          (#(find/find-ns-decls % find/clj))
-         (filter (fn [decl]
-                   (let [ns (parse/name-from-ns-decl decl)]
-                     (contains? nses ns))))
          (reduce (fn [graph decl]
                    (let [ns (parse/name-from-ns-decl decl)
                          graph (dep/depend graph ns 'sentinel)]
                      (reduce (fn [graph dep]
                                (dep/depend graph ns dep)) graph (parse/deps-from-ns-decl decl)))) graph)
-         (dep/topo-sort)
-         (filter (fn [ns]
-                   (contains? nses ns))))))
+         (dep/topo-sort))))
 
-(defn get-context-classloader []
-  (-> (Thread/currentThread) .getContextClassLoader))
 
-(defn protocol? [val]
-  (and (map? val)
-       (class? (:on-interface val))
-       (map? (:sigs val))
-       (map? (:method-map val))))
 
-(defn contains-protocols? [ns]
-  (->> ns
-       ns-interns
-       vals
-       (some protocol?)))
+(defn ns->ns-decls [classpath-files]
+  (->> classpath-files
+       (#(find/find-ns-decls % find/clj))
+       (map (fn [decl]
+              [(parse/name-from-ns-decl decl) decl]))
+       (into {})))
 
-(defn deftype? [ns v]
-  (and (class? v)
-       (-> v
-           (.getName)
-           (str/starts-with? (munge (name ns))))
-       (= (count (str/split (.getName v) #"\."))
-          (inc (count (str/split (name ns) #"\."))))))
+(defn get-ns-decl [all-ns-decls ns]
+  {:post [%]}
+  (get all-ns-decls ns))
 
-(defn contains-deftypes? [ns]
-  (->> ns
-       ns-map
-       vals
-       (some (fn [v]
-               (deftype? ns v)))))
+(defn verify-compile!
+  "the clojure compiler works by binding *compile-files* true and then
+  calling `load`. `load` looks for both the source file and .class. If
+  the .class file is present it is loaded as a normal java class If
+  both are present, If the src file is present , the compiler runs,
+  and .class files are produced as a side effect of the load. If both
+  are present, the newer one is loaded.
 
-(defn non-transitive-compile
-  "By default, `compile` compiles all dependencies of ns. This is
-  non-deterministic, so require all dependencies
-  first. Returns ::reload when ClojureWorker should discard the
-  environment"
-  [ns]
-  {:pre [(symbol? ns)]}
-  (let [decl (get-ns-decl ns)
-        deps (parse/deps-from-ns-decl decl)]
-    (doseq [d deps]
-      (try
-        (require d)
-        (catch Exception e
-          (throw (ex-info "while requiring" {:ns d} e)))))
-    (compile ns)
-    (when (or (contains-protocols? ns)
-              (contains-deftypes? ns))
-      ::reload)))
+  If the .class file is loaded, the compiler will not run and no
+  .class files will be produced. Detect that situation and throw"
+  [classpath ns]
+  (let [root (.substring (#'clojure.core/root-resource ns) 1)
+        src-paths (map (fn [ex] (str root ex)) [".clj" ".cljc"])
+        src-resource (some (fn [p] (io/resource p)) src-paths)
+        class-resource (io/resource (str root "__init.class"))
+        classpath-str (str/join "\n" (map str classpath))]
+
+    (assert src-resource (print-str "no src for" ns "on classpath"))
+    (assert (not class-resource) (print-str "already AOT compiled" ns "on classpath, this will nop" "existing:" class-resource))))
 
 ;; directory, root where all src and resources will be found
 (s/def ::src-dir fs/path?)
@@ -189,27 +119,6 @@
        .toFile
        file-seq))
 
-(defn all-nses []
-  (->> (classpath)
-       (#(find/find-namespaces % find/clj))))
-
-(defn do-aot [{:keys [classes-dir aot-nses]}]
-  (when (seq aot-nses)
-    (binding [*compile-path* (str classes-dir "/")]
-      (->> aot-nses
-           topo-sort
-           (map (fn [ns]
-                  (try
-                    (non-transitive-compile ns)
-                    (catch Throwable t
-                      (println "while compiling" ns)
-                      (println "classpath:" (str/join "\n" (classpath)))
-                      (pst/print-stack-trace t)
-                      (throw t)))))
-           (doall)
-           (filter identity)
-           first))))
-
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses]}]
   (let [temp (File/createTempFile (fs/filename output-jar) "jar")]
     (with-open [jar-os (-> temp FileOutputStream. BufferedOutputStream. JarOutputStream.)]
@@ -234,19 +143,72 @@
         (.closeEntry jar-os)))
     (fs/mv (.toPath temp) output-jar)))
 
+(defn direct-deps-of [all-ns-decls ns]
+  (mapcat #'parse/deps-from-ns-form (get-ns-decl all-ns-decls ns)))
+
+(defn transitive-deps [all-decls ns]
+  (loop [ns ns
+         tdeps (list)
+         stack (list ns)
+         seen #{}]
+    (if-let [ns (first stack)]
+      (if (not (contains? seen ns))
+        (let [stack (pop stack)
+              tdeps (conj tdeps ns)
+              deps (direct-deps-of all-decls ns)
+              stack (into stack (reverse deps))
+              seen (conj seen ns)]
+          (recur (peek stack) tdeps stack seen))
+        (recur (peek stack) tdeps (pop stack) seen))
+      (butlast tdeps))))
+
+(defn read-all [stream]
+  (let [ret (read stream false ::eof)]
+    (when (not= ret ::eof)
+      (lazy-cat [ret] (read-all stream)))))
+
+(defn get-preamble []
+  (read-all (java.io.PushbackReader. ;; (io/reader (io/file "/Users/arohner/Programming/rules_clojure/src/rules_clojure/compile.clj"))
+                                     (io/reader (io/resource "rules_clojure/compile.clj"))
+                                     )))
+
+(defn get-compilation-script
+  "Returns a string, a script to eval in the compilation env."
+  [{:keys [classpath
+           classes-dir]} nses]
+  (assert (every? fs/file? classpath))
+  (assert (string? classes-dir))
+
+  (let [topo-nses (topo-sort classpath)
+        all-ns-decls (ns->ns-decls classpath)
+        deps-of (fn [ns]
+                  (transitive-deps all-ns-decls ns))
+        compile-nses (set nses)
+        compile-nses (filter (fn [n]
+                               (contains? compile-nses n)) topo-nses) ;; sorted order
+        _ (assert (= (count nses) (count compile-nses)))
+        preamble (get-preamble)
+        script (if (seq compile-nses)
+                 (map (fn [n] `(~'non-transitive-compile (quote ~(deps-of n)) (quote ~n))) compile-nses)
+                 [nil])]
+    (fs/clean-directory (fs/->path classes-dir))
+
+    `(do
+       (binding [*ns* 'user
+                 *compile-path* (str ~classes-dir "/")]
+         ~@(get-preamble)
+         ~@script))))
+
 (s/fdef compile! :args ::compile)
-(defn compile!
+(defn create-jar!
   ""
-  [{:keys [src-dir resources aot-nses classes-dir output-jar classpath] :as args}]
+  [{:keys [src-dir resources aot-nses classes-dir output-jar] :as args}]
   (when-not (s/valid? ::compile args)
     (println "args:" args)
     (s/explain ::compile args)
     (assert false))
 
-  (fs/clean-directory classes-dir)
-  (let [ret (do-aot (select-keys args [:classes-dir :aot-nses]))]
-    (create-jar (select-keys args [:src-dir :classes-dir :output-jar :resources :aot-nses]))
-    ret))
+  (create-jar (select-keys args [:src-dir :classes-dir :output-jar :resources :aot-nses])))
 
 (defn find-sources [cp]
   (concat
@@ -261,35 +223,31 @@
                   (map (fn [src]
                          [dir src]) (find/find-sources-in-dir (io/file dir))))))))
 
-(defn data-readers-on-classpath
-  "Given the classpath, return the set of jars and dirs that contain data_readers.clj"
-  [cp]
-  (->> (find-sources cp)
-       (filter (fn [[f src]]
-                 (= "data_readers.clj" src)))
-       (map first)
-       seq))
-
 (def old-classpath (atom nil))
 
-(defn compile-json [json-str]
-  {:post [(or (= "" %) (= (str ::reload) %))]}
+(defn create-jar-json [json-str]
   (let [{:keys [src_dir resources aot_nses classes_dir output_jar classpath] :as args} (json/read-str json-str :key-fn keyword)
         _ (assert classes_dir)
         _ (when (seq resources) (assert src_dir))
         classes-dir (fs/->path classes_dir)
         resources (map fs/->path resources)
-        output-jar (fs/->path output_jar)
-        aot-nses (map symbol aot_nses)]
-    (#'clojure.core/load-data-readers)
+        output-jar (fs/->path output_jar)]
     (str
-     (let [ret (compile! (merge
-                          {:classes-dir classes-dir
-                           :classpath classpath
-                           :resources resources
-                           :output-jar output-jar
-                           :aot-nses aot-nses}
-                          (when src_dir
-                            {:src-dir (fs/->path src_dir)})))]
-       (reset! old-classpath classpath)
-       ret))))
+     (create-jar (merge
+                  {:classes-dir classes-dir
+                   :classpath classpath
+                   :resources resources
+                   :output-jar output-jar}
+                  (when src_dir
+                    {:src-dir (fs/->path src_dir)}))))))
+
+(defn get-compilation-script-json [json-str]
+  (let [{:keys [src_dir resources aot_nses classes_dir compile_classpath] :as args} (json/read-str json-str :key-fn keyword)
+        aot-nses (map symbol aot_nses)
+        classpath-files (map io/file compile_classpath)]
+    (str (get-compilation-script {:classpath classpath-files
+                                  :classes-dir classes_dir} aot-nses))))
+
+(comment
+  (require 'clojure.java.classpath)
+  (eval (read-string (str (get-compilation-script {:classpath (clojure.java.classpath/classpath) :classes-dir "target"} '[rules-clojure.jar])))))

@@ -60,6 +60,12 @@ def rules_clojure_default_toolchain():
                       "org.clojure:tools.deps.alpha:0.12.1071",
                       "com.google.code.gson:gson:2.8.7",
                       "org.projectodd.shimdandy:shimdandy-api:1.2.1",
-                      "org.projectodd.shimdandy:shimdandy-impl:1.2.1"],
+                      "org.projectodd.shimdandy:shimdandy-impl:1.2.1",
+                      maven.artifact(group="cider",
+                                     artifact="cider-nrepl",
+                                     version="0.27.4",
+                                     exclusions=["org.clojure:clojure",
+                                                 "org.clojure:spec.alpha",
+                                                 "org.clojure:core.specs.alpha"])],
                   repositories = ["https://repo1.maven.org/maven2",
                                   "https://repo.clojars.org/"])
