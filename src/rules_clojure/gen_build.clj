@@ -238,7 +238,22 @@
 (defn jar-files [path]
   (-> (JarFile. (str path))
       (.entries)
-      (enumeration-seq)))
+      (enumeration-seq)
+      (->> (map (fn [e]
+                  (.getName e))))))
+
+(defn dir-files [path]
+  (->> path
+       (fs/ls-r)
+       (map (fn [sub-path]
+              (str (fs/path-relative-to path sub-path))))))
+
+(defn classpath-files
+  "Given a single classpath item (a jar or a directory), return the set of files contained"
+  [path]
+  (cond
+    (-> path fs/path->file (.isDirectory)) (dir-files path)
+    (re-find #".jar$" (str path)) (jar-files path)))
 
 (defn jar-classes
   "given the path to a jar, return a list of classes contained"
@@ -246,7 +261,7 @@
   (->>
    (jar-files path)
    (map (fn [e]
-          (when-let [[_ class-name] (re-find #"(.+).class$" (.getName e))]
+          (when-let [[_ class-name] (re-find #"(.+).class$" e)]
             class-name)))
    (filter identity)
    (map (fn [e]
@@ -255,12 +270,13 @@
               symbol)))))
 
 (defn is-aoted?
-  [jar ns]
+  [path ns]
   (let [class-file (-> ns (#'clojure.core/root-resource) (.substring  1) (str "__init.class"))]
-    (some #(= class-file (.getName %)) (jar-files jar))))
+    (some #(= class-file %) (classpath-files path))))
 
-(defn aot-namespace? [deps-bazel ns]
-  (not (contains? (set/union no-aot (get-in deps-bazel [:no-aot])) ns)))
+(defn should-compile-namespace? [deps-bazel path ns]
+  (and (not (contains? (set/union no-aot (get-in deps-bazel [:no-aot])) ns))
+       (not (is-aoted? path ns))))
 
 (defn ->dep-ns->label [{:keys [basis deps-bazel deps-repo-tag] :as args}]
   {:pre [(map? basis)
@@ -272,7 +288,7 @@
               (when lib-name
                 {:clj (->> (find/find-namespaces [(fs/path->file path)] find/clj)
                            (map (fn [n]
-                                  [n (if (and (aot-namespace? deps-bazel n) (not (is-aoted? path n)))
+                                  [n (if (should-compile-namespace? deps-bazel path n)
                                        (internal-dep-ns-aot-label lib-name n)
                                        (library->label lib-name))]))
                            (into {}))
@@ -808,7 +824,7 @@
                                                   vals
                                                   (map first)
                                                   (filter (fn [ns-decl]
-                                                            (aot-namespace? deps-bazel (parse/name-from-ns-decl ns-decl))))
+                                                            (should-compile-namespace? deps-bazel jarpath (parse/name-from-ns-decl ns-decl))))
                                                   (map (fn [ns-decl]
                                                          (let [ns (parse/name-from-ns-decl ns-decl)
                                                                extra-deps (-> deps-bazel (get-in [:deps (str deps-repo-tag "//:" (internal-dep-ns-aot-label lib ns))]))]

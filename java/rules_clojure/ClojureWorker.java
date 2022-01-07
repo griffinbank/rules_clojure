@@ -27,9 +27,9 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Map.Entry;
 import java.util.Map;
+import java.util.Objects;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import org.projectodd.shimdandy.ClojureRuntimeShim;
@@ -117,7 +117,7 @@ import org.projectodd.shimdandy.ClojureRuntimeShim;
 // jars, and a second to do compilation.
 
 class ClojureCompileRequest {
-    String[] aot;
+    String[] aot_nses;
     String classes_dir;
     String[] compile_classpath;
     String[] jar_classpath;
@@ -256,14 +256,14 @@ class ClojureWorker  {
                 compile_runtime.close();
                 compile_classloader = null;
             }
+
+            String jar_ret = (String) jar_runtime.invoke("rules-clojure.jar/create-jar-json", work_request.getArguments(0));
         }
         catch (Throwable t) {
             System.err.println("req:" + json);
             System.err.println("script:" + read_script.toString());
             throw t;
         }
-
-        String jar_ret = (String) jar_runtime.invoke("rules-clojure.jar/create-jar-json", work_request.getArguments(0));
     }
 
     public static void ephemeralWorkerMain(String[] args)

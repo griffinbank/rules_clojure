@@ -116,12 +116,14 @@
 
 (defn rm-rf [^Path dir]
   (while (seq (ls dir))
-    (doseq [f (ls dir)]
+    (doseq [p (ls dir)
+            :let [f (path->file p)]]
       (if (directory? f)
-        (do (rm-rf f)
-            (.delete f))
+        (do
+          (rm-rf p)
+          (.delete f))
         (.delete f))))
-  (.delete (path->file dir)))
+  (-> dir path->file .delete))
 
 (defn clean-directory [path]
   (rm-rf path)
