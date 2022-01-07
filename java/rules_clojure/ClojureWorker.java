@@ -252,6 +252,18 @@ class ClojureWorker  {
         try{
             Object compile_ret = compile_runtime.invoke("clojure.core/eval", read_script);
 
+            if(!Objects.isNull(compile_ret) && compile_ret.equals(":rules-clojure.compile/restart")) {
+                System.err.println(":rules-clojure.compile/restart");
+                compile_runtime.close();
+                compile_classloader = null;
+                ensureCompileRuntime(work_request, compile_request);
+                compile_ret = compile_runtime.invoke("clojure.core/eval", read_script);
+
+                if(!Objects.isNull(compile_ret) && compile_ret.equals(":rules-clojure.compile/restart")) {
+                    throw new Exception("restarted twice");
+                }
+            }
+
             if(!Objects.isNull(compile_ret) && compile_ret.equals(":rules-clojure.compile/reload")) {
                 compile_runtime.close();
                 compile_classloader = null;
