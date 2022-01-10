@@ -122,6 +122,8 @@
 
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses]}]
   (let [temp (File/createTempFile (fs/filename output-jar) "jar")]
+    (when (seq aot-nses)
+      (assert (->> classes-dir fs/ls-r (seq)) (print-str "no .class files produced compiling " aot-nses)))
     (with-open [jar-os (-> temp FileOutputStream. BufferedOutputStream. JarOutputStream.)]
       (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
       (.write manifest jar-os)
