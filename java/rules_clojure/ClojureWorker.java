@@ -179,7 +179,6 @@ class ClojureWorker  {
 		    processRequest(request);
 		    code = 0;
 		} catch (Throwable e) {
-		    real_stderr.println("throwable: " + e.getMessage());
 		    e.printStackTrace(real_stderr);
 		    throw e;
 		}
@@ -257,6 +256,7 @@ class ClojureWorker  {
                 compile_runtime.close();
                 compile_classloader = null;
                 ensureCompileRuntime(work_request, compile_request);
+                read_script = compile_runtime.invoke("clojure.core/read-string", compile_script);
                 compile_ret = compile_runtime.invoke("clojure.core/eval", read_script);
 
                 if(!Objects.isNull(compile_ret) && compile_ret.equals(":rules-clojure.compile/restart")) {
