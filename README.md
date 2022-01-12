@@ -273,10 +273,11 @@ Please see [example](examples/setup/custom) of custom toolchain.
 
 # Known Issues
 
-- Due to a quirk of Clojure compiler, attempting to AOT a namespace when the AOT'd version is already on the classpath will result in no .class files being output
 - builds are non-reproducible for two reasons:
   - Builds set the file modification time to current time. This is because clojure.lang.RT looks at file modification times when deciding whether to load a .clj or .class file. Setting the file modification time to zero for .class files would mean that if a source .clj is on the classpath (e.g. in a source dependency), it would always take precedence over an AOT .class file
   - there isn't a public API to reset the ID clojure uses for naming anonymous functions, which means anonymous AOT function names are non-deterministic
+- When using gen-deps, I haven't found a way to identify :provided dependencies. Those have to be added by hand for now
+
 
 # Thanks
 

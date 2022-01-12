@@ -79,8 +79,16 @@
 
   (let [aot-class-resource (clojure.java.io/resource (aot-class-name ns))
         loaded (loaded-libs)]
-    (unconditional-compile ns)
-    (assert (seq (compile-path-files)) (print-str "no classfiles generated for" ns *compile-path* "loaded:" loaded))
-    (when (or (contains-protocols? ns)
-              (contains-deftypes? ns))
-      (str :rules-clojure.compile/reload))))
+    (try
+      (if (not (contains? loaded ns))
+        (do
+          (unconditional-compile ns)
+          (assert (seq (compile-path-files)) (print-str "no classfiles generated for" ns *compile-path* "loaded:" loaded))
+          (when (or (contains-protocols? ns)
+                    (contains-deftypes? ns))
+            (str :rules-clojure.compile/reload)))
+        (do
+          (str :rules-clojure.compile/restart)))
+
+      (catch Throwable t
+        (throw (ex-info (print-str "while compiling" ns) {:loaded loaded} t))))))

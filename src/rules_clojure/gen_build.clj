@@ -274,8 +274,11 @@
   (let [class-file (-> ns (#'clojure.core/root-resource) (.substring  1) (str "__init.class"))]
     (some #(= class-file %) (classpath-files path))))
 
+(def special-namespaces '#{clojure.core.specs.alpha})
+
 (defn should-compile-namespace? [deps-bazel path ns]
-  (and (not (contains? (set/union no-aot (get-in deps-bazel [:no-aot])) ns))
+  (and (not (contains? special-namespaces ns))
+       (not (contains? (set/union no-aot (get-in deps-bazel [:no-aot])) ns))
        (not (is-aoted? path ns))))
 
 (defn ->dep-ns->label [{:keys [basis deps-bazel deps-repo-tag] :as args}]

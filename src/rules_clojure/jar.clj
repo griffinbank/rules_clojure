@@ -121,9 +121,11 @@
 (s/def ::compile (s/keys :req-un [::resources ::aot-nses ::classes-dir ::output-jar] :opt-un [::src-dir]))
 
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses]}]
-  (let [temp (File/createTempFile (fs/filename output-jar) "jar")]
-    (when (seq aot-nses)
-      (assert (->> classes-dir fs/ls-r (seq)) (print-str "no .class files produced compiling " aot-nses)))
+  (let [temp (File/createTempFile (fs/filename output-jar) "jar")
+        aot-files (->> classes-dir fs/ls-r)
+        jar-files (concat resources aot-files)]
+
+    (assert (seq jar-files) (print-str "refusing to create empty jar:" output-jar resources aot-files))
     (with-open [jar-os (-> temp FileOutputStream. BufferedOutputStream. JarOutputStream.)]
       (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
       (.write manifest jar-os)

@@ -250,27 +250,27 @@ class ClojureWorker  {
 
         try{
             Object compile_ret = compile_runtime.invoke("clojure.core/eval", read_script);
-
-            if(!Objects.isNull(compile_ret) && compile_ret.equals(":rules-clojure.compile/restart")) {
-                System.err.println(":rules-clojure.compile/restart");
+            if(Objects.equals(compile_ret, ":rules-clojure.compile/restart")) {
+                System.err.println(":rules-clojure.compile/restarting for " + Arrays.toString(compile_request.aot_nses));
                 compile_runtime.close();
                 compile_classloader = null;
                 ensureCompileRuntime(work_request, compile_request);
                 read_script = compile_runtime.invoke("clojure.core/read-string", compile_script);
                 compile_ret = compile_runtime.invoke("clojure.core/eval", read_script);
 
-                if(!Objects.isNull(compile_ret) && compile_ret.equals(":rules-clojure.compile/restart")) {
+                if(Objects.equals(compile_ret, ":rules-clojure.compile/restart")) {
                     throw new Exception("restarted twice");
                 }
             }
 
-            if(!Objects.isNull(compile_ret) && compile_ret.equals(":rules-clojure.compile/reload")) {
+            String jar_ret = (String) jar_runtime.invoke("rules-clojure.jar/create-jar-json", work_request.getArguments(0));
+
+            if(Objects.equals(compile_ret, ":rules-clojure.compile/reload")) {
                 compile_runtime.close();
                 compile_classloader = null;
             }
-
-            String jar_ret = (String) jar_runtime.invoke("rules-clojure.jar/create-jar-json", work_request.getArguments(0));
         }
+
         catch (Throwable t) {
             System.err.println("req:" + json);
             System.err.println("script:" + read_script.toString());
@@ -280,6 +280,6 @@ class ClojureWorker  {
 
     public static void ephemeralWorkerMain(String[] args)
     {
-	System.err.println("ClojureWorker ephemeral");
+        System.err.println("ClojureWorker ephemeral");
     }
 }
