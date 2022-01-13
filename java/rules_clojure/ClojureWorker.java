@@ -251,7 +251,6 @@ class ClojureWorker  {
         try{
             Object compile_ret = compile_runtime.invoke("clojure.core/eval", read_script);
             if(Objects.equals(compile_ret, ":rules-clojure.compile/restart")) {
-                System.err.println(":rules-clojure.compile/restarting for " + Arrays.toString(compile_request.aot_nses));
                 compile_runtime.close();
                 compile_classloader = null;
                 ensureCompileRuntime(work_request, compile_request);
