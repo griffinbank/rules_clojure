@@ -125,7 +125,6 @@
         aot-files (->> classes-dir fs/ls-r)
         jar-files (concat resources aot-files)]
 
-    (assert (seq jar-files) (print-str "refusing to create empty jar:" output-jar resources aot-files))
     (with-open [jar-os (-> temp FileOutputStream. BufferedOutputStream. JarOutputStream.)]
       (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
       (.write manifest jar-os)
