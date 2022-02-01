@@ -28,7 +28,6 @@ clojure_library = rule(
                                                    Label("@rules_clojure_maven//:org_clojure_core_specs_alpha")], cfg="host")
     },
     provides = [JavaInfo],
-    toolchains = ["@rules_clojure//:toolchain_type"],
     implementation = _clojure_jar_impl,
 )
 
