@@ -58,9 +58,7 @@ clojure_tools_deps = repository_rule(
     attrs = {"deps_edn": attr.label(allow_single_file = True),
              "clj_version": attr.string(default = "1.10.1.763"),
              "aliases": attr.string_list(default = [], doc = "extra aliases in deps.edn to merge in while resolving deps"),
-             "_rc_deps_edn": attr.label(default = "@rules_clojure//:deps.edn"),
-             "_jdk": attr.label(default = "@bazel_tools//tools/jdk:current_java_runtime",
-                                providers = [java_common.JavaRuntimeInfo])})
+             "_rc_deps_edn": attr.label(default = "@rules_clojure//:deps.edn")})
 
 def clojure_gen_deps(name):
     native.alias(name=name,
