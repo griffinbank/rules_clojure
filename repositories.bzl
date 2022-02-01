@@ -1,7 +1,7 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-RULES_JVM_EXTERNAL_TAG = "4.0"
-RULES_JVM_EXTERNAL_SHA = "31701ad93dbfe544d597dbe62c9a1fdd76d81d8a9150c2bf1ecf928ecdf97169"
+RULES_JVM_EXTERNAL_TAG = "4.2"
+RULES_JVM_EXTERNAL_SHA = "e34ff633e6b8ea44c4f911b15b28079b17968694e2caa57b369c754208c16e4d"
 
 def rules_clojure_dependencies():
 
