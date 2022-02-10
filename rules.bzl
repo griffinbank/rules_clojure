@@ -84,14 +84,7 @@ def cljs_impl(ctx):
                     arguments= arguments,
                     inputs=inputs,
                     tools=[ctx.executable.clj_binary],
-                    outputs=ctx.outputs.outs,
-                    ### gen-build dependencies currently ignore CLJS,
-                    ### which means if foo/bar.cljc has #?(:cljs
-                    ### [bbq]), bbq does not get picked up as a dep of
-                    ### bar.cljc, and then causes a sandbox
-                    ### violation. Will need to add support for cljs
-                    ### conditionals and CLJSJS jars in rules_clojure to fix.
-                    execution_requirements = {"no-sandbox": "1"})
+                    outputs=ctx.outputs.outs)
 
     return DefaultInfo(runfiles=runfiles)
 
