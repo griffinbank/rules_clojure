@@ -80,9 +80,12 @@ def cljs_impl(ctx):
 
     arguments += ["--compile"]
 
-    ctx.actions.run(executable=ctx.executable.clj_binary,
+    env = {k: ctx.expand_make_variables("env", v, ctx.var) for k,v in ctx.attr.env.items()}
+
+    ctx.actions.run(executable=ctx.executable.clj_binary.path,
                     arguments= arguments,
                     inputs=inputs,
+                    env=env,
                     tools=[ctx.executable.clj_binary],
                     outputs=ctx.outputs.outs)
 
@@ -93,6 +96,7 @@ _cljs_library = rule(
              "compile_opts_files": attr.label_list(allow_files=True, default=[]),
              "compile_opts_strs": attr.string_list(default=[]),
              "clj_binary": attr.label(executable=True, cfg="exec"),
+             "env": attr.string_dict(default={}),
              "outs": attr.output_list()},
     provides = [],
     implementation = cljs_impl)
