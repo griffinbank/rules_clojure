@@ -70,7 +70,7 @@
        (into {})))
 
 (defn get-ns-decl [all-ns-decls ns]
-  {:post [%]}
+  {:post [(do (when-not % (println "could not find ns-decl for" ns)) true) %]}
   (get all-ns-decls ns))
 
 (defn classpath-resources [classpath]

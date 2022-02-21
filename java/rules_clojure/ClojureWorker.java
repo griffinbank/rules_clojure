@@ -243,7 +243,14 @@ class ClojureWorker  {
         jar_runtime.require("rules-clojure.jar");
 
         String json = work_request.getArguments(0);
-        Object compile_script = jar_runtime.invoke("rules-clojure.jar/get-compilation-script-json", json);
+        Object compile_script;
+        try{
+            compile_script = jar_runtime.invoke("rules-clojure.jar/get-compilation-script-json", json);
+        }
+        catch (Throwable t) {
+            System.err.println("during `get-compilation-script`:" + json);
+            throw t;
+        }
 
         compile_runtime.require("clojure.core");
         Object read_script = compile_runtime.invoke("clojure.core/read-string", compile_script);
