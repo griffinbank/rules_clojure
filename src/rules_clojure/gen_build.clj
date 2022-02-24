@@ -631,9 +631,11 @@
                                  (:size $) (update :size name)
                                  (:timeout $) (update :timeout name))))
 
-          aot (if (and (or clj? cljc?) (not test?))
+          aot (if (and (or clj? cljc?) (not test?) (get ns-library-meta :aot true))
                 [(str ns-name)]
-                [])]
+                [])
+          ns-library-meta (dissoc ns-library-meta :aot)]
+
       (when ns-library-meta
         (println ns-name "extra:" ns-library-meta))
       (when ns-test-meta
@@ -777,8 +779,8 @@
      (remove (fn [path]
                (contains? ignore path))))))
 
-(s/fdef gen-source-paths :args (s/cat :a (s/keys :req-un [::deps-edn-path ::repository-dir ::deps-repo-tag ::basis ::jar->lib ::deps-bazel]
-                                                 :opt-un [::aliases ])))
+(s/fdef gen-source-paths :args (s/cat :a (s/keys :req-un [::deps-edn-path ::deps-bazel ::repository-dir ::deps-repo-tag ::basis ::jar->lib ::deps-bazel]
+                                                 :opt-un [::aliases])))
 (defn gen-source-paths
   "Given the path to a deps.edn file, gen-dir every source file on the classpath
 
@@ -786,12 +788,12 @@
   repository-dir: output directory in the bazel sandbox where deps should be downloaded
   deps-repo-tag: Bazel workspace repo for deps, typically `@deps`
   "
-  [{:keys [deps-edn-path deps-repo-tag basis jar->lib aliases] :as args}]
+  [{:keys [deps-edn-path deps-bazel deps-repo-tag basis jar->lib aliases] :as args}]
   (let [args (merge args
                     {:src-ns->label (->src-ns->label args)
                      :dep-ns->label (->dep-ns->label args)
                      :jar->lib jar->lib})]
-    (gen-source-paths- args (source-paths (select-keys args [:aliases :basis :deps-edn-dir])))))
+    (gen-source-paths- args (source-paths (select-keys args [:aliases :basis :deps-edn-dir :deps-bazel])))))
 
 (s/fdef gen-deps-build :args (s/cat :a (s/keys :req-un [::repository-dir ::dep-ns->label ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel])))
 (defn gen-deps-build
