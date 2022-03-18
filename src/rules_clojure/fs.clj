@@ -14,7 +14,7 @@
   (instance? File x))
 
 (s/fdef absolute? :args (s/cat :p path?) :ret boolean?)
-(defn absolute? [path]
+(defn absolute? [^Path path]
   (.isAbsolute path))
 
 (s/def ::absolute-path (s/and path? absolute?))
@@ -28,29 +28,29 @@
     (assert d (str "path does not exist:" d))
     (reduce (fn [^Path p dir] (.resolve p dir)) d (rest dirs))))
 
-(defn file->path [f]
+(defn file->path [^File f]
   (.toPath f))
 
-(defn path->file [p]
+(defn path->file [^Path p]
   (.toFile p))
 
 (s/fdef absolute :args (s/cat :p path?) :ret path?)
-(defn absolute [path]
+(defn absolute ^Path [^Path path]
   (.toAbsolutePath path))
 
 (s/fdef relative-to :args (s/cat :a path? :b path?) :ret path?)
 (defn path-relative-to
   "Return the path to b, relative to a"
-  [a b]
+  [^Path a ^Path b]
   {:pre []}
   (.relativize (absolute a) (absolute b)))
 
 (s/fdef normal-file? :args (s/cat :f file?) :ret boolean?)
-(defn normal-file? [file]
+(defn normal-file? [^File file]
   (.isFile file))
 
 (s/fdef directory? :args (s/cat :f file?) :ret boolean?)
-(defn directory? [file]
+(defn directory? [^File file]
   (.isDirectory file))
 
 (defn create-directories [path]

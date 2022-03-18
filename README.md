@@ -191,7 +191,7 @@ Use `__clj_lib`, `__clj_files` and `@deps//:__all` sparingly. By necessity they 
 
 You probably want to create your own java_library targets for `resources`.
 
-By default, `resources` is on the tools.deps classpath. By default, `gen_deps` and `gen_srcs` operate on every directory under under `:paths`. When gen-build runs, it will overwrite any existing BUILD.bazel files. To tell gen-build to ignore those libraries:
+By default, `resources` is on the tools.deps classpath. By default, `clojure_tools_deps` and `gen_srcs` operate on every directory under under `:paths`. When `clojure_tools_deps` runs, it will overwrite any existing BUILD.bazel files. To tell gen-build to ignore those libraries:
 
 ```clojure
 :bazel {:ignore ["//resources", "//test-resources"]}

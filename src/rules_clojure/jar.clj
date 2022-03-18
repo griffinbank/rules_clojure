@@ -26,7 +26,7 @@
       (.putValue "Manifest-Version" "1.0"))
     m))
 
-(defn put-next-entry! [target name last-modified-time]
+(defn put-next-entry! [^JarOutputStream target ^String name last-modified-time]
   ;; set last modified time. When both the .class and .clj are
   ;; present, Clojure loads the one with the newer file modification
   ;; time. This completely breaks reproducible builds because we can't
@@ -76,7 +76,7 @@
 (defn classpath-resources [classpath]
   {:pre [(every? fs/file? classpath)]}
   (->> classpath
-       (mapcat (fn [f]
+       (mapcat (fn [^File f]
                  (cond
                    (.isDirectory f) (->> (fs/file->path f)
                                          (fs/ls-r)
@@ -88,7 +88,7 @@
                    (re-find #".jar$" (str f)) (-> (JarFile. (str f))
                                                   (.entries)
                                                   (enumeration-seq)
-                                                  (->> (map (fn [e]
+                                                  (->> (map (fn [^JarEntry e]
                                                               (.getName e)))))
                    :else (assert false (print-str "don't know how to deal with p")))))))
 
@@ -127,10 +127,10 @@
 
     (with-open [jar-os (-> temp FileOutputStream. BufferedOutputStream. JarOutputStream.)]
       (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
-      (.write manifest jar-os)
+      (.write ^Manifest manifest jar-os)
       (.closeEntry jar-os)
       (doseq [r resources
-              :let [full-path (fs/->path src-dir r)
+              :let [^Path full-path (fs/->path src-dir r)
                     file (.toFile full-path)
                     name (str (fs/path-relative-to src-dir full-path))]]
         (assert (fs/exists? full-path) (str full-path))
@@ -138,7 +138,7 @@
         (put-next-entry! jar-os name (Files/getLastModifiedTime full-path (into-array LinkOption [])))
         (io/copy file jar-os)
         (.closeEntry jar-os))
-      (doseq [path (->> classes-dir fs/ls-r)
+      (doseq [^Path path (->> classes-dir fs/ls-r)
               :let [file (.toFile path)]
               :when (.isFile file)
               :let [name (str (fs/path-relative-to classes-dir path))]]
@@ -220,7 +220,7 @@
   (concat
    (->> cp
         (filter (fn [f] (cp/jar-file? (io/file f))))
-        (mapcat (fn [jar]
+        (mapcat (fn [^File jar]
                   (map (fn [src]
                          [jar src]) (find/sources-in-jar (JarFile. jar))))))
    (->> cp

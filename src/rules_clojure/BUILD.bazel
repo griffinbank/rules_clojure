@@ -84,7 +84,6 @@ java_binary(name="gen_build",
             main_class="rules_clojure.gen_build",
             runtime_deps=[":libgen_build"])
 
-
 clojure_library(name= "testrunner",
                 srcs=["testrunner.clj"],
                 resource_strip_prefix="src",

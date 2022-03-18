@@ -33,8 +33,8 @@
 (s/def ::deps-repo-tag string?)
 (s/def ::deps-edn-path ::fs/absolute-path)
 (s/def ::deps-edn-dir ::fs/absolute-path) ;; dir that contains the deps.edn
-(s/def ::repository-dir ::fs/absolute-path)
-(s/def ::deps-build-dir ::fs/absolute-path)
+(s/def ::repository-dir ::fs/absolute-path) ;; dir that contains M2
+(s/def ::deps-build-dir ::fs/absolute-path) ;; dir for deps BUILD.bazel output
 
 (s/def ::classpath (s/map-of ::fs/absolute-path map?))
 (s/def ::basis (s/keys :req-un [::classpath]))
@@ -1017,5 +1017,4 @@
             :deps deps
             :srcs srcs
             :ns-loader gen-namespace-loader)]
-    (println "gen-build/-main" cmd opts)
     (f opts)))
