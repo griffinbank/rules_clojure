@@ -106,7 +106,8 @@ def cljs_library(name, deps=[],**kwargs):
     native.java_binary(name=clj_binary,
                        main_class = "clojure.main",
                        jvm_flags=["-Dclojure.main.report=stderr"],
-                       runtime_deps=deps)
+                       runtime_deps=deps,
+                       data=kwargs.get("data",[]))
 
     _cljs_library(name=name,
                   clj_binary=clj_binary,

@@ -106,11 +106,7 @@ def _run_gen_build(repository_ctx):
             ":workspace-root", repository_ctx.attr.deps_edn.workspace_root,
             ":aliases", aliases_str(repository_ctx.attr.aliases)
             ]
-    ret = repository_ctx.execute(args,
-                                 quiet=False,
-                                 # working_directory="../rules_clojure"
-                                 )
-    print("ret:", ret.return_code, ret.stdout, ret.stderr)
+    ret = repository_ctx.execute(args, quiet=False)
 
 def _tools_deps_impl(repository_ctx):
     _install_tools_deps(repository_ctx)

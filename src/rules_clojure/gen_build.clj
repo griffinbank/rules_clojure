@@ -709,16 +709,20 @@
                      (when (or (seq paths) (seq clj-subdirs))
                        (str
                         (emit-bazel (list 'clojure_library (kwargs {:name "__clj_lib"
-                                                                    :resources (mapv fs/filename paths)
-                                                                    :resource_strip_prefix (strip-path (select-keys args [:basis :deps-edn-dir]) dir)
-                                                                    :deps (mapv (fn [p]
-                                                                                  (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_lib")) clj-subdirs)})))
+                                                                    :deps (vec
+                                                                           (concat
+                                                                            (distinct (map (fn [p] (str ":" (fs/basename p))) paths))
+                                                                            (map (fn [p]
+                                                                                   (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_lib")) clj-subdirs)))})))
                         "\n"
                         "\n"
-                        (emit-bazel (list 'filegroup (kwargs {:name "__clj_files"
-                                                              :srcs (mapv fs/filename paths)
-                                                              :data (mapv (fn [p]
-                                                                            (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_files")) clj-subdirs)}))))))]
+                        (emit-bazel (list 'clojure_library (kwargs (merge
+                                                                    {:name "__clj_files"
+                                                                     :resources (mapv fs/filename paths)
+                                                                     :data (mapv (fn [p]
+                                                                                   (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_files")) clj-subdirs)}
+                                                                    (when (seq paths)
+                                                                      {:resource_strip_prefix (strip-path (select-keys args [:basis :deps-edn-dir]) (first paths))}))))))))]
     (-> dir
         (fs/->path "BUILD.bazel")
         fs/path->file
@@ -815,8 +819,6 @@
                                                external-label (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
                                                extra-args (-> deps-bazel
                                                               (get-in [:deps external-label]))]
-                                           (when extra-args
-                                             (println lib "extra-args:" extra-args))
                                            (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
 
                                            (vec
