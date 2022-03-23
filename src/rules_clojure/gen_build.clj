@@ -716,13 +716,11 @@
                                                                                    (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_lib")) clj-subdirs)))})))
                         "\n"
                         "\n"
-                        (emit-bazel (list 'clojure_library (kwargs (merge
-                                                                    {:name "__clj_files"
-                                                                     :resources (mapv fs/filename paths)
-                                                                     :data (mapv (fn [p]
-                                                                                   (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_files")) clj-subdirs)}
-                                                                    (when (seq paths)
-                                                                      {:resource_strip_prefix (strip-path (select-keys args [:basis :deps-edn-dir]) (first paths))}))))))))]
+                        (emit-bazel (list 'filegroup (kwargs (merge
+                                                              {:name "__clj_files"
+                                                               :srcs (mapv fs/filename paths)
+                                                               :data (mapv (fn [p]
+                                                                             (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_files")) clj-subdirs)})))))))]
     (-> dir
         (fs/->path "BUILD.bazel")
         fs/path->file
