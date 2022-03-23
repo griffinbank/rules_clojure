@@ -690,7 +690,7 @@
         clj-subdirs (->>
                      subdirs
                      (filter (fn [p]
-                               (some clj-path? (seq (fs/ls-r p))))))
+                               (some clj*-path? (seq (fs/ls-r p))))))
         rules (->> paths
                    (group-by fs/basename)
                    (mapcat (fn [[_base paths]]
