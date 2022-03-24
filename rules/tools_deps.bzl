@@ -20,7 +20,8 @@ def _install_clj_mac(repository_ctx):
     repository_ctx.download_and_extract(
         auth = {},
         url = url,
-        output = "tools-deps",
+        stripPrefix = "clojure-tools",
+        output = "tools.deps",
         sha256 = sha256)
 
     repository_ctx.execute(["mkdir", repository_ctx.path(clj_install_prefix)],
@@ -28,7 +29,7 @@ def _install_clj_mac(repository_ctx):
     ret = repository_ctx.execute(["./install.sh", repository_ctx.path(clj_install_prefix)],
                            # bazel strips the environment, but the install assumes this is defined
                            environment={"HOMEBREW_RUBY_PATH": "/usr/bin/ruby"},
-                           working_directory="tools-deps/clojure-tools/",
+                           working_directory="tools.deps/",
                            quiet = False)
 
 def _install_clj_linux(repository_ctx):
@@ -90,7 +91,7 @@ def _symlink_repository(repository_ctx):
     repository_ctx.symlink(repository_ctx.os.environ["HOME"] + "/.m2/repository", repository_ctx.path("repository"))
 
 def _run_gen_build(repository_ctx):
-    args = [repository_ctx.path("tools-deps/clojure-tools/clojure"),
+    args = [repository_ctx.path("tools.deps/bin/clojure"),
             "-Srepro",
             "-Sdeps", """{:paths ["%s"]
             :deps {org.clojure/tools.namespace {:mvn/version "1.1.0"}
