@@ -108,6 +108,8 @@ def _run_gen_build(repository_ctx):
             ":aliases", aliases_str(repository_ctx.attr.aliases)
             ]
     ret = repository_ctx.execute(args, quiet=False)
+    if ret.return_code > 0:
+        fail("gen build failed:", ret.return_code, ret.stdout, ret.stderr)
 
 def _tools_deps_impl(repository_ctx):
     _install_tools_deps(repository_ctx)
