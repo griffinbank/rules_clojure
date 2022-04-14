@@ -12,7 +12,7 @@ java_binary(
     name = "ClojureWorker",
     main_class = "rules_clojure.ClojureWorker",
     runtime_deps = [":ClojureWorker-lib"],
-    jvm_flags = ["-Xmx1g"]
+    jvm_flags = ["-Xmx500m", "-XX:MaxMetaspaceSize=500m"]
 )
 
 proto_library(
