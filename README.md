@@ -1,6 +1,6 @@
 # Yet Another Clojure rules for [Bazel](https://bazel.build)
 
-Status: pre-release.
+Status: Beta. Griffin is using it production
 
 ## Features
 - tools.deps support
@@ -46,7 +46,7 @@ It is likely you're interested in using Bazel because you have large projects wi
 
 `clojure_library` produces a jar.
 
-- `srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar (.classfiles resulting from the AOT will be added to the jar).
+- `srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar by default (.classfiles resulting from the AOT will be added to the jar).
 - `deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc).
 - `aot` is a list of namespaces to compile, non-transitively.
 - `resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use `resource_strip_prefix`, which behaves the same as in `java_library`.
