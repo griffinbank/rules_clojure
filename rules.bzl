@@ -67,7 +67,7 @@ def clojure_test(name, *, test_ns, deps=[], runtime_deps=[], **kwargs):
 
 def cljs_impl(ctx):
 
-    runfiles = ctx.runfiles(files=[])
+    runfiles = ctx.runfiles(files=ctx.outputs.outs)
 
     inputs = ctx.files.data + ctx.files.compile_opts_files
 
