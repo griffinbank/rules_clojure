@@ -100,6 +100,7 @@ def _run_gen_build(repository_ctx):
             org.clojure/tools.deps.alpha {:mvn/version "0.9.857"}}}""" % repository_ctx.path("../rules_clojure/src"),
 
             "-J-Dclojure.main.report=stderr",
+            "-M",
             "-m", "rules-clojure.gen-build",
             "deps",
             ":deps-edn-path", repository_ctx.path(repository_ctx.attr.deps_edn),
