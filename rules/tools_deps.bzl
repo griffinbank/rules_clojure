@@ -1,12 +1,14 @@
 load("//:rules.bzl", "clojure_library", "clojure_binary")
 
 CLJ_VERSIONS_MAC = {
-    "1.10.1.763": ("https://download.clojure.org/install/clojure-tools-1.10.1.763.tar.gz", "2a3ec8a6c3639035c2bba10945ae9007ab0dc9136766b95d2161f354e62a4d10")
+    "1.10.1.763": ("https://download.clojure.org/install/clojure-tools-1.10.1.763.tar.gz", "2a3ec8a6c3639035c2bba10945ae9007ab0dc9136766b95d2161f354e62a4d10"),
+    "1.11.1.1113": ("https://download.clojure.org/install/clojure-tools-1.11.1.1113.tar.gz", "0c954a56a071f33b9e039f8ab905f8372a5a601a0d14a32e0ccf230ea7606a22")
 }
 
 CLJ_VERSIONS_LINUX = {
     "1.10.1.763": ("https://download.clojure.org/install/linux-install-1.10.1.763.sh", "91421551872d421915c4a598741aefcc6749d3f4aafca9c08f271958e5456e2c"),
-    "1.10.2.774": ("https://download.clojure.org/install/linux-install-1.10.2.774.sh", "6d39603e84ad2622e5ae601436f02a1ee4a57e4e35dc49098b01a7d142a13d4a")
+    "1.10.2.774": ("https://download.clojure.org/install/linux-install-1.10.2.774.sh", "6d39603e84ad2622e5ae601436f02a1ee4a57e4e35dc49098b01a7d142a13d4a"),
+    "1.11.1.1113": ("https://download.clojure.org/install/linux-install-1.11.1.1113.sh", "7677bb1179ebb15ebf954a87bd1078f1c547673d946dadafd23ece8cd61f5a9f")
 }
 
 clj_install_prefix = "tools.deps"
@@ -124,7 +126,7 @@ clojure_tools_deps = repository_rule(
     local=True,
     attrs = {"deps_edn": attr.label(allow_single_file = True),
              "aliases": attr.string_list(default = [], doc = "extra aliases in deps.edn to merge in while resolving deps"),
-             "clj_version": attr.string(default="1.10.1.763"),
+             "clj_version": attr.string(default="1.11.1.1113"),
              "_rules_clj_deps": attr.label(default="@rules_clojure//:deps.edn"),
              "_rules_clj_src": attr.label(default="@rules_clojure//:src")
              })
