@@ -650,8 +650,8 @@
                                                                      ns-library-meta)
                                                          (as-> m
                                                              (cond-> m
-                                                               (seq (:deps m)) (update :deps (comp vec sort distinct))
-                                                               (:deps m) (update :deps (comp vec sort distinct)))))))))
+                                                               (seq (:deps m)) (update :deps (comp vec dedupe sort))
+                                                               (:deps m) (update :deps (comp vec dedupe sort)))))))))
         (when (and clj? test?)
           (emit-bazel (list 'clojure_test (kwargs (merge-with into
                                                               {:name test-label
