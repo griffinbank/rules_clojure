@@ -677,11 +677,13 @@
   (let [paths (->> (fs/ls dir)
                    (filter (fn [p]
                              (or (clj*-path? p)
-                                 (js-path? p)))))
+                                 (js-path? p))))
+                   (sort-by str))
         subdirs (->> dir
                      fs/ls
                      (filter (fn [p]
-                               (-> p .toFile fs/directory?))))
+                               (-> p .toFile fs/directory?)))
+                     (sort-by str))
         clj-subdirs (->>
                      subdirs
                      (filter (fn [p]
