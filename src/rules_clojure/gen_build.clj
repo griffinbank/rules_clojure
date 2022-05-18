@@ -12,10 +12,8 @@
             [rules-clojure.parse :as parse]
             [clojure.tools.namespace.find :as find]
             [rules-clojure.fs :as fs])
-  (:import java.io.File
-           [clojure.lang Keyword IPersistentVector IPersistentList IPersistentMap Var]
-           [java.nio.file Files Path Paths FileSystem FileSystems]
-           java.nio.file.attribute.FileAttribute
+  (:import [clojure.lang Keyword IPersistentVector IPersistentList IPersistentMap Var]
+           [java.nio.file Path]
            [java.util.jar JarFile])
   (:gen-class))
 
@@ -113,7 +111,7 @@
 
 (defmethod emit-bazel* IPersistentList [[name & args]]
   ;; function call
-  (let [args (if (seq args)
+  (let [args (when (seq args)
                (mapv emit-bazel* args))]
     (str name "(" (apply str (interpose ", " args)) ")")))
 
@@ -129,8 +127,6 @@
                        (str (emit-bazel* k) " : " (emit-bazel* v))))
                 (interpose ",")
                 (apply str)) "}"))
-
-
 
 (s/fdef emit-bazel :args (s/cat :x ::bazel) :ret string?)
 (defn emit-bazel
@@ -225,7 +221,7 @@
   [lib ns]
   (str "ns_" (library->label lib) "_" (library->label ns)))
 
-(defn external-dep-ns-aot-label [{:keys [deps-repo-tag]} lib ns]
+(defn external-dep-ns-aot-label
   "Given a dep library and a namespace inside it, return the name of the AOT target"
   [{:keys [deps-repo-tag]} lib ns]
   {:pre [deps-repo-tag]}
@@ -613,7 +609,6 @@
           test? (test-path? path)
 
           ns-meta (->> ns-decls (map get-ns-meta) (filter identity) (apply merge-with into))
-          src-label (src->label (select-keys args [:deps-edn-dir]) path)
           test-label (str (fs/basename path) ".test")
           clojure-library-args (get-in deps-bazel [:clojure_library])
           clojure-test-args (get-in deps-bazel [:clojure_test])
@@ -655,8 +650,8 @@
                                                                      ns-library-meta)
                                                          (as-> m
                                                              (cond-> m
-                                                               (seq (:deps m)) (update :deps (comp vec sort distinct))
-                                                               (:deps m) (update :deps (comp vec sort distinct)))))))))
+                                                               (seq (:deps m)) (update :deps (comp vec dedupe sort))
+                                                               (:deps m) (update :deps (comp vec dedupe sort)))))))))
         (when (and clj? test?)
           (emit-bazel (list 'clojure_test (kwargs (merge-with into
                                                               {:name test-label
@@ -682,11 +677,13 @@
   (let [paths (->> (fs/ls dir)
                    (filter (fn [p]
                              (or (clj*-path? p)
-                                 (js-path? p)))))
+                                 (js-path? p))))
+                   (sort-by str))
         subdirs (->> dir
                      fs/ls
                      (filter (fn [p]
-                               (-> p .toFile fs/directory?))))
+                               (-> p .toFile fs/directory?)))
+                     (sort-by str))
         clj-subdirs (->>
                      subdirs
                      (filter (fn [p]
@@ -711,7 +708,7 @@
                         (emit-bazel (list 'clojure_library (kwargs {:name "__clj_lib"
                                                                     :deps (vec
                                                                            (concat
-                                                                            (distinct (map (fn [p] (str ":" (fs/basename p))) paths))
+                                                                            (map (fn [p] (str ":" (fs/basename p))) paths)
                                                                             (map (fn [p]
                                                                                    (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_lib")) clj-subdirs)))})))
                         "\n"
@@ -810,7 +807,6 @@
                                (sort-by (fn [[k v]] (library->label v)))
                                (mapcat (fn [[jarpath lib]]
                                          (let [label (library->label lib)
-                                               preaot (str label ".preaot")
                                                deps (->> (get lib->deps lib)
                                                          (mapv (fn [lib]
                                                                  (str ":" (library->label lib)))))
@@ -904,7 +900,6 @@
                            :deps-edn-path deps-edn-path})
         jar->lib (->jar->lib basis)
         lib->jar (set/map-invert jar->lib)
-        class->jar (->class->jar basis)
         lib->deps (->lib->deps basis)
         dep-ns->label (->dep-ns->label {:basis basis
                                         :deps-bazel deps-bazel
@@ -932,9 +927,7 @@
                            :repository-dir repository-dir
                            :deps-edn-path deps-edn-path})
         jar->lib (->jar->lib basis)
-        lib->jar (set/map-invert jar->lib)
         class->jar (->class->jar basis)
-        lib->deps (->lib->deps basis)
         args {:aliases aliases
               :deps-bazel deps-bazel
               :deps-edn-path deps-edn-path
