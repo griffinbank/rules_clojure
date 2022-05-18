@@ -708,7 +708,7 @@
                         (emit-bazel (list 'clojure_library (kwargs {:name "__clj_lib"
                                                                     :deps (vec
                                                                            (concat
-                                                                            (distinct (map (fn [p] (str ":" (fs/basename p))) paths))
+                                                                            (dedupe (map (fn [p] (str ":" (fs/basename p))) paths))
                                                                             (map (fn [p]
                                                                                    (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_lib")) clj-subdirs)))})))
                         "\n"
