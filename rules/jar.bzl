@@ -90,17 +90,23 @@ def clojure_jar_impl(ctx):
 
     library_path = []
 
-    java_deps = []
+    compile_deps = []
+    runtime_deps = []
 
     runfiles = ctx.runfiles(files = ctx.files.data)
 
-    all_targets = ctx.attr.srcs + ctx.attr.deps + ctx.attr.runtime_deps + ctx.attr.data + ctx.attr.compiledeps + ctx.attr.worker_runtime
-    for dep in all_targets:
+    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.data + ctx.attr.compiledeps + ctx.attr.worker_runtime:
         runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
         if JavaInfo in dep:
-            java_deps.append(dep[JavaInfo])
+            compile_deps.append(dep[JavaInfo])
 
-    dep_info = java_common.merge(java_deps)
+    for dep in ctx.attr.runtime_deps:
+        runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
+        if JavaInfo in dep:
+            runtime_deps.append(dep[JavaInfo])
+
+    compile_info = java_common.merge(compile_deps)
+    runtime_info = java_common.merge(runtime_deps)
 
     jar_info = java_common.merge([d[JavaInfo] for d in ctx.attr.jar_runtime if JavaInfo in d])
 
@@ -108,8 +114,8 @@ def clojure_jar_impl(ctx):
         output_jar = output_jar,
         compile_jar = output_jar,
         source_jar = None,
-        deps = java_deps,
-        runtime_deps = java_deps)
+        deps = compile_deps,
+        runtime_deps = runtime_deps)
 
     default_info = DefaultInfo(
         files = depset([output_jar]),
@@ -125,7 +131,7 @@ def clojure_jar_impl(ctx):
     else:
         src_dir = None
 
-    compile_classpath = dep_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps + [classes_dir]
+    compile_classpath = compile_info.transitive_runtime_deps.to_list() + jar_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps + [classes_dir]
     compile_classpath = [f.path for f in compile_classpath]
     compile_classpath = compile_classpath + [p for p in [src_dir] if p]
 
@@ -155,7 +161,7 @@ def clojure_jar_impl(ctx):
         output = args_file,
         content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + dep_info.transitive_deps.to_list() + dep_info.transitive_runtime_deps.to_list() + native_libs + [args_file] + ctx.files.jar_runtime
+    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_compile_time_jars.to_list() + native_libs + [args_file] + ctx.files.jar_runtime
 
     ctx.actions.run(
         executable=ctx.executable.worker,
