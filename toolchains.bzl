@@ -9,7 +9,7 @@ def rules_clojure_default_toolchain():
                   artifacts = [
                       maven.artifact(group="org.clojure",
                                      artifact="clojure",
-                                     version="1.10.3",
+                                     version="1.11.1",
                                      exclusions=["org.clojure:spec.alpha",
                                                  "org.clojure:core.specs.alpha"]),
                       maven.artifact(group="org.clojure",
