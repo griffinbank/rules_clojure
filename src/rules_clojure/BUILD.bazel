@@ -22,7 +22,10 @@ clojure_library(
     resource_strip_prefix="src",
     aot=["rules-clojure.fs"],
     jar_runtime=["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
-                 "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"])
+                 "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"],
+    deps=["@rules_clojure_maven//:org_clojure_clojure",
+          "@rules_clojure_maven//:org_clojure_spec_alpha",
+          "@rules_clojure_maven//:org_clojure_core_specs_alpha"])
 
 clojure_library(
     name="jar-lib",
@@ -87,7 +90,8 @@ java_binary(name="gen_build",
 clojure_library(name= "testrunner",
                 srcs=["testrunner.clj"],
                 resource_strip_prefix="src",
-                aot=["rules-clojure.testrunner"])
+                aot=["rules-clojure.testrunner"],
+                deps=["@rules_clojure_maven//:org_clojure_clojure"])
 
 ## files needed for the clj toolchain
 filegroup(name="toolchain_files",
