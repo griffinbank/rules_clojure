@@ -21,11 +21,7 @@ clojure_library = rule(
         ## at runtime
         "jar_runtime": attr.label_list(default=[Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl"),
                                                 Label("@rules_clojure//src/rules_clojure:jar-lib")], cfg="host"),
-        "worker_runtime": attr.label_list(default=[Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl"),
-                                                   #TODO toolchain here
-                                                   Label("@rules_clojure_maven//:org_clojure_clojure"),
-                                                   Label("@rules_clojure_maven//:org_clojure_spec_alpha"),
-                                                   Label("@rules_clojure_maven//:org_clojure_core_specs_alpha")], cfg="host")
+        "worker_runtime": attr.label_list(default=[Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")], cfg="host")
     },
     provides = [JavaInfo],
     implementation = _clojure_jar_impl,
