@@ -66,7 +66,8 @@
                                                           (first form)))
                                              f))
                                     (rest form))
-	(option-spec? form) (deps-from-libspec prefix (first form))
+	(option-spec? form) (when-not (= :as-alias (second form))
+                              (deps-from-libspec prefix (first form)))
 	(symbol? form) (list (symbol (str (when prefix (str prefix ".")) form)))
 	(keyword? form) nil  ;; Some people write (:require ... :reload-all)
         (string? form) nil ;;npm  require
