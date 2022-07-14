@@ -839,7 +839,8 @@
                                                                                                         into
                                                                                                         {:name (internal-dep-ns-aot-label lib ns)
                                                                                                          :aot [(str ns)]
-                                                                                                         :deps [(str deps-repo-tag "//:" label)]
+                                                                                                         :deps [(str deps-repo-tag "//:" label)
+                                                                                                                (str deps-repo-tag "//:org_clojure_clojure")]
                                                                                                          ;; TODO the source jar doesn't need to be in runtime_deps
                                                                                                          :runtime_deps []}
                                                                                                         (ns-deps (select-keys args [:dep-ns->label :jar->lib :deps-repo-tag]) ns-decl :clj)
