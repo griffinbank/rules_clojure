@@ -5,6 +5,8 @@
   (:import java.io.File
            [java.nio.file CopyOption Files FileSystem FileSystems Path Paths StandardCopyOption]))
 
+"1"
+
 (defn path? [x]
   (instance? Path x))
 

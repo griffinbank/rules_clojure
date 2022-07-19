@@ -1,6 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
-load("//:rules.bzl", "clojure_library", "clojure_binary")
+load("//:rules.bzl", "clojure_library", "clojure_binary", "clojure_library_bootstrap")
 
 exports_files(glob(["*.clj"]))
 
@@ -21,16 +21,15 @@ clojure_library(
     srcs=["fs.clj"],
     resource_strip_prefix="src",
     aot=["rules-clojure.fs"],
-    jar_runtime=["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
-                 "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"],
+    # jar_runtime=["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
+    #              "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"]
     deps=["@rules_clojure_maven//:org_clojure_clojure",
           "@rules_clojure_maven//:org_clojure_spec_alpha",
           "@rules_clojure_maven//:org_clojure_core_specs_alpha"])
 
-clojure_library(
+clojure_library_bootstrap(
     name="jar-lib",
-    deps=["jar-lib-bootstrap", "fs"],
-    resources=["compile.clj"],
+    resources=["compile.clj", "fs.clj"],
     aot=["clojure.tools.namespace.find",
          "clojure.tools.namespace.dependency",
          "clojure.tools.namespace.track",
@@ -45,9 +44,11 @@ clojure_library(
          "clojure.tools.namespace.file",
          "clojure.java.classpath",
          "clojure.data.json",
-         "rules-clojure.jar"],
-    jar_runtime=["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
-                 "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"])
+         "rules-clojure.jar",
+         "rules-clojure.fs"]
+    # jar_runtime=["@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl",
+    #              "@rules_clojure//src/rules_clojure:jar-lib-bootstrap"]
+)
 
 clojure_library(
     name= "libgen_build",

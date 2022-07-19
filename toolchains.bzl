@@ -23,7 +23,7 @@ def rules_clojure_default_toolchain():
                                                  "org.clojure:spec.alpha"]),
                       "org.clojure:java.classpath:1.0.0",
                       "org.clojure:tools.namespace:1.1.0",
-                      "org.clojure:tools.deps.alpha:0.14.1178",
+                      "org.clojure:tools.deps.alpha:0.14.1212",
                       "com.google.code.gson:gson:2.8.7",
                       "org.projectodd.shimdandy:shimdandy-api:1.2.1",
                       "org.projectodd.shimdandy:shimdandy-impl:1.2.1",
@@ -35,3 +35,5 @@ def rules_clojure_default_toolchain():
                                                  "org.clojure:core.specs.alpha"])],
                   repositories = ["https://repo1.maven.org/maven2",
                                   "https://repo.clojars.org/"])
+    # native.register_toolchains("@rules_clojure//:default_toolchain",
+    #                            "@rules_clojure//:bootstrap_toolchain")

@@ -13,19 +13,69 @@ clojure_library = rule(
         "resource_strip_prefix": attr.string(default = ""),
         "compiledeps": attr.label_list(default = []),
         "javacopts": attr.string_list(default = [], allow_empty = True, doc = "Optional javac compiler options"),
-        "worker": attr.label(default=Label("@rules_clojure//java/rules_clojure:ClojureWorker"), executable = True, cfg="host"),
-        ## Private, but we need to override this during
-        ## bootstrap. shimdandy-impl and anything that would pull in
-        ## Clojure are not allowed to be on the startup classpath of
-        ## ClojureWorker, so build these separately and pull them in
-        ## at runtime
-        "jar_runtime": attr.label_list(default=[Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl"),
-                                                Label("@rules_clojure//src/rules_clojure:jar-lib")], cfg="host"),
-        "worker_runtime": attr.label_list(default=[Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")], cfg="host")
+
+        "_clojureworker_binary": attr.label(doc="Label for the ClojureWorker binary",
+                                            default=Label("@rules_clojure//java/rules_clojure:ClojureWorker"), executable = True, cfg="exec"),
+        "_compile_classpath": attr.label_list(doc="classpath for the compilation worker",
+                                              cfg="exec",
+                                              default = [Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")]),
+        "_jar_classpath": attr.label_list(doc="classpath for rules-clojure.jar",
+                                         cfg="exec",
+                                         default = [Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl"),
+                                                    Label("@rules_clojure//src/rules_clojure:jar-lib")]),
+
     },
     provides = [JavaInfo],
     implementation = _clojure_jar_impl,
 )
+
+clojure_library_bootstrap = rule(
+    doc = "Define a clojure library",
+    attrs = {
+        "srcs": attr.label_list(default = [], allow_files = True),
+        "deps": attr.label_list(default = ["@rules_clojure//src/rules_clojure:jar-lib-bootstrap"], providers = [[JavaInfo]]),
+        "runtime_deps": attr.label_list(default = [], providers = [[JavaInfo]]),
+        "data": attr.label_list(default = [], allow_files = True),
+        "resources": attr.label_list(default=[], allow_files=True),
+        "aot": attr.string_list(default = [], doc = "namespaces to be compiled"),
+        "resource_strip_prefix": attr.string(default = ""),
+        "compiledeps": attr.label_list(default = []),
+        "javacopts": attr.string_list(default = [], allow_empty = True, doc = "Optional javac compiler options"),
+
+        "_clojureworker_binary": attr.label(doc="Label for the ClojureWorker binary",
+                                            default=Label("@rules_clojure//java/rules_clojure:ClojureWorker"), executable = True, cfg="exec"),
+        "_compile_classpath": attr.label_list(doc="classpath for the compilation worker",
+                                              cfg="exec",
+                                              default = [Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")]),
+        "_jar_classpath": attr.label_list(doc="classpath for rules-clojure.jar",
+                                         cfg="exec",
+                                         default = [Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl"),
+                                                    Label("@rules_clojure//src/rules_clojure:jar-lib-bootstrap")]),
+
+    },
+    provides = [JavaInfo],
+    implementation = _clojure_jar_impl,
+)
+
+ClojureInfo = provider(
+    fields = ["jar_classpath",
+              "default_clojure_classpath",
+              ])
+
+def _clojure_toolchain(ctx):
+    return [platform_common.ToolchainInfo(
+        clojure_info = ClojureInfo(
+            jar_classpath = ctx.attr.jar_classpath,
+            worker_runtime = ctx.attr.compile_classpath,
+            clojureworker_binary = ctx.attr.clojureworker_binary))]
+
+clojure_toolchain = rule(
+    implementation = _clojure_toolchain,
+    attrs = {
+        "default_clojure_classpath": attr.label_list(doc="If the target doesn't depend on a clojure.jar, include these targets",
+                                                     default=["@rules_clojure_maven//:org_clojure_clojure",
+                                                              "@rules_clojure_maven//:org_clojure_spec_alpha",
+                                                              "@rules_clojure_maven//:org_clojure_core_specs_alpha"])})
 
 def clojure_binary(name, **kwargs):
     deps = kwargs.pop("deps", [])

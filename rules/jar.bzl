@@ -95,7 +95,7 @@ def clojure_jar_impl(ctx):
 
     runfiles = ctx.runfiles(files = ctx.files.data)
 
-    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.data + ctx.attr.compiledeps + ctx.attr.worker_runtime:
+    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.data + ctx.attr.compiledeps + ctx.attr._jar_classpath:
         runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
         if JavaInfo in dep:
             compile_deps.append(dep[JavaInfo])
@@ -108,7 +108,7 @@ def clojure_jar_impl(ctx):
     compile_info = java_common.merge(compile_deps)
     runtime_info = java_common.merge(runtime_deps)
 
-    jar_info = java_common.merge([d[JavaInfo] for d in ctx.attr.jar_runtime if JavaInfo in d])
+    jar_info = java_common.merge([d[JavaInfo] for d in ctx.attr._jar_classpath if JavaInfo in d])
 
     java_info = JavaInfo(
         output_jar = output_jar,
@@ -161,11 +161,11 @@ def clojure_jar_impl(ctx):
         output = args_file,
         content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_compile_time_jars.to_list() + native_libs + [args_file] + ctx.files.jar_runtime
+    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_compile_time_jars.to_list() + native_libs + [args_file] + ctx.files._jar_classpath
 
     ctx.actions.run(
-        executable=ctx.executable.worker,
-        arguments=["--persistent_worker", "@%s" % args_file.path],
+        executable=ctx.executable._clojureworker_binary,
+        arguments=["@%s" % args_file.path],
         outputs = [output_jar, classes_dir],
         inputs = inputs,
         mnemonic = "ClojureCompile",

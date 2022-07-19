@@ -388,6 +388,8 @@
           (let [parent (last path)
                 child lib
                 exclude-reasons #{:excluded :parent-omitted}]
+            ;; (when (or (and parent (re-find #"byte" (str parent))) (and lib (re-find #"byte" (str lib))))
+            ;;   [path child exclude-reasons])
             (if (and parent (not (contains? exclude-reasons reason)))
               (do
                 (assert (symbol? parent))
