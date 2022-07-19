@@ -67,6 +67,8 @@
     (assert src-resource)
     (with-open [rdr (clojure.java.io/reader src-resource)]
       (binding [*compile-files* true]
+        (when (find-ns ns)
+          (println "###>>> Found ns" ns "that was about to compile."))
         (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last))))))
 
 (defn non-transitive-compile [dep-nses ns]
