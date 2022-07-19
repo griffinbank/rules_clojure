@@ -134,18 +134,20 @@ class ClojureWorker  {
     public static DynamicClassLoader compile_classloader = null;
     public static ClojureRuntimeShim compile_runtime = null;
 
-    public static void main(String [] args) throws Exception
+    public static void main(String[] args) throws Exception
     {
-        System.err.printf("args: %s", Arrays.toString(args));
-	if (args.length > 0 && args[0].equals("--persistent_worker")) {
-	    persistentWorkerMain(args);
-	} else {
-	    ephemeralWorkerMain(args);
-	}
-    }
+        Boolean persistent = false;
 
-    public static void persistentWorkerMain(String[] args) throws Exception
-    {
+        System.err.printf("args: %s", Arrays.toString(args));
+
+	for (String arg: args) {
+            if (arg.equals("--persistent_worker")) {
+                persistent = true;
+                break;
+            }
+	}
+        System.err.printf("persistent: %s", persistent);
+
 	System.err.println("ClojureWorker persistentWorkerMain");
 	PrintStream real_stdout = System.out;
 	PrintStream real_stderr = System.err;
@@ -159,7 +161,7 @@ class ClojureWorker  {
 	System.setOut(out);
 
 	try {
-	    while (true) {
+	    do {
 		outStream.reset();
 
 		WorkRequest request = WorkRequest.parseDelimitedFrom(stdin);
@@ -197,7 +199,7 @@ class ClojureWorker  {
 		    .setOutput(outStream.toString())
 		    .build()
 		    .writeDelimitedTo(real_stdout);
-	    }
+	    } while (persistent);
 	}
 	catch (Throwable t){
 	    real_stderr.println(t.getMessage());
@@ -283,10 +285,5 @@ class ClojureWorker  {
             System.err.println("script:" + read_script.toString());
             throw t;
         }
-    }
-
-    public static void ephemeralWorkerMain(String[] args)
-    {
-        System.err.println("ClojureWorker ephemeral");
     }
 }
