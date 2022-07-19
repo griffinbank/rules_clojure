@@ -136,6 +136,7 @@ class ClojureWorker  {
 
     public static void main(String [] args) throws Exception
     {
+        real_stderr.printf("args: %s", Arrays.toString(args));
 	if (args.length > 0 && args[0].equals("--persistent_worker")) {
 	    persistentWorkerMain(args);
 	} else {
@@ -161,7 +162,6 @@ class ClojureWorker  {
 	    while (true) {
 		outStream.reset();
 
-                real_stderr.printf("args: %s", Arrays.toString(args));
 		WorkRequest request = WorkRequest.parseDelimitedFrom(stdin);
 
 		// The request will be null if stdin is closed.  We're
