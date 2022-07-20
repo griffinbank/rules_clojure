@@ -60,8 +60,6 @@
                                (dep/depend graph ns dep)) graph (parse/deps-from-ns-decl decl)))) graph)
          (dep/topo-sort))))
 
-
-
 (defn ns->ns-decls [classpath-files]
   (->> classpath-files
        (#(find/find-ns-decls % find/clj))
@@ -191,6 +189,8 @@
         compile-nses (set nses)
         compile-nses (filter (fn [n]
                                (contains? compile-nses n)) topo-nses) ;; sorted order
+        _ (when (not (= (count nses) (count compile-nses)))
+            (println "couldn't find nses:" (set/difference (set nses) (set compile-nses))))
         _ (assert (= (count nses) (count compile-nses)))
         preamble (get-preamble)
         script (if (seq compile-nses)
@@ -231,14 +231,13 @@
 
 (def old-classpath (atom nil))
 
-(defn create-jar-json [json-str]
-  (let [{:keys [src_dir resources aot_nses classes_dir output_jar classpath] :as args} (json/read-str json-str :key-fn keyword)
-        _ (assert classes_dir)
-        _ (when (seq resources) (assert src_dir))
-        aot-nses (map symbol aot_nses)
-        classes-dir (fs/->path classes_dir)
+(defn create-jar-json [json]
+  (let [{:keys [src-dir resources aot-nses classes-dir output-jar classpath] :as args} json
+        _ (when (seq resources) (assert src-dir))
+        aot-nses (map symbol aot-nses)
+        classes-dir (fs/->path classes-dir)
         resources (map fs/->path resources)
-        output-jar (fs/->path output_jar)]
+        output-jar (fs/->path output-jar)]
     (str
      (create-jar (merge
                   {:aot-nses aot-nses
@@ -246,16 +245,16 @@
                    :classpath classpath
                    :resources resources
                    :output-jar output-jar}
-                  (when src_dir
-                    {:src-dir (fs/->path src_dir)}))))))
+                  (when src-dir
+                    {:src-dir (fs/->path src-dir)}))))))
 
-(defn get-compilation-script-json [json-str]
-  (let [{:keys [src_dir resources aot_nses classes_dir output_jar compile_classpath] :as args} (json/read-str json-str :key-fn keyword)
-        aot-nses (map symbol aot_nses)
-        classpath-files (map io/file compile_classpath)
-        output-jar (fs/->path output_jar)]
+(defn get-compilation-script-json [json]
+  (let [{:keys [src-dir resources aot-nses classes-dir output-jar classpath] :as args} json
+        aot-nses (map symbol aot-nses)
+        classpath-files (map io/file classpath)
+        output-jar (fs/->path output-jar)]
     (str (get-compilation-script {:classpath classpath-files
-                                  :classes-dir classes_dir
+                                  :classes-dir classes-dir
                                   :output-jar output-jar} aot-nses))))
 
 (comment

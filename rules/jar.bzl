@@ -95,20 +95,17 @@ def clojure_jar_impl(ctx):
 
     runfiles = ctx.runfiles(files = ctx.files.data)
 
-    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.data + ctx.attr.compiledeps + ctx.attr.worker_runtime:
+    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.data + ctx.attr.compiledeps + ctx.attr._shimdandy_classpath:
         runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
         if JavaInfo in dep:
             compile_deps.append(dep[JavaInfo])
 
-    for dep in ctx.attr.runtime_deps:
+    for dep in ctx.attr.deps + ctx.attr.runtime_deps:
         runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
         if JavaInfo in dep:
             runtime_deps.append(dep[JavaInfo])
 
     compile_info = java_common.merge(compile_deps)
-    runtime_info = java_common.merge(runtime_deps)
-
-    jar_info = java_common.merge([d[JavaInfo] for d in ctx.attr.jar_runtime if JavaInfo in d])
 
     java_info = JavaInfo(
         output_jar = output_jar,
@@ -119,8 +116,7 @@ def clojure_jar_impl(ctx):
 
     default_info = DefaultInfo(
         files = depset([output_jar]),
-        runfiles = runfiles,
-    )
+        runfiles = runfiles)
 
     aot_nses = list(ctx.attr.aot)
 
@@ -145,32 +141,33 @@ def clojure_jar_impl(ctx):
 
     javaopts_str = " ".join(ctx.attr.javacopts)
 
-    compile_args=struct(
-        classes_dir = classes_dir.path,
-        output_jar = output_jar.path,
-        src_dir = src_dir,
-        srcs = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.srcs],
-        resources = [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.resources],
-        aot_nses = aot_nses,
-        compile_classpath = compile_classpath,
-        jar_classpath = [f.path for f in jar_info.transitive_runtime_deps.to_list()],
-    )
+
+    compile_args = {"classes-dir": classes_dir.path,
+                    "output-jar": output_jar.path,
+                    "src-dir": src_dir,
+                    "srcs": [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.srcs],
+                    "resources": [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.resources],
+                    "shimdandy-classpath": [f.path for f in ctx.files._shimdandy_classpath],
+                    "aot-nses": aot_nses,
+                    "classpath": compile_classpath}
 
     args_file = ctx.actions.declare_file(argsfile_name(ctx.label))
     ctx.actions.write(
         output = args_file,
         content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_compile_time_jars.to_list() + native_libs + [args_file] + ctx.files.jar_runtime
+    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_runtime_jars.to_list() + native_libs + [args_file]
 
     ctx.actions.run(
-        executable=ctx.executable.worker,
-        arguments=["--persistent_worker", "@%s" % args_file.path],
+        executable=ctx.executable._clojureworker_binary,
+        arguments=["-m", "rules-clojure.worker",
+                   "@%s" % args_file.path],
         outputs = [output_jar, classes_dir],
         inputs = inputs,
         mnemonic = "ClojureCompile",
         progress_message = "Compiling %s" % ctx.label,
-        execution_requirements={"supports-workers":"1"})
+        execution_requirements={"supports-workers":"1",
+                                "requires-worker-protocol" : "json"})
 
     return [
         default_info,

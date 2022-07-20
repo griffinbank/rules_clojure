@@ -9,9 +9,10 @@ toolchain_type(
     visibility = ["//visibility:public"])
 
 clojure_toolchain(
-    name = "default_clojure_toolchain")
+    name = "default_toolchain")
 
-toolchain(
-    name = "rules_clojure_default_toolchain",
-    toolchain = ":default_clojure_toolchain",
-    toolchain_type = ":toolchain_type")
+java_binary(name="repl",
+            main_class="clojure.main",
+            args=["-r"],
+            runtime_deps=["//src/rules_clojure:worker-lib",
+                          "//test/rules_clojure:worker"])
