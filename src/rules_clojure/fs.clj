@@ -69,6 +69,7 @@
       .getFileName
       str))
 
+(s/fdef dirname :args (s/cat :p path?) :ret path?)
 (defn dirname [path]
   (.getParent path))
 

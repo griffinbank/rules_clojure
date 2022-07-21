@@ -128,7 +128,6 @@
 
 (defn process-persistent [args]
   (loop []
-    (print-err "blocking read-line")
     (let [work-req-str (read-line)
           work-req (json/read-str work-req-str :key-fn keyword)
           {:keys [arguments inputs]} work-req
@@ -142,8 +141,6 @@
           (print-err "no request, exiting"))))))
 
 (defn -main [& args]
-  (print-err "-main:" args)
-  (print-err "worker classpath:" (clojure.java.classpath/classpath))
   (let [persistent? (some (fn [a] (= "--persistent_worker" a)) args)]
     (if persistent?
       (process-persistent args)

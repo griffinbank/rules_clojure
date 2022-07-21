@@ -119,11 +119,10 @@
 (s/def ::compile (s/keys :req-un [::resources ::aot-nses ::classes-dir ::output-jar] :opt-un [::src-dir]))
 
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses]}]
-  (let [temp (File/createTempFile (fs/filename output-jar) "jar")
+  (let [temp (Files/createTempFile (fs/dirname output-jar) (fs/filename output-jar) "jar" (into-array FileAttribute []))
         aot-files (->> classes-dir fs/ls-r)
         jar-files (concat resources aot-files)]
-
-    (with-open [jar-os (-> temp FileOutputStream. BufferedOutputStream. JarOutputStream.)]
+    (with-open [jar-os (-> temp fs/path->file FileOutputStream. BufferedOutputStream. JarOutputStream.)]
       (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
       (.write ^Manifest manifest jar-os)
       (.closeEntry jar-os)
@@ -143,7 +142,7 @@
         (put-next-entry! jar-os name (Files/getLastModifiedTime path (into-array LinkOption [])))
         (io/copy file jar-os)
         (.closeEntry jar-os)))
-    (fs/mv (.toPath temp) output-jar)))
+    (fs/mv temp output-jar)))
 
 (defn direct-deps-of [all-ns-decls ns]
   (mapcat #'parse/deps-from-ns-form (get-ns-decl all-ns-decls ns)))
