@@ -43,8 +43,7 @@
   (dosync
    (alter compile-env (fn [{:keys [classloader shimdandy] :as env}]
                         (if (not classloader)
-                          (let [_ (print-err "new compile env:")
-                                classloader (URLClassLoader.
+                          (let [classloader (URLClassLoader.
                                              (into-array URL (map #(.toURL (io/file %)) classpath))
                                              ;; This is the boot class loader, the highest classloader, and importantly
                                              ;; the one without Clojure in.
