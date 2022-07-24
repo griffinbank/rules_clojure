@@ -1,15 +1,8 @@
-load(":toolchains.bzl", "clojure_toolchain")
 load(":rules.bzl", "clojure_repl")
 
 package(default_visibility = ["//visibility:public"])
-exports_files(glob(["deps.edn", "src/main/resources/**/*.clj"]))
 
-toolchain_type(
-    name = "toolchain_type",
-    visibility = ["//visibility:public"])
-
-clojure_toolchain(
-    name = "default_toolchain")
+exports_files(["deps.edn"])
 
 java_binary(name="repl",
             main_class="clojure.main",

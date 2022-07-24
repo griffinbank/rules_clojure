@@ -4,7 +4,6 @@
             [clojure.spec.alpha :as s]
             [rules-clojure.jar :as jar])
   (:import [java.net URL URLClassLoader]
-           org.projectodd.shimdandy.ClojureRuntimeShim
            java.nio.charset.StandardCharsets))
 
 (s/def ::classes-dir string?) ;; path to the *compile-files* dir
@@ -41,7 +40,7 @@
    :post [(:shimdandy @compile-env)
           (:classloader @compile-env)]}
   (dosync
-   (alter compile-env (fn [{:keys [classloader shimdandy] :as env}]
+   (alter compile-env (fn [{:keys [classloader] :as env}]
                         (if (not classloader)
                           (let [classloader (URLClassLoader.
                                              (into-array URL (map #(.toURL (io/file %)) classpath))
@@ -119,28 +118,30 @@
                    (process-request json)
                    0
                    (catch Exception e
+                     (print-err e)
                      1))
             resp {:exit_code exit
                   :output (str baos)}]
         (.write real-out (json/write-str resp))
         (.flush real-out)))))
 
-(defn process-persistent [args]
+(defn process-persistent [_args]
   (loop []
     (let [work-req-str (read-line)
           work-req (json/read-str work-req-str :key-fn keyword)
-          {:keys [arguments inputs]} work-req
+          {:keys [arguments]} work-req
           req-json (when work-req
                      (json/read-str (first arguments) :key-fn keyword))]
       (if req-json
         (do
           (process-persistent-1 req-json)
           (recur))
-        (do
-          (print-err "no request, exiting"))))))
+        (print-err "no request, exiting")))))
 
 (defn -main [& args]
-  (let [persistent? (some (fn [a] (= "--persistent_worker" a)) args)]
-    (if persistent?
-      (process-persistent args)
-      (process-ephemeral args))))
+  (try
+    (let [persistent? (some (fn [a] (= "--persistent_worker" a)) args)
+          f (if persistent? process-persistent process-ephemeral)]
+      (f args))
+    (catch Throwable t
+      (print-err t))))

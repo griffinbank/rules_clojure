@@ -1,10 +1,7 @@
-load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_proto_toolchains")
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 load("@rules_jvm_external//:specs.bzl", "maven")
 
 def rules_clojure_default_toolchain():
-    rules_proto_dependencies()
-    rules_proto_toolchains()
     maven_install(name="rules_clojure_maven",
                   artifacts = [
                       maven.artifact(group="org.clojure",

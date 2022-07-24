@@ -120,8 +120,12 @@
 
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses]}]
   (let [temp (Files/createTempFile (fs/dirname output-jar) (fs/filename output-jar) "jar" (into-array FileAttribute []))
-        aot-files (->> classes-dir fs/ls-r)
-        jar-files (concat resources aot-files)]
+        aot-files (->> classes-dir fs/ls-r (filter (fn [p] (-> p fs/path->file .isFile))))
+        resources (->> resources (map (fn [r] (fs/->path src-dir r))) (filter (fn [p] (-> p fs/path->file .isFile))) (map (fn [p] (fs/path-relative-to src-dir p))))]
+
+    (when (and (seq aot-nses) (not (seq aot-files)))
+      (assert false (print-str "create-jar" output-jar "aot-nses" aot-nses "but no aot output files:" classes-dir)))
+
     (with-open [jar-os (-> temp fs/path->file FileOutputStream. BufferedOutputStream. JarOutputStream.)]
       (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
       (.write ^Manifest manifest jar-os)
@@ -135,14 +139,14 @@
         (put-next-entry! jar-os name (Files/getLastModifiedTime full-path (into-array LinkOption [])))
         (io/copy file jar-os)
         (.closeEntry jar-os))
-      (doseq [^Path path (->> classes-dir fs/ls-r)
-              :let [file (.toFile path)]
-              :when (.isFile file)
-              :let [name (str (fs/path-relative-to classes-dir path))]]
+      (doseq [^Path path aot-files
+              :let [file (.toFile path)
+                    name (str (fs/path-relative-to classes-dir path))]]
         (put-next-entry! jar-os name (Files/getLastModifiedTime path (into-array LinkOption [])))
         (io/copy file jar-os)
         (.closeEntry jar-os)))
-    (fs/mv temp output-jar)))
+    (fs/mv temp output-jar)
+    (assert (fs/exists? output-jar))))
 
 (defn direct-deps-of [all-ns-decls ns]
   (mapcat #'parse/deps-from-ns-form (get-ns-decl all-ns-decls ns)))

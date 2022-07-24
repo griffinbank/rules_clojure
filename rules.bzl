@@ -1,5 +1,4 @@
 load("//rules:jar.bzl", _clojure_jar_impl = "clojure_jar_impl")
-load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 
 clojure_library = rule(
     doc = "Define a clojure library",
