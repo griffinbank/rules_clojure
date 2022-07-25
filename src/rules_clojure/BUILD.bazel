@@ -91,7 +91,9 @@ clojure_library(name= "testrunner",
                 srcs=["testrunner.clj"],
                 resource_strip_prefix="src",
                 aot=["rules-clojure.testrunner"],
-                deps=["@rules_clojure_maven//:org_clojure_clojure"])
+                deps=["@rules_clojure_maven//:org_clojure_clojure",
+                      "@rules_clojure_maven//:org_clojure_spec_alpha",
+                      "@rules_clojure_maven//:org_clojure_core_specs_alpha"])
 
 ## files needed for the clj toolchain
 filegroup(name="toolchain_files",
