@@ -69,7 +69,8 @@ def cljs_impl(ctx):
 
     arguments = ["-m", "cljs.main"]
     if len(ctx.files.compile_opts_files) > 0:
-        arguments += ["-co", " ".join([f.path for f in ctx.files.compile_opts_files])]
+        for f in ctx.files.compile_opts_files:
+          arguments += ["-co", f.path]
 
     if len(ctx.attr.compile_opts_strs) > 0:
         arguments += ["-co"] + [ctx.expand_make_variables("compile_opt_strs", s, ctx.var) for s in ctx.attr.compile_opts_strs]
