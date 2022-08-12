@@ -144,5 +144,5 @@ def clojure_gen_namespace_loader(name, output_filename, output_ns_name, output_f
                            ":output-ns-name", output_ns_name,
                            ":output-fn-name", output_fn_name,
                            ":in-dirs", "[%s]" % " ".join(["\\\"%s\\\"" % d for d in in_dirs]),
-                           ":exclude-nses", "[%s]" % " ".join(exclude_nses),
+                           ":exclude-nses", "'[%s]'" % " ".join(exclude_nses),
                            ":platform", platform])
