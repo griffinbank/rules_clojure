@@ -1,3 +1,4 @@
+load("@rules_clojure//rules:dep_graph.bzl", "JavaDepGraphInfo")
 
 def contains(lst, item):
     for x in lst:
@@ -96,7 +97,6 @@ def clojure_jar_impl(ctx):
     runfiles = ctx.runfiles(files = ctx.files.data)
 
     for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.data + ctx.attr.compiledeps + ctx.attr._shimdandy_classpath:
-        runfiles = runfiles.merge(dep[DefaultInfo].default_runfiles)
         if JavaInfo in dep:
             compile_deps.append(dep[JavaInfo])
 
@@ -141,7 +141,6 @@ def clojure_jar_impl(ctx):
 
     javaopts_str = " ".join(ctx.attr.javacopts)
 
-
     compile_args = {"classes-dir": classes_dir.path,
                     "output-jar": output_jar.path,
                     "src-dir": src_dir,
@@ -167,6 +166,7 @@ def clojure_jar_impl(ctx):
         mnemonic = "ClojureCompile",
         progress_message = "Compiling %s" % ctx.label,
         execution_requirements={"supports-workers":"1",
+                                "supports-multiplex-workers": "1",
                                 "requires-worker-protocol" : "json"})
 
     return [

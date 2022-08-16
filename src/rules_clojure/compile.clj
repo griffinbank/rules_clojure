@@ -1,6 +1,7 @@
 (ns rules-clojure.compile
-  (:require [clojure.string]
-            [clojure.java.io :as io]))
+  (:require [clojure.string :as str]
+            [clojure.java.io :as io])
+  (:import java.util.regex.Pattern))
 
 (defn deftype? [ns v]
   (and (class? v)
@@ -66,7 +67,9 @@
   (let [[src-path src-resource] (src-resource ns)]
     (assert src-resource)
     (with-open [rdr (clojure.java.io/reader src-resource)]
-      (binding [*compile-files* true]
+      (binding [*out* *err*
+                *compile-files* true]
+        (println "Compiler LOADER:" (clojure.lang.RT/baseLoader))
         (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last))))))
 
 (defn non-transitive-compile [dep-nses ns]

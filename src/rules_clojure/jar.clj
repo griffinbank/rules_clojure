@@ -68,8 +68,10 @@
        (into {})))
 
 (defn get-ns-decl [all-ns-decls ns]
-  {:post [(do (when-not % (println "could not find ns-decl for" ns)) true) %]}
-  (get all-ns-decls ns))
+  (let [ret (get all-ns-decls ns)]
+    (when-not ret
+      (assert false (print-str "could not find ns-decl for" ns)))
+    ret))
 
 (defn classpath-resources [classpath]
   {:pre [(every? fs/file? classpath)]}
@@ -118,10 +120,11 @@
 ;; Doesn't take `::srcs`, assumes they are already on the classpath
 (s/def ::compile (s/keys :req-un [::resources ::aot-nses ::classes-dir ::output-jar] :opt-un [::src-dir]))
 
-(defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses]}]
+(defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses] :as args}]
+  {:pre [(s/valid? ::compile args)]}
   (let [temp (Files/createTempFile (fs/dirname output-jar) (fs/filename output-jar) "jar" (into-array FileAttribute []))
         aot-files (->> classes-dir fs/ls-r (filter (fn [p] (-> p fs/path->file .isFile))))
-        resources (->> resources (map (fn [r] (fs/->path src-dir r))) (filter (fn [p] (-> p fs/path->file .isFile))) (map (fn [p] (fs/path-relative-to src-dir p))))]
+        resources (->> resources (map (fn [r] (fs/->path src-dir r))) (map (fn [p] (fs/path-relative-to src-dir p))))]
 
     (when (and (seq aot-nses) (not (seq aot-files)))
       (assert false (print-str "create-jar" output-jar "aot-nses" aot-nses "but no aot output files:" classes-dir)))
@@ -146,7 +149,7 @@
         (io/copy file jar-os)
         (.closeEntry jar-os)))
     (fs/mv temp output-jar)
-    (assert (fs/exists? output-jar))))
+    (assert (fs/exists? output-jar) (print-str "jar not found:" output-jar))))
 
 (defn direct-deps-of [all-ns-decls ns]
   (mapcat #'parse/deps-from-ns-form (get-ns-decl all-ns-decls ns)))

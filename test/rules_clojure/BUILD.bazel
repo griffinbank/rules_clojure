@@ -2,9 +2,19 @@ load("//:rules.bzl", "clojure_library", "clojure_test")
 
 package(default_visibility = ["//visibility:public"])
 
-clojure_library(name="worker",
-                resources=glob(["*.clj"]))
+clojure_library(name="test-deps",
+                resources=glob(["*.clj"]),
+                deps=["//src/rules_clojure:libworker"],
+                data=["@rules_clojure_maven//:org_clojure_clojure",
+                      "@rules_clojure_maven//:org_clojure_spec_alpha",
+                      "@rules_clojure_maven//:org_clojure_core_specs_alpha",
+                      "@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_api",
+                      "@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl"])
 
-clojure_test(name="worker_test",
-             deps=[":worker"],
+clojure_test(name="worker-test",
+             deps=[":test-deps"],
              test_ns = "rules-clojure.worker")
+
+clojure_test(name="persistent-classloader-test",
+             deps=[":test-deps"],
+             test_ns = "rules-clojure.persistent-classloader")

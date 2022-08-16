@@ -17,36 +17,8 @@ clojure_library = rule(
                                             default=Label("@rules_clojure//src/rules_clojure:worker"), executable = True, cfg="exec"),
 
         "_shimdandy_classpath": attr.label_list(doc="",
-                                                cfg="exec",
                                                 default = [Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_api"),
-                                                           Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")]),
-        },
-    provides = [JavaInfo],
-    implementation = _clojure_jar_impl,
-)
-
-clojure_library_bootstrap = rule(
-    doc = "Used to AOT the clojure worker",
-    attrs = {
-        "srcs": attr.label_list(default = [], allow_files = True),
-        "deps": attr.label_list(default = [], providers = [[JavaInfo]]),
-        "runtime_deps": attr.label_list(default = [], providers = [[JavaInfo]]),
-        "data": attr.label_list(default = [], allow_files = True),
-        "resources": attr.label_list(default=[], allow_files=True),
-        "aot": attr.string_list(default = [], doc = "namespaces to be compiled"),
-        "resource_strip_prefix": attr.string(default = ""),
-        "compiledeps": attr.label_list(default = []),
-        "javacopts": attr.string_list(default = [], allow_empty = True, doc = "Optional javac compiler options"),
-
-        "_clojureworker_binary": attr.label(doc="Label for the ClojureWorker binary",
-                                            default=Label("@rules_clojure//src/rules_clojure:worker-bootstrap"), executable = True, cfg="exec"),
-        "_shimdandy_classpath": attr.label_list(doc="",
-                                                cfg="exec",
-                                                default = [Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_api"),
-                                                           Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")]),
-        "_default_clojure_classpath": attr.label_list(doc="clojure jar(s) to use if the target doesn't specify",
-                                                      cfg="exec",
-                                                      default = [Label("@rules_clojure_maven//:org_clojure_clojure")])
+                                                           Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")])
     },
     provides = [JavaInfo],
     implementation = _clojure_jar_impl)

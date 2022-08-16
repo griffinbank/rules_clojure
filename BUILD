@@ -7,5 +7,5 @@ exports_files(["deps.edn"])
 java_binary(name="repl",
             main_class="clojure.main",
             args=["-r"],
-            runtime_deps=["//src/rules_clojure:worker-lib",
-                          "//test/rules_clojure:worker"])
+            runtime_deps=["//src/rules_clojure:libworker",
+                          "//test/rules_clojure:test-deps"])
