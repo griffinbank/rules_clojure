@@ -32,9 +32,12 @@
 
 (defn compile-path-files []
   (-> *compile-path*
-      (clojure.java.io/file)
+      io/file
       file-seq
-      (rest)))
+      (->>
+       (filter (fn [f]
+                 (.isFile f)))
+       (rest))))
 
 (defn aot-class-name [ns]
   (str (.substring (#'clojure.core/root-resource ns) 1) "__init.class"))
@@ -66,11 +69,11 @@
   [ns]
   (let [[src-path src-resource] (src-resource ns)]
     (assert src-resource)
-    (with-open [rdr (clojure.java.io/reader src-resource)]
-      (binding [*out* *err*
-                *compile-files* true]
-        (println "Compiler LOADER:" (clojure.lang.RT/baseLoader))
-        (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last))))))
+    (try
+      (with-open [rdr (clojure.java.io/reader src-resource)]
+        (binding [*out* *err*
+                  *compile-files* true]
+          (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last)))))))
 
 (defn non-transitive-compile [dep-nses ns]
   {:pre [(every? symbol? dep-nses)
@@ -82,16 +85,14 @@
 
   (let [aot-class-resource (clojure.java.io/resource (aot-class-name ns))
         loaded (loaded-libs)]
-    (try
-      (if (not (contains? loaded ns))
-        (do
-          (unconditional-compile ns)
-          (assert (seq (compile-path-files)) (print-str "no classfiles generated for" ns *compile-path* "loaded:" loaded))
-          (when (or (contains-protocols? ns)
-                    (contains-deftypes? ns))
-            (str :rules-clojure.compile/reload)))
-        (do
-          (str :rules-clojure.compile/restart)))
+    (unconditional-compile ns)
+    (assert (seq (compile-path-files)) (print-str "no classfiles generated for" ns *compile-path* "loaded:" loaded))))
 
-      (catch Throwable t
-        (throw (ex-info (print-str "while compiling" ns) {:loaded loaded} t))))))
+(defn non-transitive-compile-json [dep-nses ns]
+  (let [baos (java.io.ByteArrayOutputStream.)
+        out-printer (java.io.PrintWriter. baos true java.nio.charset.StandardCharsets/UTF_8)]
+    (binding [*out* out-printer
+              *err* out-printer]
+      (non-transitive-compile dep-nses ns)
+      (.flush out-printer)
+      (str (str baos)))))

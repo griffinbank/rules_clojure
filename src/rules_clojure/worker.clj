@@ -5,7 +5,7 @@
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [rules-clojure.jar :as jar]
-            [rules-clojure.persistent-classloader :refer [new-classloader]])
+            [rules-clojure.persistent-classloader :as pcl ])
   (:import java.nio.charset.StandardCharsets))
 
 (s/def ::classes-dir string?) ;; path to the *compile-files* dir
@@ -24,8 +24,15 @@
                                           ::srcs
                                           ::src-dir]))
 
-(def ^:const RUNTIME_SHIM_CLASS
-  "org.projectodd.shimdandy.impl.ClojureRuntimeShimImpl")
+(s/def ::arguments (s/cat :c ::compile-req))
+
+(s/def ::requestId nat-int?)
+(s/def ::exit_code nat-int?)
+(s/def ::output string?)
+
+;; requestId is not present in singleplex mode, required in multiplex mode. We don't have a good way of detecting which mode we're running in, so mark it optional
+(s/def ::work-request (s/keys :req-un [::arguments] :opt-un [::requestId]))
+(s/def ::work-response (s/keys :req-un [::exit_code ::output] :opt-un [::requestId]))
 
 (defn all-dep-map-jars [dep-map]
   (apply set/union (set (keys dep-map)) (set (vals dep-map))))
@@ -37,103 +44,112 @@
   (binding [*out* *err*]
     (apply println args)))
 
-(defn compile-env
-  "Create a new compile env. The classpath must contain ShimDandy impl and Clojure"
-  [classpath]
-  {:pre [(s/valid? (s/coll-of string?) classpath)]
-   :post [(:shimdandy %)
-          (:classloader %)]}
-  (let [classloader (new-classloader classpath)]
-    {:classloader classloader
-     :shimdandy  (try
-                   (doto (.newInstance (.loadClass classloader RUNTIME_SHIM_CLASS))
-                    (.setClassLoader classloader)
-                    (.setName (name (gensym "compiler")))
-                    (.init))
-                   (catch ClassNotFoundException e
-                     (println "compile env failed:")
-                     (println e)
-                     (throw e)))}))
+(defmacro with-context-classloader [cl & body]
+  `(let [old-cl# (.getContextClassLoader (Thread/currentThread))]
+     (try
+       (.setContextClassLoader (Thread/currentThread) ~cl)
+       ~@body
+       (finally
+         (.setContextClassLoader (Thread/currentThread) old-cl#)))))
+
+(defn bind-compiler-loader [cl]
+  (with-context-classloader cl
+    (let [compiler (.loadClass cl "clojure.lang.Compiler")
+          var (.loadClass cl "clojure.lang.Var")
+          loader-f (.getDeclaredField compiler "LOADER")
+          loader (.get loader-f compiler)
+          bind-root-m (.getDeclaredMethod var "bindRoot" (into-array Class [Object]))]
+      (println "bind compiler loader: loader" loader)
+      (.invoke bind-root-m loader (into-array Object [cl])))))
+
+(defn shim-init [cl]
+  (with-context-classloader cl
+    (let [rt (.loadClass cl "clojure.lang.RT")
+         init-m (.getDeclaredMethod rt "init" (into-array Class []))]
+     (.invoke init-m rt (into-array Object [])))))
+
+(defn shim-var [cl ns name]
+  (with-context-classloader cl
+    (let [Clj (.loadClass cl "clojure.java.api.Clojure")
+          m (.getDeclaredMethod Clj "var" (into-array Class [Object Object]))]
+      (.invoke m Clj (into-array Object [ns name])))))
 
 (defn shim-invoke
-  ([env f]
-   (.invoke (:shimdandy env) f))
-  ([env f arg]
-   (assert (:shimdandy env))
-   (assert f)
-   (.invoke (:shimdandy env) f arg)))
+  [cl ns name & args]
+  (with-context-classloader cl
+    (let [v (shim-var cl ns name)
+          ifn (.loadClass cl "clojure.lang.IFn")
+          m (.getDeclaredMethod ifn "invoke" (into-array Class (take (count args) (repeat Object))))]
+      (.invoke m v (into-array Object args)))))
 
-(defn shim-require [env ns]
-  (.require (:shimdandy env) (into-array String [ns])))
+(defn shim-deref [cl ns name]
+  (with-context-classloader cl
+    (let [v (shim-var cl ns name)
+          ifn (.loadClass cl "clojure.lang.IFn")
+          m (.getDeclaredMethod ifn "deref" (into-array Class []))]
+      (.invoke m v))))
+
+(defn shim-eval [cl s]
+  (with-context-classloader cl
+    (let [script (shim-invoke cl "clojure.core" "read-string" s)]
+      (shim-invoke cl "clojure.core" "eval" script))))
+
+(defn compile-env
+  "Create a new compile env. The classpath must contain Clojure"
+  [classpath]
+  {:pre [(s/valid? (s/coll-of string?) classpath)]}
+  (let [cl (pcl/new-classloader classpath)]
+    ;; we need to force c.l.RT to load before we can bind the compiler loader var
+    (shim-deref cl "clojure.core" "*clojure-version*")
+    (bind-compiler-loader cl)
+    cl))
+
+(defn shim-require [cl ns]
+  (shim-invoke cl "clojure.core" "require" ns))
 
 (defn validate! [spec val]
   (let [explain (s/explain-data spec val)]
     (if explain
-      (throw (ex-info "validation failed:" {:spec spec
-                                            :value val
-                                            :explain explain}))
+      (throw (ex-info "validation failed:" explain))
       val)))
 
-(defn contains-clojure? [jars]
-  (some (fn [j]
-          (re-find #"org/clojure/clojure" j)) jars))
-
 (defn process-request
-  [json]
-  (validate! ::compile-request json)
-
-  (let [env (compile-env (:classpath json))]
-    (shim-require env "clojure.core")
+  [req]
+  (validate! ::compile-request req)
+  (let [cl (pcl/new-classloader (:classpath req))
+        compile-script (jar/get-compilation-script-json req)]
     (try
-      (let [compile-script (jar/get-compilation-script-json json)
-            read-script (shim-invoke env "clojure.core/read-string" compile-script)
-            compile-ret (shim-invoke env "clojure.core/eval" read-script)]
-        (jar/create-jar-json json)))))
+      (let [ret (shim-eval cl compile-script)]
+        (jar/create-jar-json req))
+      (catch Exception e
+        (throw (ex-info "exception while compiling" req e))))))
 
 (defn process-ephemeral [args]
-  (if (seq args)
-    (let [req-json (json/read-str (slurp (io/file (.substring (last args) 1))) :key-fn keyword)]
-      (process-request req-json))
-    (println "WARNING no args")))
+  (let [req-json (json/read-str (slurp (io/file (.substring (last args) 1))) :key-fn keyword)]
+    (process-request req-json)))
 
 (defn process-persistent-1 [{:keys [arguments requestId]}]
   (let [baos (java.io.ByteArrayOutputStream.)
         out-printer (java.io.PrintWriter. baos true StandardCharsets/UTF_8)
         real-out *out*]
-    (binding [*out* out-printer]
-      (let [exit (try
-                   (process-request arguments)
-                   ;; (binding [*out* *err*]
-                   ;;   (println (str baos)))
+    (let [exit (binding [*out* out-printer]
+                 (try
+                   (let [compile-req (json/read-str (first arguments) :key-fn keyword)]
+                     (process-request compile-req))
                    0
                    (catch Throwable t
                      (println t) ;; print to bazel str
-                     ;; (binding [*out* *err*]
-                     ;;   ;; also print to stderr
-                     ;;   (println (str baos)))
-                     1)
-                   ;; (catch Throwable t
-                   ;;   (print-err t)
-                   ;;   (throw t))
-                   )
-            _ (.flush out-printer)
-            resp (merge
-                  {:exit_code exit
-                   :output (str baos)}
-                  (when requestId
-                    {:requestId requestId}))]
-        (print-err "writing" resp)
-        (.write real-out (json/write-str resp))
-        (.flush real-out)))))
-
-(defn keywordize-keys
-  "keyword-ize toplevel keys in a map. non-recursive"
-  [m]
-  (->> m
-       (map (fn [[k v]]
-              [(keyword k) v]))
-       (into {})))
-
+                     1)))
+          _ (.flush out-printer)
+          resp (merge
+                {:exit_code exit
+                 :output (str baos)}
+                (when requestId
+                  {:requestId requestId}))]
+      (print-err "writing" (json/write-str resp) "to" real-out)
+      (.write real-out (json/write-str resp))
+      (.write real-out "\n")
+      (.flush real-out))))
 
 (defn new-work-pool [{:keys [num-processors]}]
   (let [queue (java.util.concurrent.ArrayBlockingQueue. (* num-processors 2))
@@ -153,20 +169,19 @@
   (let [num-processors (-> (Runtime/getRuntime) .availableProcessors)
         {:keys [queue executor]} (new-work-pool {:num-processors num-processors})]
     (loop []
-      (let [work-req-str (read-line)
-            work-req (json/read-str work-req-str :key-fn keyword)
-            _ (print-err "work-req:" work-req)
-            {:keys [arguments requestId]} work-req
-            req-json (when work-req
-                       (json/read-str (first arguments)))
-            req-json (keywordize-keys req-json)]
-        (if req-json
-          (do
-            (.execute executor (fn []
-                                 (process-persistent-1 {:arguments req-json
-                                                        :requestId requestId})))
-            (recur))
-          (println "no request, exiting"))))))
+      (print-err "reading from *in*")
+      (if-let [work-req (json/read-str (read-line) :key-fn keyword)]
+        (let [out *out*
+              err *err*]
+          (.execute executor (fn []
+                               (binding [*out* out
+                                         *err* err]
+                                 (process-persistent-1 work-req))))
+          (recur))
+        (do
+          (print-err "no request, exiting")
+          (.shutdown executor)
+          :exit)))))
 
 (defn set-uncaught-exception-handler! []
   (Thread/setDefaultUncaughtExceptionHandler
@@ -175,6 +190,9 @@
        (print-err ex "uncaught exception")))))
 
 (defn -main [& args]
+  (set-uncaught-exception-handler!)
   (let [persistent? (some (fn [a] (= "--persistent_worker" a)) args)
-        f (if persistent? (fn [_args] (process-persistent)) process-ephemeral)]
+        f (if persistent?
+            (fn [_args] (process-persistent))
+            process-ephemeral)]
     (f args)))

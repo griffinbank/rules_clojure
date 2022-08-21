@@ -118,7 +118,7 @@
 (s/def ::output-jar fs/path?)
 
 ;; Doesn't take `::srcs`, assumes they are already on the classpath
-(s/def ::compile (s/keys :req-un [::resources ::aot-nses ::classes-dir ::output-jar] :opt-un [::src-dir]))
+(s/def ::compile (s/keys :req-un [::aot-nses ::classes-dir ::output-jar] :opt-un [::resources ::src-dir]))
 
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses] :as args}]
   {:pre [(s/valid? ::compile args)]}
@@ -198,18 +198,18 @@
         _ (when (not (= (count nses) (count compile-nses)))
             (println "couldn't find nses:" (set/difference (set nses) (set compile-nses))))
         _ (assert (= (count nses) (count compile-nses)))
-        preamble (get-preamble)
         script (if (seq compile-nses)
-                 `(let [rets# ~(mapv (fn [n] `((ns-resolve (quote ~'rules-clojure.compile) (quote ~'non-transitive-compile)) (quote ~(deps-of n)) (quote ~n))) compile-nses)]
+                 `(let [rets# ~(mapv (fn [n] `((requiring-resolve (quote ~'rules-clojure.compile/non-transitive-compile-json)) (quote ~(deps-of n)) (quote ~n))) compile-nses)]
                     (some identity rets#))
                  nil)]
     (fs/clean-directory (fs/->path classes-dir))
 
-    `(binding [*ns* 'user
-               *compile-path* (str ~classes-dir "/")]
-       (#'clojure.core/load-data-readers)
-       ~@(get-preamble)
-       ~script)))
+    `(do
+       (create-ns (quote ~'user))
+       (binding [*ns* (find-ns (quote ~'user))
+                *compile-path* (str ~classes-dir "/")]
+        (#'clojure.core/load-data-readers)
+        ~script))))
 
 (s/fdef compile! :args ::compile)
 (defn create-jar!

@@ -16,9 +16,7 @@ clojure_library = rule(
         "_clojureworker_binary": attr.label(doc="Label for the ClojureWorker binary",
                                             default=Label("@rules_clojure//src/rules_clojure:worker"), executable = True, cfg="exec"),
 
-        "_shimdandy_classpath": attr.label_list(doc="",
-                                                default = [Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_api"),
-                                                           Label("@rules_clojure_maven//:org_projectodd_shimdandy_shimdandy_impl")])
+        "_compile_classpath": attr.label_list(doc="extra jars to go in the compile env", default = [Label("@rules_clojure//src/rules_clojure:libcompile")])
     },
     provides = [JavaInfo],
     implementation = _clojure_jar_impl)

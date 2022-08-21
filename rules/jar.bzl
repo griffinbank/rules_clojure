@@ -1,5 +1,3 @@
-load("@rules_clojure//rules:dep_graph.bzl", "JavaDepGraphInfo")
-
 def contains(lst, item):
     for x in lst:
         if x == item:
@@ -96,7 +94,7 @@ def clojure_jar_impl(ctx):
 
     runfiles = ctx.runfiles(files = ctx.files.data)
 
-    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.data + ctx.attr.compiledeps + ctx.attr._shimdandy_classpath:
+    for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.data + ctx.attr.compiledeps + ctx.attr._compile_classpath:
         if JavaInfo in dep:
             compile_deps.append(dep[JavaInfo])
 
@@ -146,7 +144,6 @@ def clojure_jar_impl(ctx):
                     "src-dir": src_dir,
                     "srcs": [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.srcs],
                     "resources": [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.resources],
-                    "shimdandy-classpath": [f.path for f in ctx.files._shimdandy_classpath],
                     "aot-nses": aot_nses,
                     "classpath": compile_classpath}
 

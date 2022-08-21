@@ -4,45 +4,49 @@ load("//:rules.bzl", "clojure_library", "clojure_binary")
 
 exports_files(glob(["*.clj"]))
 
-worker_srcs = ["bootstrap.clj",
+java_binary(
+    name="bootstrap-deps",
+    resources=["bootstrap.clj",
                "compile.clj",
                "fs.clj",
                "jar.clj",
                "worker.clj",
                "parse.clj",
-               "persistent_classloader.clj"]
-worker_deps = ["@rules_clojure_maven//:org_clojure_clojure",
-               "@rules_clojure_maven//:org_clojure_spec_alpha",
-               "@rules_clojure_maven//:org_clojure_core_specs_alpha",
-               "@rules_clojure_maven//:org_clojure_core_cache",
-               "@rules_clojure_maven//:org_clojure_data_json",
-               "@rules_clojure_maven//:org_clojure_java_classpath",
-               "@rules_clojure_maven//:org_clojure_tools_namespace"]
+               "persistent_classloader.clj",
+               "persistentClassLoader.clj"],
 
-java_binary(
-    name="worker-bootstrap-deps",
-    resources=worker_srcs,
     main_class="clojure.main",
     jvm_flags=["-Dclojure.main.report=stderr",
-               "-cp $${CLASSPATH}:classes"],
+               "-cp $${CLASSPATH}:worker-classes"],
     resource_strip_prefix="src",
-    runtime_deps=worker_deps)
+    runtime_deps=["@rules_clojure_maven//:org_clojure_clojure",
+                  "@rules_clojure_maven//:org_clojure_spec_alpha",
+                  "@rules_clojure_maven//:org_clojure_core_specs_alpha",
+                  "@rules_clojure_maven//:org_clojure_core_cache",
+                  "@rules_clojure_maven//:org_clojure_data_json",
+                  "@rules_clojure_maven//:org_clojure_java_classpath",
+                  "@rules_clojure_maven//:org_clojure_tools_namespace"])
 
 genrule(
     name="bootstrap",
-    exec_tools=["worker-bootstrap-deps"],
-    srcs=["compile.clj"],
+    exec_tools=["bootstrap-deps"],
     cmd="""
-    mkdir -p classes
-    $(location :worker-bootstrap-deps) -m rules-clojure.bootstrap $(location compile.clj) $(location :libworker.jar)
+    mkdir -p worker-classes
+    mkdir -p compile-classes
+    $(location :bootstrap-deps) -m rules-clojure.bootstrap $(location :libworker.jar) $(location :libcompile.jar)
     """,
-    outs=["libworker.jar"])
+    outs=["libworker.jar",
+          "libcompile.jar"])
 
 java_import(name="libworker",
             jars=["libworker.jar"],
             runtime_deps=["@rules_clojure_maven//:org_clojure_clojure",
                           "@rules_clojure_maven//:org_clojure_spec_alpha",
                           "@rules_clojure_maven//:org_clojure_core_specs_alpha"],
+            data=[":bootstrap"])
+
+java_import(name="libcompile",
+            jars=["libcompile.jar"],
             data=[":bootstrap"])
 
 java_binary(name="worker",
