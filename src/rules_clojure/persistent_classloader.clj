@@ -47,7 +47,7 @@
                                (if-let [cl (get cache key)]
                                  (do
                                    (reset! claimed cl)
-                                   (dissoc cache nil))
+                                   (dissoc cache key))
                                  (do
                                    (reset! claimed nil)
                                    cache))))

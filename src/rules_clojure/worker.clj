@@ -151,32 +151,19 @@
       (.write real-out "\n")
       (.flush real-out))))
 
-(defn new-work-pool [{:keys [num-processors]}]
-  (let [queue (java.util.concurrent.ArrayBlockingQueue. (* num-processors 2))
-        executor (java.util.concurrent.ThreadPoolExecutor. num-processors
-                                                           num-processors
-                                                           1
-                                                           java.util.concurrent.TimeUnit/SECONDS
-                                                           queue
-                                                           (reify java.util.concurrent.RejectedExecutionHandler
-                                                             (rejectedExecution [this runnable executor]
-                                                               (print-err "rejected")
-                                                               (assert false))))]
-    {:queue queue
-     :executor executor}))
-
 (defn process-persistent []
   (let [num-processors (-> (Runtime/getRuntime) .availableProcessors)
-        {:keys [queue executor]} (new-work-pool {:num-processors num-processors})]
+        executor (java.util.concurrent.Executors/newSingleThreadExecutor) ;; (java.util.concurrent.Executors/newWorkStealingPool num-processors)
+        ]
     (loop []
       (print-err "reading from *in*")
       (if-let [work-req (json/read-str (read-line) :key-fn keyword)]
         (let [out *out*
               err *err*]
-          (.execute executor (fn []
-                               (binding [*out* out
-                                         *err* err]
-                                 (process-persistent-1 work-req))))
+          (.submit executor ^Runnable (fn []
+                                        (binding [*out* out
+                                                  *err* err]
+                                          (process-persistent-1 work-req))))
           (recur))
         (do
           (print-err "no request, exiting")
