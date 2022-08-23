@@ -102,6 +102,7 @@
     ;; we need to force c.l.RT to load before we can bind the compiler loader var
     (shim-deref cl "clojure.core" "*clojure-version*")
     (bind-compiler-loader cl)
+
     cl))
 
 (defn shim-require [cl ns]
@@ -153,7 +154,8 @@
 
 (defn process-persistent []
   (let [num-processors (-> (Runtime/getRuntime) .availableProcessors)
-        executor (java.util.concurrent.Executors/newSingleThreadExecutor) ;; (java.util.concurrent.Executors/newWorkStealingPool num-processors)
+        executor ;; (java.util.concurrent.Executors/newSingleThreadExecutor)
+        (java.util.concurrent.Executors/newWorkStealingPool num-processors)
         ]
     (loop []
       (print-err "reading from *in*")

@@ -88,4 +88,11 @@
 (defn new-classloader-naive [classpath]
   (new-classloader- classpath))
 
-(def new-classloader new-classloader-cache)
+(def dirty-classloader (new-classloader- []))
+
+(defn new-classloader-dirty-fast [classpath]
+  (doseq [p classpath]
+    (add-url dirty-classloader p))
+  dirty-classloader)
+
+(def new-classloader new-classloader-dirty-fast)
