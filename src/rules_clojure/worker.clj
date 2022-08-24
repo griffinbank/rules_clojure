@@ -119,6 +119,7 @@
   (validate! ::compile-request req)
   (let [cl (pcl/new-classloader (:classpath req))
         compile-script (jar/get-compilation-script-json req)]
+    (print-err "script:" compile-script)
     (try
       (let [ret (shim-eval cl compile-script)]
         (jar/create-jar-json req))

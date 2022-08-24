@@ -199,7 +199,11 @@
             (println "couldn't find nses:" (set/difference (set nses) (set compile-nses))))
         _ (assert (= (count nses) (count compile-nses)))
         script (if (seq compile-nses)
-                 `(let [rets# ~(mapv (fn [n] `((requiring-resolve (quote ~'rules-clojure.compile/non-transitive-compile-json)) (quote ~(deps-of n)) (quote ~n))) compile-nses)]
+                 `(let [rets# ~(mapv (fn [n] `(do
+                                                (require (quote ~'rules-clojure.compile))
+                                                (let [ntc# (ns-resolve (quote ~'rules-clojure.compile) (quote ~'non-transitive-compile-json))]
+                                                  (assert ntc#)
+                                                  (ntc# (quote ~(deps-of n)) (quote ~n))))) compile-nses)]
                     (some identity rets#))
                  nil)]
     (fs/clean-directory (fs/->path classes-dir))

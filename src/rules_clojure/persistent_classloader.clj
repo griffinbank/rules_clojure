@@ -28,8 +28,18 @@
   (binding [*out* *err*]
     (apply println args)))
 
+(defn new-classloader-slow-naive [classpath]
+  (new-classloader- classpath))
+
 (defn add-url [cl p]
   (.addURL cl (-> p io/file .toURL)))
+
+(def dirty-classloader (new-classloader- []))
+
+(defn new-classloader-dirty-fast [classpath]
+  (doseq [p classpath]
+    (add-url dirty-classloader p))
+  dirty-classloader)
 
 ;; set of cp jars to a SoftReference to classloader
 (def classloader-cache (atom {}))
@@ -63,6 +73,11 @@
 (defn jar? [path]
   (re-find #".jar$" path))
 
+(defn clojure? [path]
+  (or (re-find #"org/clojure/clojure/.*.jar$" path)
+      (re-find #"org/clojure/spec.alpha/.*.jar$" path)
+      (re-find #"org/clojure/core.specs.alpha/.*.jar$" path)))
+
 (defn new-classloader-cache [classpath]
   {:pre [(every? string? classpath)]}
   (let [cp-desired (set classpath)
@@ -85,14 +100,90 @@
     (cache-classloader cp-jars new-cache-cl)
     (new-classloader- cp-dirs new-cache-cl)))
 
-(defn new-classloader-naive [classpath]
-  (new-classloader- classpath))
+;; (defn compiler-loader-bound? [cl]
+;;   (let [compiler (.loadClass cl "clojure.lang.Compiler")
+;;         var-class (.loadClass cl "clojure.lang.Var")
+;;         loader-field (.getField compiler "LOADER")
+;;         loader-var (.get loader-field compiler)
+;;         bound-m (.getDeclaredMethod var-class "isBound" (into-array Class []))]
+;;     (.invoke bound-m loader-var (into-array Object []))))
 
-(def dirty-classloader (new-classloader- []))
+;; (defn force-rt-load
+;;   "make sure clojure.lang.RT is loaded"
+;;   [cl]
+;;   (let [compiler (.loadClass cl "clojure.lang.RT")
+;;         bool-f (.getField compiler "T")]
+;;     (.get bool-f compiler)))
 
-(defn new-classloader-dirty-fast [classpath]
-  (doseq [p classpath]
-    (add-url dirty-classloader p))
-  dirty-classloader)
+;; (defn compiler-bind-loader [cl]
+;;   (let [dcl-c (.loadClass cl "clojure.lang.RT")
+;;         dcl-constructor (.getConstructor dcl-c (into-array Class []))
+;;         dcl (.newInstance dcl-constructor (into-array Object []))
+;;         compiler-c (.loadClass cl "clojure.lang.Compiler")
+;;         var-c (.loadClass cl "clojure.lang.Var")
+;;         loader-f (.getField compiler-c "LOADER")
+;;         loader (.get compiler-c)
+;;         bindroot-m (.getDeclaredMethod var-c "bindRoot" (into-array Class [Object]))]
+;;     (.invoke bindroot-m loader (into-array Object [dcl]))))
 
-(def new-classloader new-classloader-dirty-fast)
+;; (defn ensure-loader-bound
+;;   "Ensure the clojure.lang.Compiler/LOADER is bound"
+;;   [cl]
+;;   (if (not (dcl-bound? )))
+;;   )
+
+;; (defn dcl-get-loader
+;;   "Return the c.l.DCL instance attached to c.l.Compiler/LOADER"
+;;   [cl]
+;;   {:post [(do (println "get-loader:" %) true)(instance? ClassLoader %)]}
+;;   (force-rt-load cl)
+;;   (let [compiler (.loadClass cl "clojure.lang.Compiler")
+;;         var-class (.loadClass cl "clojure.lang.Var")
+;;         loader-field (.getField compiler "LOADER")
+;;         loader-var (.get loader-field compiler)
+;;         deref-m (.getDeclaredMethod var-class "deref" (into-array Class []))]
+;;     (.invoke deref-m loader-var (into-array Object []))))
+
+;; (defn dcl-add-url [cl p]
+;;   (force-rt-load cl)
+;;   ;; (ensure-loader-bound cl)
+
+;;   (let [dcl-class (.loadClass cl "clojure.lang.DynamicClassLoader")
+
+;;         dcl (dcl-get-loader cl)
+;;         add-url-m (.getDeclaredMethod dcl-class "addURL" (into-array Class [URL]))]
+;;     (println "dcl:" dcl)
+;;     (assert dcl)
+
+;;     (.invoke add-url-m dcl (into-array Object [p]))))
+
+;; (defn gav-map
+;;   "given a seq of classpath entries, attempt to parse out Maven Group Artifact Version coordinates. Returns a map of GA to V, for successful parses"
+;;   [classpath]
+;;   )
+
+;; (defn new-classloader-dcl [classpath]
+;;   (println "new-classloader-dcl:" classpath)
+;;   (let [cp-desired (set classpath)
+;;         ;; dirs will never be cached, so exclude
+;;         cp-clojure (set (filter clojure? classpath))
+;;         cp-jars (set (filter (fn [p] (and (jar? p) (not (clojure? p)))) cp-desired))
+;;         cp-dirs (set (filter (fn [p] (not (jar? p))) cp-desired))
+;;         caches (->> @classloader-cache
+;;                     (filter (fn [[k _ref]]
+;;                               (= #{} (set/difference k cp-clojure)))))
+;;         cp-parent (when (seq caches)
+;;                     (let [[cp-parent parent-ref] (apply max-key (fn [[cp-cache cl-ref]]
+;;                                                                   (count cp-cache)) caches)]
+;;                       cp-parent))
+;;         new-cache-cl (if-let [pcl (and cp-parent (.get (claim-classloader cp-parent)))]
+;;                        pcl
+;;                        (do
+;;                          (println "new classloader" cp-clojure)
+;;                          (new-classloader- cp-clojure)))]
+;;     (doseq [p cp-jars]
+;;       (dcl-add-url new-cache-cl p))
+;;     (cache-classloader cp-jars new-cache-cl)
+;;     (new-classloader- cp-dirs new-cache-cl)))
+
+(def new-classloader new-classloader-cache)
