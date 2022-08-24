@@ -5,6 +5,7 @@
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [rules-clojure.jar :as jar]
+            [rules-clojure.util :as util]
             [rules-clojure.persistent-classloader :as pcl ])
   (:import java.nio.charset.StandardCharsets))
 
@@ -40,89 +41,16 @@
 (defn all-classpath-jars [classpath]
   (set classpath))
 
-(defn print-err [& args]
-  (binding [*out* *err*]
-    (apply println args)))
-
-(defmacro with-context-classloader [cl & body]
-  `(let [old-cl# (.getContextClassLoader (Thread/currentThread))]
-     (try
-       (.setContextClassLoader (Thread/currentThread) ~cl)
-       ~@body
-       (finally
-         (.setContextClassLoader (Thread/currentThread) old-cl#)))))
-
-(defn bind-compiler-loader [cl]
-  (with-context-classloader cl
-    (let [compiler (.loadClass cl "clojure.lang.Compiler")
-          var (.loadClass cl "clojure.lang.Var")
-          loader-f (.getDeclaredField compiler "LOADER")
-          loader (.get loader-f compiler)
-          bind-root-m (.getDeclaredMethod var "bindRoot" (into-array Class [Object]))]
-      (println "bind compiler loader: loader" loader)
-      (.invoke bind-root-m loader (into-array Object [cl])))))
-
-(defn shim-init [cl]
-  (with-context-classloader cl
-    (let [rt (.loadClass cl "clojure.lang.RT")
-         init-m (.getDeclaredMethod rt "init" (into-array Class []))]
-     (.invoke init-m rt (into-array Object [])))))
-
-(defn shim-var [cl ns name]
-  (with-context-classloader cl
-    (let [Clj (.loadClass cl "clojure.java.api.Clojure")
-          m (.getDeclaredMethod Clj "var" (into-array Class [Object Object]))]
-      (.invoke m Clj (into-array Object [ns name])))))
-
-(defn shim-invoke
-  [cl ns name & args]
-  (with-context-classloader cl
-    (let [v (shim-var cl ns name)
-          ifn (.loadClass cl "clojure.lang.IFn")
-          m (.getDeclaredMethod ifn "invoke" (into-array Class (take (count args) (repeat Object))))]
-      (.invoke m v (into-array Object args)))))
-
-(defn shim-deref [cl ns name]
-  (with-context-classloader cl
-    (let [v (shim-var cl ns name)
-          ifn (.loadClass cl "clojure.lang.IFn")
-          m (.getDeclaredMethod ifn "deref" (into-array Class []))]
-      (.invoke m v))))
-
-(defn shim-eval [cl s]
-  (with-context-classloader cl
-    (let [script (shim-invoke cl "clojure.core" "read-string" s)]
-      (shim-invoke cl "clojure.core" "eval" script))))
-
-(defn compile-env
-  "Create a new compile env. The classpath must contain Clojure"
-  [classpath]
-  {:pre [(s/valid? (s/coll-of string?) classpath)]}
-  (let [cl (pcl/new-classloader classpath)]
-    ;; we need to force c.l.RT to load before we can bind the compiler loader var
-    (shim-deref cl "clojure.core" "*clojure-version*")
-    (bind-compiler-loader cl)
-
-    cl))
-
-(defn shim-require [cl ns]
-  (shim-invoke cl "clojure.core" "require" ns))
-
-(defn validate! [spec val]
-  (let [explain (s/explain-data spec val)]
-    (if explain
-      (throw (ex-info "validation failed:" explain))
-      val)))
-
 (defn process-request
-  [req]
-  (validate! ::compile-request req)
-  (let [cl (pcl/new-classloader (:classpath req))
+  [{:keys [classloader-strategy] :as req}]
+  (util/validate! ::compile-request req)
+  (let [cl (pcl/get-classloader classloader-strategy (:classpath req))
         compile-script (jar/get-compilation-script-json req)]
-    (print-err "script:" compile-script)
+    (util/print-err "script:" compile-script)
     (try
-      (let [ret (shim-eval cl compile-script)]
-        (jar/create-jar-json req))
+      (let [ret (util/shim-eval cl compile-script)]
+        (jar/create-jar-json req)
+        (pcl/return-classloader classloader-strategy (:aot-nses req) (:classpath req) cl))
       (catch Exception e
         (throw (ex-info "exception while compiling" req e))))))
 
@@ -130,14 +58,14 @@
   (let [req-json (json/read-str (slurp (io/file (.substring (last args) 1))) :key-fn keyword)]
     (process-request req-json)))
 
-(defn process-persistent-1 [{:keys [arguments requestId]}]
+(defn process-persistent-1 [{:keys [arguments requestId classloader-strategy]}]
   (let [baos (java.io.ByteArrayOutputStream.)
         out-printer (java.io.PrintWriter. baos true StandardCharsets/UTF_8)
         real-out *out*]
     (let [exit (binding [*out* out-printer]
                  (try
                    (let [compile-req (json/read-str (first arguments) :key-fn keyword)]
-                     (process-request compile-req))
+                     (process-request (assoc compile-req :classloader-strategy classloader-strategy)))
                    0
                    (catch Throwable t
                      (println t) ;; print to bazel str
@@ -148,28 +76,28 @@
                  :output (str baos)}
                 (when requestId
                   {:requestId requestId}))]
-      (print-err "writing" (json/write-str resp) "to" real-out)
+      (util/print-err "writing" (json/write-str resp) "to" real-out)
       (.write real-out (json/write-str resp))
       (.write real-out "\n")
       (.flush real-out))))
 
 (defn process-persistent []
   (let [num-processors (-> (Runtime/getRuntime) .availableProcessors)
-        executor ;; (java.util.concurrent.Executors/newSingleThreadExecutor)
-        (java.util.concurrent.Executors/newWorkStealingPool num-processors)
-        ]
+        executor (java.util.concurrent.Executors/newWorkStealingPool num-processors)
+        classloader-strategy (pcl/caching-clean)]
     (loop []
-      (print-err "reading from *in*")
+      (util/print-err "reading from *in*")
       (if-let [work-req (json/read-str (read-line) :key-fn keyword)]
         (let [out *out*
               err *err*]
           (.submit executor ^Runnable (fn []
                                         (binding [*out* out
                                                   *err* err]
-                                          (process-persistent-1 work-req))))
+                                          (process-persistent-1 (assoc work-req
+                                                                       :classloader-strategy classloader-strategy)))))
           (recur))
         (do
-          (print-err "no request, exiting")
+          (util/print-err "no request, exiting")
           (.shutdown executor)
           :exit)))))
 
@@ -177,7 +105,7 @@
   (Thread/setDefaultUncaughtExceptionHandler
    (reify Thread$UncaughtExceptionHandler
      (uncaughtException [_ _ ex]
-       (print-err ex "uncaught exception")))))
+       (util/print-err ex "uncaught exception")))))
 
 (defn -main [& args]
   (set-uncaught-exception-handler!)

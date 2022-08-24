@@ -18,10 +18,15 @@
        (map? (:method-map val))))
 
 (defn contains-protocols? [ns]
-         (->> ns
-              ns-interns
-              vals
-              (some protocol?)))
+  (assert (find-ns ns) (print-str ns "is not loaded"))
+  (->> ns
+       ns-interns
+       vals
+       (map (fn [x]
+              (if (var? x)
+                (deref x)
+                x)))
+       (some protocol?)))
 
 (defn contains-deftypes? [ns]
   (->> ns

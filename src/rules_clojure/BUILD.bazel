@@ -13,7 +13,8 @@ java_binary(
                "worker.clj",
                "parse.clj",
                "persistent_classloader.clj",
-               "persistentClassLoader.clj"],
+               "persistentClassLoader.clj",
+               "util.clj"],
 
     main_class="clojure.main",
     jvm_flags=["-Dclojure.main.report=stderr",
@@ -51,7 +52,9 @@ java_import(name="libcompile",
 
 java_binary(name="worker",
             main_class="clojure.main",
-            jvm_flags=["-Dclojure.main.report=stderr"],
+            jvm_flags=["-Dclojure.main.report=stderr",
+                       "-Xmx500m",
+                       "-XX:MaxMetaspaceSize=2g"],
             runtime_deps=["libworker"])
 
 clojure_library(

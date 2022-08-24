@@ -1,13 +1,13 @@
 (ns rules-clojure.persistent-classloader-test
   (:require [clojure.test :refer :all]
-            [rules-clojure.persistent-classloader :as pcl :refer [new-classloader]]
+            [rules-clojure.persistent-classloader :as pcl]
             [rules-clojure.persistentClassLoader])
   (:import java.lang.ClassLoader
            java.net.URL
            rules_clojure.persistentClassLoader))
 
 (deftest it-loads
-  (is (instance? ClassLoader (new-classloader []))))
+  (is (instance? ClassLoader (pcl/new-classloader- []))))
 
 (def clojure-deps ["org/clojure/clojure/1.11.1/clojure-1.11.1.jar"
                    "org/clojure/spec.alpha/0.3.218/spec.alpha-0.3.218.jar"
@@ -23,23 +23,18 @@
 
 (defn bazel-path [p])
 
-(deftest immutable
-  (is (pcl/immutable? (m2-path (first shimdandy-deps)))))
-
 (deftest correct-parent
   (let [p (.getParent (ClassLoader/getSystemClassLoader))]
     (is (= p (.getParent (persistentClassLoader. (into-array URL []) p))))))
 
 (deftest can-load-clojure
-  (let [cl (new-classloader (map m2-path clojure-deps))]
+  (let [cl (pcl/new-classloader (map m2-path clojure-deps))]
     (.loadClass cl "clojure.lang.RT")))
 
 (deftest can-reuse
-  (reset! pcl/classloader-cache {})
-  (new-classloader (map m2-path clojure-deps))
-  ;; second time to reuse the cache without extension
-  (is (new-classloader (map m2-path clojure-deps)))
-  (is (= 1 (count @pcl/classloader-cache)))
-  (let [cl2 (new-classloader (map m2-path (concat clojure-deps test-check)))]
-    (.loadClass cl2 "clojure.java.api.Clojure")
-    (is (= 1 (count @pcl/classloader-cache)) (keys @pcl/classloader-cache))))
+  (let [strategy (pcl/caching-clean)
+        classpath (map m2-path clojure-deps)
+        cl1 (pcl/get-classloader strategy classpath)
+        _ (pcl/return-classloader strategy ['user] classpath cl1)
+        cl2 (pcl/get-classloader strategy classpath)]
+    (is (= cl1 cl2))))
