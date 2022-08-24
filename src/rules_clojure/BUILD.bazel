@@ -54,7 +54,7 @@ java_binary(name="worker",
             main_class="clojure.main",
             jvm_flags=["-Dclojure.main.report=stderr",
                        "-Xmx500m",
-                       "-XX:MaxMetaspaceSize=2g"],
+                       "-XX:MaxMetaspaceSize=4g"],
             runtime_deps=["libworker"])
 
 clojure_library(
