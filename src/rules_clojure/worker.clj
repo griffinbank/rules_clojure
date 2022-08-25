@@ -83,8 +83,8 @@
 
 (defn process-persistent []
   (let [num-processors (-> (Runtime/getRuntime) .availableProcessors)
-        executor (java.util.concurrent.Executors/newWorkStealingPool num-processors)
-        classloader-strategy (pcl/caching-clean)]
+        executor (java.util.concurrent.Executors/newSingleThreadExecutor)  ;;(java.util.concurrent.Executors/newWorkStealingPool num-processors)
+        classloader-strategy (pcl/caching-clean-GAV)]
     (loop []
       (util/print-err "reading from *in*")
       (if-let [work-req (json/read-str (read-line) :key-fn keyword)]

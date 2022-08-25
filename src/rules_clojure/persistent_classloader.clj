@@ -48,14 +48,18 @@
   (get-classloader[this classpath])
   (return-classloader [this aot-nses classpath classloader]))
 
-(defn slow-naive []
+(defn slow-naive
+  "Use a new classloader for every compile. Works. Slow."
+  []
   (reify ClassLoaderStrategy
     (get-classloader[_this classpath]
       (new-classloader- classpath))
     (return-classloader [_this aot-nses classpath classloader]
       nil)))
 
-(defn dirty-fast []
+(defn dirty-fast
+  "Use a single classloader for all compiles, and always use. Flaky"
+  []
   (let [dirty-classloader (new-classloader- [])]
     (reify ClassLoaderStrategy
       (get-classloader[this classpath]
@@ -151,7 +155,12 @@
     (util/bind-compiler-loader cl)
     cl))
 
-(defn caching-clean []
+(defn caching-clean-GAV
+  "Take a classloader from the cache, if the maven GAV coordinates are
+  not incompatible. Reuse the classloader, iff the namespaces compiled
+  do not contain protocols, because those will cause CLJ-1544 errors
+  if reused. Works."
+  []
   (let [cache (atom {})]
     (reify ClassLoaderStrategy
       (get-classloader [this classpath]
@@ -161,13 +170,29 @@
         (let [script (str `(do
                              (require 'rules-clojure.compile)
                              (some (fn [n#]
-                                     (rules-clojure.compile/contains-protocols? (symbol n#))) [~@aot-nses])))
+                                     (or (rules-clojure.compile/contains-protocols? (symbol n#))
+                                         ;; I don't think deftype is necessary here, but it works around a java-time bug
+                                         (rules-clojure.compile/contains-deftypes? (symbol n#)))) [~@aot-nses])))
               ret (util/shim-eval classloader script)]
-          (if-not ret
-            (cache-classloader cache (set (filter jar? classpath)) classloader)
-            (do
-              ;; (println "AOT" aot-nses "discarding")
-              )))))))
+          (when-not ret
+            (cache-classloader cache (set (filter jar? classpath)) classloader)))))))
+
+(defn caching-cleanup
+  "Attempt to clean up clojure.lang.RT state after compiling, and then unconditionally reuse the classloader. Flaky"
+  []
+  (let [cache (atom {})]
+    (reify ClassLoaderStrategy
+      (get-classloader [this classpath]
+        (println "data-readers:" (#'clojure.core/data-reader-urls))
+        (let [classloader (new-classloader-cache cache classpath)]
+          classloader))
+      (return-classloader [this aot-nses classpath classloader]
+        (let [script (str `(do
+                             (require 'rules-clojure.compile)
+                             (some (fn [n#]
+                                     (rules-clojure.compile/cleanup! (symbol n#))) [~@aot-nses])))]
+          (util/shim-eval classloader script)
+          (cache-classloader cache (set (filter jar? classpath)) classloader))))))
 
 (defn new-classloader [classpath]
   (get-classloader (slow-naive) classpath))

@@ -112,3 +112,5 @@ jars, and a second to do compilation.
 - keeping a pool of cached classloaders. Fixes JarHell. Fails because the clojure RT is dirty and not cleaned between runs.
 
 - same as above, but don't include clojure in the cache and add every time. Fails because Visibility principle. If jars require clojure, clojure must be above or equal to them in the hierarchy.
+
+- naive multiplex: the code supports multiplex, but it's disabled because it's slower than singleplex for now. The caching algorithm reuses the cached classloader which shares the most jars in common. This frequently leads to cache starvation, where multiple threads want to use the same classloader. When the cache is empty, starting a new classloader might take 20seconds, while the next compile job might take 1 second. When running singleplex, each worker has its own classloader which is warm 90% of the time. To make multiplex faster, we'd need each worker thread to have its own classloader.
