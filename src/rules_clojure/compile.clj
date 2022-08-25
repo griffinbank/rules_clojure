@@ -60,6 +60,11 @@
        (filter identity)
        (first)))
 
+(defn cleanup! [ns]
+  (remove-ns ns)
+  (dosync
+   (alter @#'clojure.core/*loaded-libs* disj ns)))
+
 (defn unconditional-compile
   "the clojure compiler works by binding *compile-files* true and then
   calling `load`. `load` looks for both the source file and .class. If
@@ -78,7 +83,8 @@
       (with-open [rdr (clojure.java.io/reader src-resource)]
         (binding [*out* *err*
                   *compile-files* true]
-          (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last)))))))
+          (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last)))
+        (cleanup! ns)))))
 
 (defn non-transitive-compile [dep-nses ns]
   {:pre [(every? symbol? dep-nses)
