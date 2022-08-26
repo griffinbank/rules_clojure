@@ -45,29 +45,25 @@
       (re-find #"org/clojure/core.specs.alpha/.*.jar$" path)))
 
 (defprotocol ClassLoaderStrategy
-  (get-classloader[this classpath])
-  (return-classloader [this aot-nses classpath classloader]))
+  (with-classloader [this classpath f]
+    "Given a classpath, calls f, a fn of one arg, the classloader"))
 
 (defn slow-naive
   "Use a new classloader for every compile. Works. Slow."
   []
   (reify ClassLoaderStrategy
-    (get-classloader[_this classpath]
-      (new-classloader- classpath))
-    (return-classloader [_this aot-nses classpath classloader]
-      nil)))
+    (with-classloader[_this classpath f]
+      (f (new-classloader- classpath)))))
 
 (defn dirty-fast
-  "Use a single classloader for all compiles, and always use. Flaky"
+  "Use a single classloader for all compiles, and always use. Works, only in single-threaded mode"
   []
   (let [dirty-classloader (new-classloader- [])]
     (reify ClassLoaderStrategy
-      (get-classloader[this classpath]
+      (with-classloader[this classpath f]
         (doseq [p classpath]
           (add-url dirty-classloader p))
-        dirty-classloader)
-      (return-classloader [this aot-nses classpath classloader]
-        nil))))
+        (f dirty-classloader)))))
 
 (defn clear-dead-refs [cache]
   (swap! cache (fn [cache]
@@ -121,6 +117,10 @@
 (defn new-classloader-cache [cache classpath]
   {:pre [(every? string? classpath)]}
   (let [cp-desired (set classpath)
+        cp-jars (set (filter jar? classpath))
+        cp-dirs (set (remove jar? classpath))
+        cp-classes-dirs (filter (fn [p] (re-find #".classes$" p )) cp-dirs)
+        _ (assert (= 1 (count cp-classes-dirs)))
         cache-deref @cache
         caches (->> cache-deref
                     (filter (fn [[cp-cache _cl-ref]]
@@ -129,31 +129,32 @@
                     (let [[cp-parent parent-ref] (apply max-key (fn [[cp-cache cl-ref]]
                                                                   (count (set/intersection cp-desired cp-cache))) caches)]
                       cp-parent))
-        cl (if (seq cache-deref)
-             (if cp-parent
-               (if-let [cl-ref (claim-classloader cache cp-parent)]
-                 (if-let [cl (.get cl-ref)]
-                   (let [cp-new (set/difference cp-desired cp-parent)]
-                     (doseq [p cp-new]
-                       (add-url cl p))
+        cl-cache (if (seq cache-deref)
+                   (if cp-parent
+                     (if-let [cl-ref (claim-classloader cache cp-parent)]
+                       (if-let [cl (.get cl-ref)]
+                         (let [cp-new (set/difference cp-jars cp-parent)]
+                           (doseq [p cp-new]
+                             (add-url cl p))
+                           (do
+                             ;; (println "hit")
+                             cl))
+                         (do
+                           ;; (println "cache-miss GC")
+                           (new-classloader- cp-desired)))
+                       (do
+                         ;; (println "cache failed claim. size:" (count cache-deref) )
+                         (new-classloader- cp-desired)))
                      (do
-                       ;; (println "hit")
-                       cl))
+                       ;; (println "cache miss incompatible:" (map (fn [[cp-cache _cl-ref]] (compatible-classpaths? cp-desired cp-cache)) cache-deref))
+                       (new-classloader- cp-desired)))
                    (do
-                     ;; (println "cache-miss GC")
+                     ;; (println "cache-miss empty")
                      (new-classloader- cp-desired)))
-                 (do
-                   ;; (println "cache failed claim. size:" (count cache-deref) )
-                   (new-classloader- cp-desired)))
-               (do
-                 ;; (println "cache miss incompatible:" (map (fn [[cp-cache _cl-ref]] (compatible-classpaths? cp-desired cp-cache)) cache-deref))
-                 (new-classloader- cp-desired)))
-             (do
-               ;; (println "cache-miss empty")
-               (new-classloader- cp-desired)))]
-    (util/shim-deref cl "clojure.core" "*clojure-version*")
-    (util/bind-compiler-loader cl)
-    cl))
+        cl-final (new-classloader- cp-dirs cl-cache)]
+    (util/shim-deref cl-final "clojure.core" "*clojure-version*")
+    (util/bind-compiler-loader cl-final)
+    cl-final))
 
 (defn caching-clean-GAV
   "Take a classloader from the cache, if the maven GAV coordinates are
@@ -161,38 +162,72 @@
   do not contain protocols, because those will cause CLJ-1544 errors
   if reused. Works."
   []
-  (let [cache (atom {})]
+  (let [cache (atom {})
+        metadata (atom {})]
     (reify ClassLoaderStrategy
-      (get-classloader [this classpath]
-        (let [classloader (new-classloader-cache cache classpath)]
-          classloader))
-      (return-classloader [this aot-nses classpath classloader]
-        (let [script (str `(do
-                             (require 'rules-clojure.compile)
-                             (some (fn [n#]
-                                     (or (rules-clojure.compile/contains-protocols? (symbol n#))
-                                         ;; I don't think deftype is necessary here, but it works around a java-time bug
-                                         (rules-clojure.compile/contains-deftypes? (symbol n#)))) [~@aot-nses])))
-              ret (util/shim-eval classloader script)]
-          (when-not ret
-            (cache-classloader cache (set (filter jar? classpath)) classloader)))))))
+      (with-classloader [this {:keys [classpath
+                                     aot-nses]} f]
+        (let [classloader (new-classloader-cache cache classpath)
+              cacheable-classloader (.getParent classloader)]
+          (swap! metadata assoc cacheable-classloader {:classpath classpath
+                                                       :aot-nses aot-nses})
+          (f classloader)
+          (let [script (str `(do
+                               (require 'rules-clojure.compile)
+                               (some (fn [n#]
+                                       (or (rules-clojure.compile/contains-protocols? (symbol n#))
+                                           ;; I don't think deftype is necessary here, but it works around a java-time bug
+                                           (rules-clojure.compile/contains-deftypes? (symbol n#)))) [~@aot-nses])))
+                ret (util/shim-eval classloader script)]
+            (if-not ret
+              (cache-classloader cache (set (filter jar? classpath)) cacheable-classloader)
+              (swap! metadata dissoc classloader))))))))
+
+
+(defn caching-clean-GAV-thread-local
+  "Take a classloader from the cache, if the maven GAV coordinates are
+  not incompatible. Reuse the classloader, iff the namespaces compiled
+  do not contain protocols, because those will cause CLJ-1544 errors
+  if reused. Works."
+  []
+  (let [cache (ThreadLocal.)]
+    (reify ClassLoaderStrategy
+      (with-classloader [this {:keys [classpath aot-nses]} f]
+        (let [{cl-cache :classloader
+               cp-cache :classpath} (.get cache)
+              cp-desired (set classpath)
+              cp-jars (set (filter jar? classpath))
+              cp-dirs (set (remove jar? classpath))
+              cacheable-classloader (if (and cl-cache (compatible-classpaths? cp-jars cp-cache))
+                                      (let [cp-new (set/difference cp-jars cp-cache)]
+                                        (doseq [p cp-new]
+                                          (add-url cl-cache p))
+                                        cl-cache)
+                                      (new-classloader- cp-jars))
+              classloader (new-classloader- cp-dirs cacheable-classloader)]
+          (let [ret (f classloader)
+                script (str `(do
+                               (require 'rules-clojure.compile)
+                               (some (fn [n#]
+                                       (or (rules-clojure.compile/contains-protocols? (symbol n#))
+                                           ;; I don't think deftype is necessary here, but it works around a java-time bug
+                                           (rules-clojure.compile/contains-deftypes? (symbol n#)))) [~@aot-nses])))
+                ret (util/shim-eval classloader script)]
+            (if-not ret
+              (.set cache {:classpath classpath
+                           :classloader cacheable-classloader})
+              (.set cache nil))
+            ret))))))
 
 (defn caching-cleanup
   "Attempt to clean up clojure.lang.RT state after compiling, and then unconditionally reuse the classloader. Flaky"
   []
-  (let [cache (atom {})]
+  (let [cache (atom {})
+        metadata (atom {})]
     (reify ClassLoaderStrategy
-      (get-classloader [this classpath]
-        (println "data-readers:" (#'clojure.core/data-reader-urls))
+      (with-classloader [this {:keys [classpath aot-nses]} f]
         (let [classloader (new-classloader-cache cache classpath)]
-          classloader))
-      (return-classloader [this aot-nses classpath classloader]
-        (let [script (str `(do
-                             (require 'rules-clojure.compile)
-                             (some (fn [n#]
-                                     (rules-clojure.compile/cleanup! (symbol n#))) [~@aot-nses])))]
-          (util/shim-eval classloader script)
-          (cache-classloader cache (set (filter jar? classpath)) classloader))))))
-
-(defn new-classloader [classpath]
-  (get-classloader (slow-naive) classpath))
+          (swap! metadata assoc classloader {:classpath classpath
+                                             :aot-nses aot-nses})
+          (f classloader)
+          (cache-classloader cache (set (filter jar? classpath)) (.getParent classloader)))))))

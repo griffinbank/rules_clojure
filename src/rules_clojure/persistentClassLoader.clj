@@ -4,9 +4,7 @@
    :constructors {["[Ljava.net.URL;" "java.lang.ClassLoader"] ["[Ljava.net.URL;" "java.lang.ClassLoader"]
                   ["[Ljava.net.URL;"] ["[Ljava.net.URL;"]}
    :extends java.net.URLClassLoader
-   :exposes-methods {;; findClass parentFindClass
-                     ;; loadClass parentLoadClass
-                     addURL parentAddURL}))
+   :exposes-methods {addURL parentAddURL}))
 
 (defn -init
   ([urls]

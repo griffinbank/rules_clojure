@@ -31,6 +31,18 @@
           m (.getDeclaredMethod Clj "var" (into-array Class [Object Object]))]
       (.invoke m Clj (into-array Object [ns name])))))
 
+(defn with-dvals [cl]
+  ;; needed to make bindings work properly within shim-invoke
+  ;; (let [var-c (.loadClass cl "clojure.lang.Var")
+  ;;       dval-f (.getDeclaredField var-c "dvals")
+  ;;       _ (.setAccessible dval-f true)]
+  ;;   )
+
+  ;;           dvalField.setAccessible(true);
+  ;;           this.dvals = (ThreadLocal)dvalField.get(null);
+  ;; (assert false)
+  )
+
 (defn shim-invoke
   [cl ns name & args]
   (with-context-classloader cl

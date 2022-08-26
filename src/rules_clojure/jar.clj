@@ -198,21 +198,19 @@
         _ (when (not (= (count nses) (count compile-nses)))
             (println "couldn't find nses:" (set/difference (set nses) (set compile-nses))))
         _ (assert (= (count nses) (count compile-nses)))
-        script (if (seq compile-nses)
+        script (when (seq compile-nses)
                  `(let [rets# ~(mapv (fn [n] `(do
                                                 (require (quote ~'rules-clojure.compile))
                                                 (let [ntc# (ns-resolve (quote ~'rules-clojure.compile) (quote ~'non-transitive-compile-json))]
                                                   (assert ntc#)
                                                   (ntc# (quote ~(deps-of n)) (quote ~n))))) compile-nses)]
-                    (some identity rets#))
-                 nil)]
+                    (some identity rets#)))]
     (fs/clean-directory (fs/->path classes-dir))
 
     `(do
        (create-ns (quote ~'user))
        (binding [*ns* (find-ns (quote ~'user))
                 *compile-path* (str ~classes-dir "/")]
-        (#'clojure.core/load-data-readers)
         ~script))))
 
 (s/fdef compile! :args ::compile)

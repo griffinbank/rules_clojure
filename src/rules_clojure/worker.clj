@@ -44,13 +44,16 @@
 (defn process-request
   [{:keys [classloader-strategy] :as req}]
   (util/validate! ::compile-request req)
-  (let [cl (pcl/get-classloader classloader-strategy (:classpath req))
+  (let [
         compile-script (jar/get-compilation-script-json req)]
     (util/print-err "script:" compile-script)
     (try
-      (let [ret (util/shim-eval cl compile-script)]
-        (jar/create-jar-json req)
-        (pcl/return-classloader classloader-strategy (:aot-nses req) (:classpath req) cl))
+      (pcl/with-classloader classloader-strategy (select-keys req [:classpath :aot-nses])
+        (fn [cl]
+          (let [ret (util/shim-eval cl compile-script)]
+            (when (seq ret)
+              (println ret))
+            (jar/create-jar-json req))))
       (catch Exception e
         (throw (ex-info "exception while compiling" req e))))))
 
@@ -83,8 +86,8 @@
 
 (defn process-persistent []
   (let [num-processors (-> (Runtime/getRuntime) .availableProcessors)
-        executor (java.util.concurrent.Executors/newSingleThreadExecutor)  ;;(java.util.concurrent.Executors/newWorkStealingPool num-processors)
-        classloader-strategy (pcl/caching-clean-GAV)]
+        executor (java.util.concurrent.Executors/newWorkStealingPool num-processors)
+        classloader-strategy (pcl/caching-clean-GAV-thread-local)]
     (loop []
       (util/print-err "reading from *in*")
       (if-let [work-req (json/read-str (read-line) :key-fn keyword)]
