@@ -175,11 +175,6 @@
     (when (not= ret ::eof)
       (lazy-cat [ret] (read-all stream)))))
 
-(defn get-preamble []
-  (read-all (java.io.PushbackReader. ;; (io/reader (io/file "/Users/arohner/Programming/rules_clojure/src/rules_clojure/compile.clj"))
-                                     (io/reader (io/resource "rules_clojure/compile.clj"))
-                                     )))
-
 (defn get-compilation-script
   "Returns a string, a script to eval in the compilation env."
   [{:keys [classpath
@@ -210,8 +205,8 @@
     `(do
        (create-ns (quote ~'user))
        (binding [*ns* (find-ns (quote ~'user))
-                *compile-path* (str ~classes-dir "/")]
-        ~script))))
+                 *compile-path* (str ~classes-dir "/")]
+         ~script))))
 
 (s/fdef compile! :args ::compile)
 (defn create-jar!

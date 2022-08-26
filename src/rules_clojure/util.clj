@@ -32,7 +32,7 @@
       (.invoke m Clj (into-array Object [ns name])))))
 
 (defn with-dvals [cl]
-  ;; needed to make bindings work properly within shim-invoke
+  ;; TODO needed to make bindings work properly within shim-invoke
   ;; (let [var-c (.loadClass cl "clojure.lang.Var")
   ;;       dval-f (.getDeclaredField var-c "dvals")
   ;;       _ (.setAccessible dval-f true)]
@@ -40,7 +40,6 @@
 
   ;;           dvalField.setAccessible(true);
   ;;           this.dvals = (ThreadLocal)dvalField.get(null);
-  ;; (assert false)
   )
 
 (defn shim-invoke
@@ -74,3 +73,18 @@
           loader (.get loader-f compiler)
           bind-root-m (.getDeclaredMethod var "bindRoot" (into-array Class [Object]))]
       (.invoke bind-root-m loader (into-array Object [cl])))))
+
+(defn system-classpath
+  "Returns a sequence of File paths from the 'java.class.path' system
+  property."
+  []
+  (map #(java.io.File. ^String %)
+       (.split (System/getProperty "java.class.path")
+               (System/getProperty "path.separator"))))
+
+(defn classpath []
+  (->> (or (seq
+            (mapcat (fn [x] (when (instance? java.net.URLClassLoader x) (seq (.getURLs x))))
+                    (take-while identity (iterate #(.getParent %) (clojure.lang.RT/baseLoader)))))
+           (system-classpath))
+       (map str)))

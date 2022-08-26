@@ -20,7 +20,8 @@
   ([cp]
    (new-classloader- cp (.getParent (ClassLoader/getSystemClassLoader))))
   ([cp parent]
-   {:pre [(every? string? cp)
+   {:pre [(do (when-not (every? string? cp)
+                (println "new-classloader- cp:" cp))true)(every? string? cp)
           (instance? ClassLoader parent)]}
    (persistentClassLoader.
     (into-array URL (map #(.toURL (io/file %)) cp))
@@ -45,14 +46,16 @@
       (re-find #"org/clojure/core.specs.alpha/.*.jar$" path)))
 
 (defprotocol ClassLoaderStrategy
-  (with-classloader [this classpath f]
-    "Given a classpath, calls f, a fn of one arg, the classloader"))
+  (with-classloader [this args f]
+    "Given a classpath, calls f, a fn of one arg, the classloader. Args is
+     a map that must contain `:classloader`, and any protocol
+     implementation specific keys "))
 
 (defn slow-naive
   "Use a new classloader for every compile. Works. Slow."
   []
   (reify ClassLoaderStrategy
-    (with-classloader[_this classpath f]
+    (with-classloader [_this {:keys [classpath]} f]
       (f (new-classloader- classpath)))))
 
 (defn dirty-fast
@@ -60,7 +63,7 @@
   []
   (let [dirty-classloader (new-classloader- [])]
     (reify ClassLoaderStrategy
-      (with-classloader[this classpath f]
+      (with-classloader[this {:keys [classpath]} f]
         (doseq [p classpath]
           (add-url dirty-classloader p))
         (f dirty-classloader)))))
@@ -188,7 +191,7 @@
   "Take a classloader from the cache, if the maven GAV coordinates are
   not incompatible. Reuse the classloader, iff the namespaces compiled
   do not contain protocols, because those will cause CLJ-1544 errors
-  if reused. Works."
+  if reused. Fastest working implementation."
   []
   (let [cache (ThreadLocal.)]
     (reify ClassLoaderStrategy
@@ -218,16 +221,3 @@
                            :classloader cacheable-classloader})
               (.set cache nil))
             ret))))))
-
-(defn caching-cleanup
-  "Attempt to clean up clojure.lang.RT state after compiling, and then unconditionally reuse the classloader. Flaky"
-  []
-  (let [cache (atom {})
-        metadata (atom {})]
-    (reify ClassLoaderStrategy
-      (with-classloader [this {:keys [classpath aot-nses]} f]
-        (let [classloader (new-classloader-cache cache classpath)]
-          (swap! metadata assoc classloader {:classpath classpath
-                                             :aot-nses aot-nses})
-          (f classloader)
-          (cache-classloader cache (set (filter jar? classpath)) (.getParent classloader)))))))

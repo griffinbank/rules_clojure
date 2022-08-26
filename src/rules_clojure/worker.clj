@@ -44,9 +44,8 @@
 (defn process-request
   [{:keys [classloader-strategy] :as req}]
   (util/validate! ::compile-request req)
-  (let [
-        compile-script (jar/get-compilation-script-json req)]
-    (util/print-err "script:" compile-script)
+  (assert classloader-strategy)
+  (let [compile-script (jar/get-compilation-script-json req)]
     (try
       (pcl/with-classloader classloader-strategy (select-keys req [:classpath :aot-nses])
         (fn [cl]
@@ -59,7 +58,7 @@
 
 (defn process-ephemeral [args]
   (let [req-json (json/read-str (slurp (io/file (.substring (last args) 1))) :key-fn keyword)]
-    (process-request req-json)))
+    (process-request (assoc req-json :classloader-strategy (pcl/slow-naive)))))
 
 (defn process-persistent-1 [{:keys [arguments requestId classloader-strategy]}]
   (let [baos (java.io.ByteArrayOutputStream.)
@@ -79,7 +78,6 @@
                  :output (str baos)}
                 (when requestId
                   {:requestId requestId}))]
-      (util/print-err "writing" (json/write-str resp) "to" real-out)
       (.write real-out (json/write-str resp))
       (.write real-out "\n")
       (.flush real-out))))
@@ -89,16 +87,16 @@
         executor (java.util.concurrent.Executors/newWorkStealingPool num-processors)
         classloader-strategy (pcl/caching-clean-GAV-thread-local)]
     (loop []
-      (util/print-err "reading from *in*")
-      (if-let [work-req (json/read-str (read-line) :key-fn keyword)]
-        (let [out *out*
-              err *err*]
-          (.submit executor ^Runnable (fn []
-                                        (binding [*out* out
-                                                  *err* err]
-                                          (process-persistent-1 (assoc work-req
-                                                                       :classloader-strategy classloader-strategy)))))
-          (recur))
+      (if-let [line (read-line)]
+        (let [work-req (json/read-str line :key-fn keyword)]
+          (let [out *out*
+                err *err*]
+            (.submit executor ^Runnable (fn []
+                                          (binding [*out* out
+                                                    *err* err]
+                                            (process-persistent-1 (assoc work-req
+                                                                         :classloader-strategy classloader-strategy)))))
+            (recur)))
         (do
           (util/print-err "no request, exiting")
           (.shutdown executor)

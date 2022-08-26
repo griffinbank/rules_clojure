@@ -5,16 +5,19 @@
             [clojure.tools.deps.alpha :as deps]
             [clojure.test :refer :all]
             [rules-clojure.worker :as worker]
-            [rules-clojure.fs :as fs])
+            [rules-clojure.persistent-classloader :as pcl]
+            [rules-clojure.fs :as fs]
+            [rules-clojure.util :as util])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream InputStreamReader PipedOutputStream PipedInputStream OutputStreamWriter]
            [clojure.lang LineNumberingPushbackReader]))
 
-(def basic-req {:classes-dir "classes"
-                :output-jar "test.jar"
-                :srcs ["rules_clojure/compile.jar"]
-                :src-dir ""
-                :classpath (map str (clojure.java.classpath/classpath))
-                :aot-nses ["rules-clojure.compile"]})
+(def basic-req
+  {:classes-dir "classes"
+   :output-jar "test.jar"
+   :srcs ["rules_clojure/compile.clj"]
+   :src-dir "src"
+   :classpath (util/classpath)
+   :aot-nses ["rules-clojure.compile"]})
 
 (defn with-temp-output [req]
   (assoc req :output-jar (str "/tmp/" "rules-clojure-test" (System/currentTimeMillis) ".jar")))
@@ -37,24 +40,26 @@
 (deftest classloader-isolation
   (let [worker-version *clojure-version*
         req (old-clojure-req)]
-    (println "old-clojure:" req)
     (is (= 11 (:minor worker-version)))
-    (let [cl (worker/compile-env (:classpath req))]
-      (is (= 8 (worker/shim-eval cl "(get *clojure-version* :minor)"))))))
+    (let [strategy (pcl/slow-naive)]
+      (pcl/with-classloader strategy req
+        (fn [cl]
+          (is (= 8 (util/shim-eval cl "(get *clojure-version* :minor)"))))))))
 
 (deftest can-load-specs
   (let [worker-version *clojure-version*
         coords '{:deps {org.clojure/clojure {:mvn/version "1.11.1"}}}
         basis (deps/create-basis {:project coords :user nil})
         req (assoc basic-req :classpath (->> basis :classpath-roots))]
-    (println "clojure:" req)
     (is (= 11 (:minor worker-version)))
-    (let [cl (worker/compile-env (:classpath req))]
-      (is (worker/shim-eval cl "(do (require 'clojure.spec.alpha) (clojure.spec.alpha/valid? integer? 3))")))))
+    (let [strategy (pcl/slow-naive)]
+      (pcl/with-classloader strategy {:classpath (:classpath req)}
+        (fn [cl]
+          (is (util/shim-eval cl "(do (require 'clojure.spec.alpha) (clojure.spec.alpha/valid? integer? 3))")))))))
 
 (deftest process-persistent-works
   (let [req (-> basic-req with-temp-output)
-        work-req {:arguments req
+        work-req {:arguments [(json/write-str req)]
                   :requestId 1}
         in-bais (java.io.ByteArrayInputStream. (-> work-req json/write-str (.getBytes "UTF-8")))
         in-reader (LineNumberingPushbackReader. (InputStreamReader. in-bais))

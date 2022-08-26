@@ -1,8 +1,8 @@
-(ns rules-clojure.bootstrap
+(ns rules-clojure.bootstrap-worker
   (:require [rules-clojure.jar :as jar]
             [rules-clojure.fs :as fs]))
 
-(def worker-nses-to-compile
+(def nses-to-compile
   '[clojure.core.cache
     clojure.data.json
     clojure.java.classpath
@@ -28,16 +28,13 @@
     rules-clojure.fs
     rules-clojure.worker])
 
-(defn -main [worker-output-path compile-output-path]
-  (binding [*compile-path* "worker-classes"]
-    (doseq [n worker-nses-to-compile]
-      (compile n)))
-  (binding [*compile-path* "compile-classes"]
-    (compile 'rules-clojure.compile))
+(defn -main [worker-output-path ]
+  (fs/clean-directory (fs/->path "worker-classes"))
 
-  (jar/create-jar {:aot-nses worker-nses-to-compile
+  (binding [*compile-path* "worker-classes"]
+    (doseq [n nses-to-compile]
+      (compile n)))
+
+  (jar/create-jar {:aot-nses nses-to-compile
                    :classes-dir (fs/->path "worker-classes")
-                   :output-jar (fs/->path worker-output-path)})
-  (jar/create-jar {:aot-nses '[rules-clojure.compile]
-                   :classes-dir (fs/->path "compile-classes")
-                   :output-jar (fs/->path compile-output-path)}))
+                   :output-jar (fs/->path worker-output-path)}))

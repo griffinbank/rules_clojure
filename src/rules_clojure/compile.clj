@@ -1,8 +1,11 @@
 (ns rules-clojure.compile
   (:require [clojure.java.io :as io]
             [clojure.set :as set]
-            [clojure.string :as str])
-  (:import java.util.regex.Pattern))
+            [clojure.string :as str]
+            [rules-clojure.fs :as fs]
+            [rules-clojure.util :as util])
+  (:import java.util.regex.Pattern
+           clojure.lang.Compiler))
 
 (defn deftype? [ns v]
   (and (class? v)
@@ -11,12 +14,6 @@
            (clojure.string/starts-with? (munge (name ns))))
        (= (count (clojure.string/split (.getName v) #"\."))
           (inc (count (clojure.string/split (name ns) #"\."))))))
-
-(defn protocol? [val]
-  (and (map? val)
-       (class? (:on-interface val))
-       (map? (:sigs val))
-       (map? (:method-map val))))
 
 (defn contains-protocols? [ns]
   (assert (find-ns ns) (print-str ns "is not loaded"))
@@ -27,7 +24,7 @@
               (if (var? x)
                 (deref x)
                 x)))
-       (some protocol?)))
+       (some #'clojure.core/protocol?)))
 
 (defn contains-deftypes? [ns]
   (->> ns
@@ -92,24 +89,7 @@
         _ (.setAccessible namespaces-f true)]
     (.get namespaces-f clojure.lang.Namespace)))
 
-(defn system-classpath
-  "Returns a sequence of File paths from the 'java.class.path' system
-  property."
-  []
-  (map #(java.io.File. ^String %)
-       (.split (System/getProperty "java.class.path")
-               (System/getProperty "path.separator"))))
-
-(defn classpath []
-  (->> (or (seq
-            (mapcat (fn [x] (when (instance? java.net.URLClassLoader x) (seq (.getURLs x))))
-                    (take-while identity (iterate #(.getParent %) (clojure.lang.RT/baseLoader)))))
-           (system-classpath))
-       (map str)))
-
 (defn remove-ns! [ns]
-  (when (get @@#'clojure.core/*loaded-libs* ns)
-    (println "remove-ns" ns))
   (.remove (get-namespaces) ns)
   (dosync (alter @#'clojure.core/*loaded-libs* disj ns)))
 
@@ -126,7 +106,6 @@
 
     (clear-dcl-refqueue)
 
-    (println "compile" ns)
     (f)
 
     (let [libs-pre (count @@#'clojure.core/*loaded-libs*)
@@ -179,15 +158,15 @@
   and calling Compiler/compile directly"
   [ns]
   (let [[src-path src-resource] (src-resource ns)]
-    (assert src-resource)
+    (assert src-resource (print-str "couldn't find a .clj or .cljc file for" ns "on classpath"))
     (try
-
       (with-open [rdr (clojure.java.io/reader src-resource)]
         (binding [*out* *err*
                   *compile-files* true]
           (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last))))
       (catch Exception e
-        (throw (ex-info "while compiling" {:classpath (classpath)} e))))))
+        (throw (ex-info "while compiling" {:ns ns
+                                           :classpath (util/classpath)} e))))))
 
 (defn non-transitive-compile [dep-nses ns]
   {:pre [(every? symbol? dep-nses)
@@ -197,7 +176,6 @@
   (when (seq dep-nses)
     (apply require dep-nses))
 
-  (assert (not (seq (compile-path-files))) (print-str "non-empty compile-path:" ns *compile-path* (seq (compile-path-files))))
   (let [aot-class-resource (clojure.java.io/resource (aot-class-name ns))
         loaded (loaded-libs)]
     (unconditional-compile ns)
