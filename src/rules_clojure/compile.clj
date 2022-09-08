@@ -18,13 +18,17 @@
 (defn contains-protocols? [ns]
   (assert (find-ns ns) (print-str ns "is not loaded"))
   (->> ns
-       ns-interns
+       ns-map
        vals
-       (map (fn [x]
-              (if (var? x)
-                (deref x)
-                x)))
-       (some #'clojure.core/protocol?)))
+       (some (fn [x]
+               (try
+                 (and
+                  (var? x)
+                  (let [v (deref x)]
+                    (and (map? v)
+                         (#'clojure.core/protocol? v))))
+                 (catch Exception e
+                   (throw (ex-info (print-str "while examining" x (class x)) {:x x} e))))))))
 
 (defn contains-deftypes? [ns]
   (->> ns
@@ -42,7 +46,7 @@
                  (.isFile f)))
        (rest))))
 
-(defn compile-path-classes []
+(defn compile-path-classes
   "convert the list of compiled classes files in *compile-path* to class names"
   []
   (->> (compile-path-files)
@@ -51,7 +55,7 @@
                   (str/replace (Pattern/compile (str "^" *compile-path* "/")) "")
                   (str/replace #".class$" "")
                   (str/replace #"/" ".")
-                  (Compiler/demunge ))))))
+                  (Compiler/demunge))))))
 
 (defn aot-class-name [ns]
   (str (.substring (#'clojure.core/root-resource ns) 1) "__init.class"))
@@ -69,81 +73,14 @@
        (filter identity)
        (first)))
 
-(defn get-dcl-cache []
-  (let [cache-f (.getDeclaredField clojure.lang.DynamicClassLoader "classCache")
-        _ (.setAccessible cache-f true)
-        dcl (clojure.lang.RT/baseLoader)]
-    (.get cache-f dcl)))
-
-(defn get-dcl-refqueue []
-  (let [refqueue-f (.getDeclaredField clojure.lang.DynamicClassLoader "rq")
-        _ (.setAccessible refqueue-f true)
-        dcl (clojure.lang.RT/baseLoader)]
-    (.get refqueue-f dcl)))
-
-(defn clear-dcl-refqueue []
-  (clojure.lang.Util/clearCache (get-dcl-refqueue) (get-dcl-cache)))
-
 (defn get-namespaces []
   (let [namespaces-f (.getDeclaredField clojure.lang.Namespace "namespaces")
         _ (.setAccessible namespaces-f true)]
     (.get namespaces-f clojure.lang.Namespace)))
 
-(defn remove-ns! [ns]
-  (.remove (get-namespaces) ns)
-  (dosync (alter @#'clojure.core/*loaded-libs* disj ns)))
-
-(defn with-cleanup! [ns f]
-  (let [data-readers-pre *data-readers*
-        dcl-cache (get-dcl-cache)
-        dcl-cache-pre (into {} dcl-cache)
-        namespaces (get-namespaces)
-        namespaces-pre (into {} namespaces)]
-    (assert (not (seq (compile-path-files))) (print-str "*compile-path* not empty:" *compile-path* (compile-path-files)))
-
-    ;; previous compiles sometimes cause `ns` to be loaded
-    (remove-ns! ns)
-
-    (clear-dcl-refqueue)
-
-    (f)
-
-    (let [libs-pre (count @@#'clojure.core/*loaded-libs*)
-          dcl-cache-post (into {} dcl-cache)
-          namespaces-post (into {} namespaces)
-
-          dcl-to-remove (set/difference (set (keys dcl-cache-post)) (set (keys dcl-cache-pre)))
-          namespaces-to-remove (conj (set/difference (set (keys namespaces-post)) (set (keys namespaces-pre)))
-                                     ;; the ns might already be loaded, but we should always remove it
-                                     ns)]
-      (doseq [k dcl-to-remove]
-        (.remove dcl-cache k))
-
-      (assert (= (count dcl-cache-pre)
-                 (count dcl-cache)))
-
-      (when (> (count namespaces-to-remove) 1)
-        ;; we really should be removing exactly one namespace per
-        ;; compile, but some code does non-standard things like
-        ;; requiring at the toplevel which can break that assumption
-        (println "WARNING removing multiple namespaces:" namespaces-to-remove))
-      (doseq [k namespaces-to-remove]
-        (remove-ns! k))
-
-      (clear-dcl-refqueue)
-    (alter-var-root #'*data-readers* (constantly data-readers-pre)))))
-
 (defn print-err [& args]
   (binding [*out* *err*]
     (apply println args)))
-
-(defmacro with-context-classloader [cl & body]
-  `(let [old-cl# (.getContextClassLoader (Thread/currentThread))]
-     (try
-       (.setContextClassLoader (Thread/currentThread) ~cl)
-       ~@body
-       (finally
-         (.setContextClassLoader (Thread/currentThread) old-cl#)))))
 
 (defn unconditional-compile
   "the clojure compiler works by binding *compile-files* true and then
@@ -176,8 +113,7 @@
   (when (seq dep-nses)
     (apply require dep-nses))
 
-  (let [aot-class-resource (clojure.java.io/resource (aot-class-name ns))
-        loaded (loaded-libs)]
+  (let [loaded (loaded-libs)]
     (unconditional-compile ns)
     (assert (seq (compile-path-files)) (print-str "no classfiles generated for" ns *compile-path* "loaded:" loaded))))
 
@@ -188,4 +124,4 @@
               *err* out-printer]
       (non-transitive-compile dep-nses ns)
       (.flush out-printer)
-      (str (str baos)))))
+      (str baos))))

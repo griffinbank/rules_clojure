@@ -69,8 +69,7 @@
 
 (defn get-ns-decl [all-ns-decls ns]
   (let [ret (get all-ns-decls ns)]
-    (when-not ret
-      (assert false (print-str "could not find ns-decl for" ns)))
+    (assert ret (print-str "could not find ns-decl for" ns))
     ret))
 
 (defn classpath-resources [classpath]
@@ -190,9 +189,7 @@
         compile-nses (set nses)
         compile-nses (filter (fn [n]
                                (contains? compile-nses n)) topo-nses) ;; sorted order
-        _ (when (not (= (count nses) (count compile-nses)))
-            (println "couldn't find nses:" (set/difference (set nses) (set compile-nses))))
-        _ (assert (= (count nses) (count compile-nses)))
+        _ (assert (= (count nses) (count compile-nses)) (print-str "couldn't find nses:" (set/difference (set nses) (set compile-nses))))
         script (when (seq compile-nses)
                  `(let [rets# ~(mapv (fn [n] `(do
                                                 (require (quote ~'rules-clojure.compile))

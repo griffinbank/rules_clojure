@@ -25,3 +25,7 @@ clojure_test(name="persistent-classloader-test",
 clojure_test(name="compile-test",
              deps=[":test-deps"],
              test_ns = "rules-clojure.compile-test")
+
+clojure_test(name="jar-test",
+             deps=[":test-deps"],
+             test_ns = "rules-clojure.jar-test")

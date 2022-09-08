@@ -16,7 +16,7 @@ clojure_library = rule(
         "_clojureworker_binary": attr.label(doc="Label for the ClojureWorker binary",
                                             default=Label("@rules_clojure//src/rules_clojure:worker"), executable = True, cfg="exec"),
 
-        "_compile_classpath": attr.label_list(doc="extra jars to go in the compile env", default = [Label("@rules_clojure//src/rules_clojure:libcompile")])
+        "_libcompile": attr.label_list(doc="extra jars to go in the compile env", default = [Label("@rules_clojure//src/rules_clojure:libcompile")])
     },
     provides = [JavaInfo],
     implementation = _clojure_jar_impl)

@@ -1,7 +1,7 @@
 Clojure is a compiled language. When loading source files or
 evaling, the Clojure compiler generates a .class file, and then
 loads it via standard Java classloaders. During non-AOT operation,
-the .classfile exists in memory without being written to disk.
+the .class file exists in memory without being written to disk.
 
 When AOT'ing, the compiler writes a .class file that corresponds to the
 name of the source file. The clojure namespace `foo-bar.core` will
@@ -18,13 +18,15 @@ run and no .class files will be produced.
 Classloaders form a hierarchy. A classloader first asks its parent
 to load a class, and if the parent can't, the current CL attempts
 to load. In normal clojure operation, `java -cp` creates a
-URLClassloader containing URLs pointing at jars and source
+Classloader containing URLs pointing at jars and source
 dirs. `clojure.main` then creates a clojure.lang.DynamicClassLoader
-as a child of the URL classloader. Finally, clojure.lang.Compiler
+as a child of the app classloader. Finally, clojure.lang.Compiler
 creates its own private c.l.DCL.
 
 Classloaders are also responsible for loading resources, using the
 same hierarchy.
+
+Delegation principle: child classloaders should ask their parent to load a class first
 
 Visibility principle: Child classloaders can look up the classloader
 hierarchy to find classes, parent classesloaders can't look down the
@@ -33,21 +35,21 @@ hierarchy.
 There are many ways to configure classloaders, but the most common way
 we see Clojure in the wild is:
 
-- System classloader
- - URLClassLoader
+- System classloader (containing e.g. java.* classes)
+ - Application Classloader (containing jars from the command line)
   - clojure.lang.DynamicClassLoader
 
 `java -cp jarA.jar:jarB.jar:src clojure.main`, the `-cp` flag will
-create a URLClassLoader containing all jars from the command line. On
+create an application classloader containing all jars from the command line. On
 startup, Clojure will create an instance of c.l.DCL which is a child
 of the URL loader.
 
 Consider `(require 'foo.core)`
 
-If foo.core was AOT'd, it will be loaded by the URLClassloader
-(because after AOTing, there will be a foo/core.class file in the
-jar). If the namespace had to be compiled at runtime, it will be
-loaded by the compiler's DCL.
+If foo.core was AOT'd, it will be loaded by the application
+classloader (because after AOTing, there will be a foo/core.class file
+in the jar). If the namespace had to be compiled at runtime, it will
+be loaded by the compiler's DCL.
 
 In the JVM, classes are not unique, they are unique _per
 classloader_. Two classes with the same name in different classloaders
@@ -62,15 +64,15 @@ When compiling, defprotocol creates new java interfaces.
 
 CLJ-1544: If a jar in the URLClassLoader contains an AOT'd call site
 of a protocol, and the protocol definition is not AOT'd, things will
-break. This is because the java interface will be compiled and stored in
-the clojure.lang.DynamicClassLoader. The DCL is a child of the
-URLClassloader, so the call site in the parent classloader can't find
-the AOT'd definition due to the Visibility Principle. There are two
-solutions: AOT the protocol definition as well (so both live in the
-URLClassLoader), or use DCL/addURL so both live in c.l.DCL. AOTing the
-protocol and not AOTing the call site is fine, because the call site
-can look up the classloader hierarchy to find the interface backing
-the protocol.
+break. This is because the java interface will be compiled and stored
+in the clojure.lang.DynamicClassLoader. The DCL is a child of the
+application classloader, so the call site in the parent classloader
+can't find the AOT'd definition due to the Visibility Principle. There
+are two solutions: AOT the protocol definition as well (so both live
+in the app classloader), or use DCL/addURL so both live in
+c.l.DCL. AOTing the protocol and not AOTing the call site is fine,
+because the call site can look up the classloader hierarchy to find
+the interface backing the protocol.
 
 If an AOT'd ns contains a protocol or deftype, the resulting
 classfile should appear in exactly one jar: if the classfiles
@@ -84,8 +86,8 @@ Java classes cannot be GC'd individually, but when the defining
 classloader is GC'd, all child classes of the classloader can be GC'd.
 
 # Solution
-rules-clojure.jar has dependencies to implement non-transitive
-compilation. rules clojure also wants to be AOT'd, for speed. It is
+`rules-clojure.jar` has dependencies to implement non-transitive
+compilation. `rules_clojure` also wants to be AOT'd, for speed. It is
 possible for dependencies to conflict between rules-clojure and
 client code. Therefore, use two classloaders, to create separate
 environments: one to generate the compilation script and assemble
@@ -93,8 +95,8 @@ jars, and a second to do compilation.
 
 When a compile job comes in, allocate a classloader. After compiling,
 if the namespace being AOT'd did not contain `defprotocol`, return the
-classloader to the cache. If it did compile a protocol, GC the
-cacheloader
+classloader to the cache. If it did compile a protocol, discard the
+classloader.
 
 # Rejected Implementations
 

@@ -2,7 +2,6 @@
   (:require [clojure.data]
             [clojure.java.io :as io]
             [clojure.set :as set]
-            [clojure.tools.namespace.dependency :as dep]
             [rules-clojure.util :as util]
             [rules-clojure.persistentClassLoader])
   (:import [java.net URL URLClassLoader]
@@ -20,8 +19,7 @@
   ([cp]
    (new-classloader- cp (.getParent (ClassLoader/getSystemClassLoader))))
   ([cp parent]
-   {:pre [(do (when-not (every? string? cp)
-                (println "new-classloader- cp:" cp))true)(every? string? cp)
+   {:pre [(every? string? cp)
           (instance? ClassLoader parent)]}
    (persistentClassLoader.
     (into-array URL (map #(.toURL (io/file %)) cp))
@@ -84,30 +82,24 @@
 (defn claim-classloader
   "Attempt to claim a cached classloader with key. Returns the classloader if successful, else nil"
   [cache key]
-  (let [claimed (atom nil)]
-    (swap! cache (fn [cache]
-                   (if-let [cl (get cache key)]
-                     (do
-                       (reset! claimed cl)
-                       (dissoc cache key))
-                     (do
-                       (reset! claimed nil)
-                       cache))))
-    @claimed))
+  (let [[old _new] (swap-vals! cache (fn [cache]
+                                       (if-let [cl (get cache key)]
+                                         (dissoc cache key)
+                                         cache)))]
+    (get old key)))
 
 (defn parse-GAV-1
   "Given the path to a path, attempt to parse out maven Group Artifact Version coordinates, returns nil if it doesn't appear to be in a maven dir"
   [p]
-  (let [[_match group artifact version] (re-find #"repository/(.+)/([^\/]+)/([^\/]+)/\2-\3.jar" p)]
-    (when _match
+  (let [[match group artifact version] (re-find #"repository/(.+)/([^\/]+)/([^\/]+)/\2-\3.jar" p)]
+    (when match
       [(str group "/" artifact) version])))
 
 (defn GAV-map
   "given a classpath, return a map of all parsed GAV coordinates"
   [classpath]
   (->> classpath
-       (map parse-GAV-1)
-       (filter identity)
+       (keep parse-GAV-1)
        (into {})))
 
 (defn compatible-classpaths? [c1 c2]
@@ -122,7 +114,7 @@
   (let [cp-desired (set classpath)
         cp-jars (set (filter jar? classpath))
         cp-dirs (set (remove jar? classpath))
-        cp-classes-dirs (filter (fn [p] (re-find #".classes$" p )) cp-dirs)
+        cp-classes-dirs (filter (fn [p] (re-find #"\.classes$" p )) cp-dirs)
         _ (assert (= 1 (count cp-classes-dirs)))
         cache-deref @cache
         caches (->> cache-deref
@@ -155,7 +147,6 @@
                      ;; (println "cache-miss empty")
                      (new-classloader- cp-desired)))
         cl-final (new-classloader- cp-dirs cl-cache)]
-    (util/shim-deref cl-final "clojure.core" "*clojure-version*")
     (util/bind-compiler-loader cl-final)
     cl-final))
 

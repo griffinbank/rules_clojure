@@ -77,6 +77,7 @@
       (deliver worker-ret (worker/process-persistent)))
     (is (= :exit @worker-ret))
     (let [resp (deref resp-f 2000 nil)
+          _ (is resp)
           resp-json (json/read-str resp :key-fn keyword)]
       (is (s/valid? ::worker/work-response resp-json))
       (is (= 0 (:exit_code resp-json))))))

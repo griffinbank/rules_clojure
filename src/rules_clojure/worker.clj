@@ -1,13 +1,13 @@
 (ns rules-clojure.worker
   (:require [clojure.set :as set]
-            [clojure.string :as str]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [rules-clojure.jar :as jar]
             [rules-clojure.util :as util]
             [rules-clojure.persistent-classloader :as pcl ])
-  (:import java.nio.charset.StandardCharsets))
+  (:import java.nio.charset.StandardCharsets
+           java.util.concurrent.TimeUnit))
 
 (s/def ::classes-dir string?) ;; path to the *compile-files* dir
 (s/def ::output-jar string?) ;; path where the output jar should be written
@@ -15,7 +15,7 @@
 (s/def ::src-dir (s/nilable string?)) ;; path to root of source tree, relative to execroot
 (s/def ::resources (s/coll-of string?)) ;; seq of paths to include in the jar
 (s/def ::aot-nses (s/coll-of string?)) ;; seq of namespaces to AOT
-(s/def ::compile-classpath (s/coll-of string?)) ;; seq of jars to put on compile classpath
+(s/def ::classpath (s/coll-of string?)) ;; seq of jars to put on compile classpath
 
 (s/def ::compile-request (s/keys :req-un [::classes-dir
                                           ::output-jar
@@ -89,6 +89,7 @@
     (loop []
       (if-let [line (read-line)]
         (let [work-req (json/read-str line :key-fn keyword)]
+          (util/print-err "got req")
           (let [out *out*
                 err *err*]
             (.submit executor ^Runnable (fn []
@@ -100,6 +101,8 @@
         (do
           (util/print-err "no request, exiting")
           (.shutdown executor)
+          (util/print-err "awating task completion")
+          (util/print-err "finished cleanly?" (.awaitTermination executor 60 TimeUnit/SECONDS))
           :exit)))))
 
 (defn set-uncaught-exception-handler! []
