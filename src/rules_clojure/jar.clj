@@ -200,10 +200,10 @@
     (fs/clean-directory (fs/->path classes-dir))
 
     `(do
-       (create-ns (quote ~'user))
-       (binding [*ns* (find-ns (quote ~'user))
-                 *compile-path* (str ~classes-dir "/")]
-         ~script))))
+       (let [ns# (create-ns (quote ~(gensym)))]
+         (binding [*ns* ns#
+                   *compile-path* (str ~classes-dir "/")]
+         ~script)))))
 
 (s/fdef compile! :args ::compile)
 (defn create-jar!

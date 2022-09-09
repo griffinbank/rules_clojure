@@ -277,6 +277,7 @@ Please see [example](examples/setup/custom) of custom toolchain.
   - Builds set the file modification time to current time. This is because clojure.lang.RT looks at file modification times when deciding whether to load a .clj or .class file. Setting the file modification time to zero for .class files would mean that if a source .clj is on the classpath (e.g. in a source dependency), it would always take precedence over an AOT .class file
   - there isn't a public API to reset the ID clojure uses for naming anonymous functions, which means anonymous AOT function names are non-deterministic
 - When using gen-deps, I haven't found a way to identify :provided dependencies. Those have to be added by hand for now
+- Do not use `user.clj`. If there is a user.clj at the root of your classpath, it will be loaded every time a new Clojure runtime is created. Additionally, dependencies in the user.clj are invisible to `gen-build`
 
 
 # Thanks
