@@ -49,8 +49,9 @@
     (try
       (pcl/with-classloader classloader-strategy (select-keys req [:classpath :aot-nses])
         (fn [cl]
-          (when-let [ret (util/shim-eval cl compile-script)]
-            (println ret))
+          (let [ret (util/shim-eval cl compile-script)]
+            (when (seq ret)
+              (println ret)))
           (jar/create-jar-json req)))
       (catch Throwable t
         (throw (ex-info "exception while compiling" {:request req
