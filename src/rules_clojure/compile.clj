@@ -1,6 +1,11 @@
 (ns rules-clojure.compile
-  (:require [clojure.string]
-            [clojure.java.io :as io]))
+  (:require [clojure.java.io :as io]
+            [clojure.set :as set]
+            [clojure.string :as str]
+            [rules-clojure.fs :as fs]
+            [rules-clojure.util :as util])
+  (:import java.util.regex.Pattern
+           clojure.lang.Compiler))
 
 (defn deftype? [ns v]
   (and (class? v)
@@ -10,17 +15,20 @@
        (= (count (clojure.string/split (.getName v) #"\."))
           (inc (count (clojure.string/split (name ns) #"\."))))))
 
-(defn protocol? [val]
-  (and (map? val)
-       (class? (:on-interface val))
-       (map? (:sigs val))
-       (map? (:method-map val))))
-
 (defn contains-protocols? [ns]
-         (->> ns
-              ns-interns
-              vals
-              (some protocol?)))
+  (assert (find-ns ns) (print-str ns "is not loaded"))
+  (->> ns
+       ns-map
+       vals
+       (some (fn [x]
+               (try
+                 (and
+                  (var? x)
+                  (let [v (deref x)]
+                    (and (map? v)
+                         (#'clojure.core/protocol? v))))
+                 (catch Exception e
+                   (throw (ex-info (print-str "while examining" x (class x)) {:x x} e))))))))
 
 (defn contains-deftypes? [ns]
   (->> ns
@@ -31,9 +39,23 @@
 
 (defn compile-path-files []
   (-> *compile-path*
-      (clojure.java.io/file)
+      io/file
       file-seq
-      (rest)))
+      (->>
+       (filter (fn [f]
+                 (.isFile f)))
+       (rest))))
+
+(defn compile-path-classes
+  "convert the list of compiled classes files in *compile-path* to class names"
+  []
+  (->> (compile-path-files)
+       (map (fn [p]
+              (-> p
+                  (str/replace (Pattern/compile (str "^" *compile-path* "/")) "")
+                  (str/replace #".class$" "")
+                  (str/replace #"/" ".")
+                  (Compiler/demunge))))))
 
 (defn aot-class-name [ns]
   (str (.substring (#'clojure.core/root-resource ns) 1) "__init.class"))
@@ -51,6 +73,15 @@
        (filter identity)
        (first)))
 
+(defn get-namespaces []
+  (let [namespaces-f (.getDeclaredField clojure.lang.Namespace "namespaces")
+        _ (.setAccessible namespaces-f true)]
+    (.get namespaces-f clojure.lang.Namespace)))
+
+(defn print-err [& args]
+  (binding [*out* *err*]
+    (apply println args)))
+
 (defn unconditional-compile
   "the clojure compiler works by binding *compile-files* true and then
   calling `load`. `load` looks for both the source file and .class. If
@@ -64,10 +95,15 @@
   and calling Compiler/compile directly"
   [ns]
   (let [[src-path src-resource] (src-resource ns)]
-    (assert src-resource)
-    (with-open [rdr (clojure.java.io/reader src-resource)]
-      (binding [*compile-files* true]
-        (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last))))))
+    (assert src-resource (print-str "couldn't find a .clj or .cljc file for" ns "on classpath"))
+    (try
+      (with-open [rdr (clojure.java.io/reader src-resource)]
+        (binding [*out* *err*
+                  *compile-files* true]
+          (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last))))
+      (catch Exception e
+        (throw (ex-info "while compiling" {:ns ns
+                                           :classpath (util/classpath)} e))))))
 
 (defn non-transitive-compile [dep-nses ns]
   {:pre [(every? symbol? dep-nses)
@@ -77,18 +113,15 @@
   (when (seq dep-nses)
     (apply require dep-nses))
 
-  (let [aot-class-resource (clojure.java.io/resource (aot-class-name ns))
-        loaded (loaded-libs)]
-    (try
-      (if (not (contains? loaded ns))
-        (do
-          (unconditional-compile ns)
-          (assert (seq (compile-path-files)) (print-str "no classfiles generated for" ns *compile-path* "loaded:" loaded))
-          (when (or (contains-protocols? ns)
-                    (contains-deftypes? ns))
-            (str :rules-clojure.compile/reload)))
-        (do
-          (str :rules-clojure.compile/restart)))
+  (let [loaded (loaded-libs)]
+    (unconditional-compile ns)
+    (assert (seq (compile-path-files)) (print-str "no classfiles generated for" ns *compile-path* "loaded:" loaded))))
 
-      (catch Throwable t
-        (throw (ex-info (print-str "while compiling" ns) {:loaded loaded} t))))))
+(defn non-transitive-compile-json [dep-nses ns]
+  (let [baos (java.io.ByteArrayOutputStream.)
+        out-printer (java.io.PrintWriter. baos true java.nio.charset.StandardCharsets/UTF_8)]
+    (binding [*out* out-printer
+              *err* out-printer]
+      (non-transitive-compile dep-nses ns)
+      (.flush out-printer)
+      (str baos))))

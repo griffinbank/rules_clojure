@@ -1,3 +1,7 @@
-{:paths ["src"]
- :deps {org.clojure/tools.namespace {:mvn/version "1.1.0"}
-        org.clojure/tools.deps.alpha {:mvn/version "0.9.857"}}}
+;; this is used for starting a `clj` repl if the bazel build is truely broken. See `toolchains.bzl` for the real source of deps.
+{:paths ["src", "classes"]
+ :deps {org.clojure/data.json {:mvn/version "2.4.0"}
+        org.clojure/java.classpath {:mvn/version "1.0.0"}
+        org.clojure/tools.deps.alpha {:mvn/version "0.14.1212"}
+        org.clojure/tools.namespace {:mvn/version "1.1.0"}}
+ :aliases {:dev {:extra-paths "test"}}}

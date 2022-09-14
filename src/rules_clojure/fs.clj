@@ -3,7 +3,8 @@
             [clojure.string :as str]
             [clojure.java.io :as io])
   (:import java.io.File
-           [java.nio.file CopyOption Files FileSystem FileSystems Path Paths StandardCopyOption]))
+           [java.nio.file CopyOption Files FileSystem FileSystems Path Paths StandardCopyOption]
+           [java.nio.file.attribute FileAttribute]))
 
 (defn path? [x]
   (instance? Path x))
@@ -68,6 +69,7 @@
       .getFileName
       str))
 
+(s/fdef dirname :args (s/cat :p path?) :ret path?)
 (defn dirname [path]
   (.getParent path))
 
@@ -128,3 +130,12 @@
 (defn clean-directory [path]
   (rm-rf path)
   (create-directories path))
+
+(defn new-temp-dir
+  ([prefix]
+   (Files/createTempDirectory prefix (into-array FileAttribute [])))
+  ([dir prefix]
+   (Files/createTempDirectory dir prefix (into-array FileAttribute []))))
+
+(defn new-temp-file [dir prefix suffix]
+  (Files/createTempFile (->path dir) prefix suffix (into-array FileAttribute [])))
