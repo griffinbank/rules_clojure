@@ -8,7 +8,7 @@
             [clojure.spec.alpha :as s]
             [clojure.tools.namespace.file :as file]
             [clojure.tools.namespace.find :as find]
-            [clojure.tools.namespace.parse :as parse]
+            [rules-clojure.parse :as parse]
             [clojure.tools.namespace.track :as track]
             [clojure.tools.namespace.dependency :as dep]
             [rules-clojure.fs :as fs])

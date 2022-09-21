@@ -23,6 +23,7 @@
     clojure.tools.namespace.find
     rules-clojure.persistentClassLoader
     rules-clojure.util
+    rules-clojure.parse
     rules-clojure.persistent-classloader
     rules-clojure.jar
     rules-clojure.fs
