@@ -2,6 +2,14 @@
 
 Status: Beta. Griffin is using it production
 
+# Why Bazel?
+
+Bazel is a build tool for large projects, especially multi-language and monorepo projects. Bazel only builds 'dirty' targets, like make. Unlike make, it uses a sandbox to guarantee a target's dependencies are specified correctly.
+
+## Testing
+
+Bazel can cache test results, so 'test all targets' only runs the tests that depend on files that have changed since the last time the test past. Bazel also supports [Remote Build Execution](https://bazel.build/remote/rbe), the combination of test caching and RBE leads to dramatic speedup of CI times.
+
 ## Features
 - tools.deps support
 - native JVM libraries
@@ -13,8 +21,6 @@ Status: Beta. Griffin is using it production
 Add the following to your `WORKSPACE`:
 
 ```skylark
-
-
 RULES_CLOJURE_SHA = $CURRENT_SHA1
 http_archive(name = "rules_clojure",
              strip_prefix = "rules_clojure-%s" % RULES_CLOJURE_SHA,
@@ -27,11 +33,11 @@ load("@rules_clojure//:toolchains.bzl", "rules_clojure_default_toolchain")
 rules_clojure_default_toolchain()
 ```
 
-Differs from [rules_clojure](https://github.com/simuons/rules_clojure) that it uses `java_library` and `java_binary` as much as possible.
+Differs from [simuons/rules_clojure](https://github.com/simuons/rules_clojure) that it uses `java_library` and `java_binary` as much as possible.
 
 `clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code.
 
-For fast compilation, `clojure_library` is a Bazel persistent worker, which uses protobufs.
+For fast compilation, `clojure_library` is a Bazel persistent worker.
 
 ```
 clojure_library(
@@ -49,7 +55,7 @@ It is likely you're interested in using Bazel because you have large projects wi
 - `srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar by default (.classfiles resulting from the AOT will be added to the jar).
 - `deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc).
 - `aot` is a list of namespaces to compile, non-transitively.
-- `resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use `resource_strip_prefix`, which behaves the same as in `java_library`.
+- `resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use [resource_strip_prefix](https://docs.bazel.build/versions/main/be/java.html#java_library.resource_strip_prefix), which behaves the same as in `java_library`.
 
 Note that `clojure_library` AOT is _non-transitive_. By default `(clojure.core/compile 'foo.bar)` will AOT foo.bar and all of its dependencies, which is non-deterministic over time if foo.bar's dependencies change. `clojure_library` `require`s all dependencies of foo.bar and then compiles, resulting in a jar containing only foo.bar .classfiles.
 
@@ -76,12 +82,11 @@ clojure_test(
   srcs = ["bar_test"])
 ```
 
-Delegates to `java_test`, using `rules-clojure.testrunner`. `clojure_test` uses `clojure.test` to run all tests in a single namespace. Note that bazel defines a test as a script that returns exit code 0, so each `clojure_test` is a separate JVM, which makes startup time relevant.
+Delegates to `java_test`, using `rules-clojure.testrunner` as the main class. `clojure_test` uses `clojure.test` to run all tests in a single namespace. Note that bazel defines a test as a script that returns exit code 0, so each `clojure_test` is a separate JVM, which makes startup time relevant.
 
 ## tools.deps dependencies (optional)
-In your WORKSPACE
+In your WORKSPACE:
 ```
-
 load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies")
 rules_clojure_dependencies()
 
@@ -194,7 +199,7 @@ You probably want to create your own java_library targets for `resources`.
 By default, `resources` is on the tools.deps classpath. By default, `clojure_tools_deps` and `gen_srcs` operate on every directory under under `:paths`. When `clojure_tools_deps` runs, it will overwrite any existing BUILD.bazel files. To tell gen-build to ignore those libraries:
 
 ```clojure
-:bazel {:ignore ["//resources", "//test-resources"]}
+:bazel {:ignore ["resources", "test-resources"]}
 ```
 
 gen-build will not produce BUILD.bazel files for any path under `:ignore`
@@ -277,7 +282,7 @@ Please see [example](examples/setup/custom) of custom toolchain.
   - Builds set the file modification time to current time. This is because clojure.lang.RT looks at file modification times when deciding whether to load a .clj or .class file. Setting the file modification time to the epoch for .class files would mean that if a source .clj is on the classpath with a non-zero modification time, it would always take precedence over an AOT .class file
   - there isn't a public API to reset the ID clojure uses for naming anonymous functions, which means anonymous AOT function names are non-deterministic
 - When using gen-deps, I haven't found a way to identify :provided dependencies. Those have to be added by hand for now
-- Do not use `user.clj`. If there is a user.clj at the root of your classpath, it will be loaded every time a new Clojure runtime is created. Additionally, dependencies in the user.clj are invisible to `gen-build`
+- Do not use `user.clj`. If there is a user.clj at the root of your classpath, it will be loaded every time a new Clojure runtime is created, which can be many times during an AOT job. Additionally, dependencies in the user.clj are invisible to `gen-build`
 
 
 # Thanks
