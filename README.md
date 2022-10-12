@@ -8,15 +8,7 @@ Bazel is a build tool for large projects, especially multi-language and monorepo
 
 ## Testing
 
-Bazel can cache test results, so 'test all targets' only runs the tests that depend on files that have changed since the last time the test past. Bazel also supports [Remote Build Execution](https://bazel.build/remote/rbe), the combination of test caching and RBE leads to dramatic speedup of CI times.
-
-# Why Bazel?
-
-Bazel is a build tool for large projects, especially multi-language and monorepo projects. Bazel only builds 'dirty' targets, like make. Unlike make, it uses a sandbox to guarantee a target's dependencies are specified correctly.
-
-## Testing
-
-Bazel can cache test results, so 'test all targets' only runs the tests that depend on files that have changed since the last time the test past. Bazel also supports [Remote Build Execution](https://bazel.build/remote/rbe), the combination of test caching and RBE leads to dramatic speedup of CI times.
+Bazel can cache test results, so bazel only executes tests that depend on files that have changed since the last time the test passed. Bazel also supports [Remote Build Execution](https://bazel.build/remote/rbe). The combination of test caching and RBE leads to dramatic speedup of CI times.
 
 ## Features
 - tools.deps support
