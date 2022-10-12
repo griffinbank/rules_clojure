@@ -4,7 +4,7 @@ Status: Stable. Griffin is using it production
 
 # Why Bazel?
 
-Bazel is a build tool for large projects, especially multi-language and monorepo projects. Bazel only builds 'dirty' targets, like make. Unlike make, it uses a sandbox to guarantee a target's dependencies are specified correctly.
+Bazel is a build tool for large projects, especially multi-language and monorepo projects. It has support for [many languages](https://gist.github.com/thundergolfer/02f3a696459b968aa765376011858350). Bazel only builds 'dirty' targets, like `make`. Unlike `make`, it uses a sandbox to guarantee a target's dependencies are specified correctly.
 
 ## Testing
 
