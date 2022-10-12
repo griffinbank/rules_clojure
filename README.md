@@ -1,6 +1,6 @@
 # Yet Another Clojure rules for [Bazel](https://bazel.build)
 
-Status: Stable. Griffin is using it production
+Status: Stable. [Griffin](www.griffin.sh) is using it production
 
 # Why Bazel?
 
