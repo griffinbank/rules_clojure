@@ -48,7 +48,7 @@ clojure_library(
     aot = ["foo.bbq"])
 ```
 
-It is likely you're interested in using Bazel because you have large projects with long compile and or test steps. By default, rules_clojure attempts to AOT as much as possible, for speed.
+It is likely you're interested in using Bazel because you have large projects with long compile and/or test steps. By default, rules_clojure attempts to AOT as much as possible, for speed.
 
 `clojure_library` produces a jar.
 
