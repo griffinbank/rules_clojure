@@ -89,6 +89,13 @@ java_binary(name="gen_srcs",
             deps_build_dir = repository_ctx.path(""),
             aliases = aliases_str(repository_ctx.attr.aliases)))
 
+def _symlink_config_files(repository_ctx):
+    repository_ctx.execute(["mkdir", "-p", repository_ctx.os.environ["HOME"] + "/.clojure/tools"])
+    repository_ctx.symlink(repository_ctx.os.environ["HOME"] + "/.clojure/deps.edn",
+                           repository_ctx.path(clj_install_prefix + "/example-deps.edn"))
+    repository_ctx.symlink(repository_ctx.os.environ["HOME"] + "/.clojure/tools/tools.edn",
+                           repository_ctx.path(clj_install_prefix + "/tools.edn"))
+
 def _symlink_repository(repository_ctx):
     repository_ctx.symlink(repository_ctx.os.environ["HOME"] + "/.m2/repository", repository_ctx.path("repository"))
 
@@ -118,6 +125,7 @@ def _tools_deps_impl(repository_ctx):
     _install_tools_deps(repository_ctx)
     _add_deps_edn(repository_ctx)
     _symlink_repository(repository_ctx)
+    _symlink_config_files(repository_ctx)
     _install_scripts(repository_ctx)
     _run_gen_build(repository_ctx)
     return None
