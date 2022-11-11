@@ -55,13 +55,6 @@ def _install_tools_deps(repository_ctx):
     f = fns[repository_ctx.os.name]
     f(repository_ctx)
 
-
-def _add_deps_edn(repository_ctx):
-    # repository_ctx.delete(repository_ctx.path("deps.edn"))
-    repository_ctx.symlink(
-        repository_ctx.path(repository_ctx.attr.deps_edn),
-        repository_ctx.path("deps.edn"))
-
 def aliases_str(aliases):
     return str("[" + " ".join([ (":%s" % (a)) for a in aliases]) + "]")
 
@@ -92,13 +85,54 @@ java_binary(name="gen_srcs",
 def _symlink_repository(repository_ctx):
     repository_ctx.symlink(repository_ctx.os.environ["HOME"] + "/.m2/repository", repository_ctx.path("repository"))
 
+# This should be kept in line with the deps.edn for this actual repo
+INSTALL_DEPS_EDN_TEMPLATE = """
+{:paths ["%s"]
+ :deps {org.clojure/clojure {:mvn/version "1.11.1" :exclusions #{org.clojure/spec.alpha
+                                                                 org.clojure/core.specs.alpha}}
+        org.clojure/spec.alpha {:mvn/version "0.3.218" :exclusions #{org.clojure/clojure}}
+        org.clojure/core.specs.alpha {:mvn/version "0.2.62" :exclusions #{org.clojure/clojure
+                                                                          org.clojure/spec.alpha}}
+        org.clojure/data.json {:mvn/version "2.4.0"}
+        org.clojure/java.classpath {:mvn/version "1.0.0"}
+        org.clojure/tools.deps.alpha {:mvn/version "0.14.1212"}
+        org.clojure/tools.namespace {:mvn/version "1.1.0"}
+        org.projectodd.shimdandy/shimdandy-api {:mvn/version "1.2.1"}
+        org.projectodd.shimdandy/shimdandy-impl {:mvn/version "1.2.1"}}}
+"""
+
+RUN_DEPS_EDN_TEMPLATE = """
+{:paths ["%s"]
+ :deps {org.clojure/tools.deps.alpha {:mvn/version "0.14.1212"}
+        org.clojure/tools.namespace {:mvn/version "1.1.0"}}}
+"""
+
+def _install_base_deps(repository_ctx):
+    repository_ctx.file("deps.edn.tpl", INSTALL_DEPS_EDN_TEMPLATE, executable=False)
+    repository_ctx.template(
+        "deps.edn",
+        "deps.edn.tpl",
+        {"%s", repository_ctx.path("../rules_clojure/src")}
+    )
+
+    args = [repository_ctx.path("tools.deps/bin/clojure"),
+            "-X:deps"
+            "list"]
+    ret = repository_ctx.execute(args, quiet=False)
+    if ret.return_code > 0:
+        fail("install of toolchain deps failed:", ret.return_code, ret.stdout, ret.stderr)
+    repository_ctx.delete("deps.edn")
+
+def _add_deps_edn(repository_ctx):
+    repository_ctx.symlink(
+        repository_ctx.path(repository_ctx.attr.deps_edn),
+        repository_ctx.path("deps.edn"))
+
 def _run_gen_build(repository_ctx):
     args = [repository_ctx.path("tools.deps/bin/clojure"),
             "-Srepro",
-            "-Sdeps", """{:paths ["%s"]
-            :deps {org.clojure/tools.namespace {:mvn/version "1.1.0"}
-            org.clojure/tools.deps.alpha {:mvn/version "0.14.1178"}}}""" % repository_ctx.path("../rules_clojure/src"),
-
+            "-Sdeps",
+            RUN_DEPS_EDN_TEMPLATE % repository_ctx.path("../rules_clojure/src"),
             "-J-Dclojure.main.report=stderr",
             "-M",
             "-m", "rules-clojure.gen-build",
@@ -108,16 +142,16 @@ def _run_gen_build(repository_ctx):
             ":deps-build-dir", repository_ctx.path(""),
             ":deps-repo-tag", "@" + repository_ctx.attr.name,
             ":workspace-root", repository_ctx.attr.deps_edn.workspace_root,
-            ":aliases", aliases_str(repository_ctx.attr.aliases)
-            ]
+            ":aliases", aliases_str(repository_ctx.attr.aliases)]
     ret = repository_ctx.execute(args, quiet=False)
     if ret.return_code > 0:
         fail("gen build failed:", ret.return_code, ret.stdout, ret.stderr)
 
 def _tools_deps_impl(repository_ctx):
     _install_tools_deps(repository_ctx)
-    _add_deps_edn(repository_ctx)
     _symlink_repository(repository_ctx)
+    _install_base_deps(repository_ctx)
+    _add_deps_edn(repository_ctx)
     _install_scripts(repository_ctx)
     _run_gen_build(repository_ctx)
     return None
@@ -132,7 +166,7 @@ clojure_tools_deps = repository_rule(
 
 def clojure_gen_srcs(name):
     native.alias(name=name,
-                 actual= "@deps//scripts:gen_srcs")
+                 actual="@deps//scripts:gen_srcs")
 
 def clojure_gen_namespace_loader(name, output_filename, output_ns_name, output_fn_name, in_dirs, exclude_nses, platform, deps_edn):
     native.java_binary(name=name,
