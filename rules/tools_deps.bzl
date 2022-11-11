@@ -109,9 +109,9 @@ RUN_DEPS_EDN_TEMPLATE = """
 
 def _install_base_deps(repository_ctx):
     args = [repository_ctx.path("tools.deps/bin/clojure"),
-            "-Sdeps"
+            "-Sdeps",
             INSTALL_DEPS_EDN_TEMPLATE % repository_ctx.path("../rules_clojure/src"),
-            "-X:deps"
+            "-X:deps",
             "list"]
     ret = repository_ctx.execute(args, quiet=False)
     if ret.return_code > 0:
