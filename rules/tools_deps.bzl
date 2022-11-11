@@ -108,20 +108,14 @@ RUN_DEPS_EDN_TEMPLATE = """
 """
 
 def _install_base_deps(repository_ctx):
-    repository_ctx.file("deps.edn.tpl", INSTALL_DEPS_EDN_TEMPLATE, executable=False)
-    repository_ctx.template(
-        "deps.edn",
-        "deps.edn.tpl",
-        {"%s", repository_ctx.path("../rules_clojure/src")}
-    )
-
     args = [repository_ctx.path("tools.deps/bin/clojure"),
+            "-Sdeps"
+            INSTALL_DEPS_EDN_TEMPLATE % repository_ctx.path("../rules_clojure/src"),
             "-X:deps"
             "list"]
     ret = repository_ctx.execute(args, quiet=False)
     if ret.return_code > 0:
         fail("install of toolchain deps failed:", ret.return_code, ret.stdout, ret.stderr)
-    repository_ctx.delete("deps.edn")
 
 def _add_deps_edn(repository_ctx):
     repository_ctx.symlink(
