@@ -26,11 +26,11 @@ http_archive(name = "rules_clojure",
              strip_prefix = "rules_clojure-%s" % RULES_CLOJURE_SHA,
              url = "https://github.com/griffinbank/rules_clojure/archive/%s.zip" % RULES_CLOJURE_SHA)
 
-load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies")
-rules_clojure_dependencies()
+load("@rules_clojure//:repositories.bzl", "rules_clojure_deps")
+rules_clojure_deps()
 
-load("@rules_clojure//:toolchains.bzl", "rules_clojure_default_toolchain")
-rules_clojure_default_toolchain()
+load("@rules_clojure//:setup.bzl", "rules_clojure_setup")
+rules_clojure_setup()
 ```
 
 Differs from [simuons/rules_clojure](https://github.com/simuons/rules_clojure) that it uses `java_library` and `java_binary` as much as possible.
@@ -90,8 +90,8 @@ In your WORKSPACE:
 load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies")
 rules_clojure_dependencies()
 
-load("@rules_clojure//:toolchains.bzl", "rules_clojure_default_toolchain")
-rules_clojure_default_toolchain()
+load("@rules_clojure//:setup.bzl", "rules_clojure_setup")
+rules_clojure_setup()
 
 load("@rules_clojure//rules:tools_deps.bzl", "clojure_tools_deps", "clojure_gen_srcs")
 
@@ -115,8 +115,7 @@ In a BUILD file,
 ```
 load("@rules_clojure//rules:tools_deps.bzl", "clojure_gen_srcs")
 
-clojure_gen_srcs(
-    name = "gen_srcs")
+clojure_gen_srcs(name = "gen_srcs")
 ```
 
 `gen_srcs` defines a target which behaves similarly to [bazel-gazelle](https://github.com/bazelbuild/bazel-gazelle). When run, it introspects all directories under deps.edn `:paths`, and generates a BUILD.bazel file in each directory. `gen_src` defines `clojure_library` and `clojure_test` targets. Creates a library per namespace, with AOT.
@@ -184,7 +183,7 @@ Instructs gen-build to not AOT that namespace.
 
 Fine grained dependencies are ideal from an efficiency perspective, but it isn't always possible to make them work.
 
-`gen_srcs` also creates a few extra targets in every directory on the deps.edn search path. It will produce `clojure_library` targets named `__clj_lib`  containing all source files in the directory (non-AOT'd), and all subpackages. ```//src:__clj_files``` includes all src files under `src`. These targets are useful for static analysis tools.
+`gen_srcs` also creates a few extra targets in every directory on the deps.edn search path. It will produce `clojure_library` targets named `__clj_lib`  containing all source files in the directory (non-AOT'd), and all subpackages. `//src:__clj_files` includes all src files under `src`. These targets are useful for static analysis tools.
 
 `__clj_lib` does not include dependencies. Use `@deps//:__all` to pull in all dependencies.
 
@@ -265,16 +264,24 @@ cljs_library(
 
 `clojure_gen_namespace_loader` generates a file with the specified filename and namespace. It `:requires` all namespaces found under `in_dirs`. The generated namespace defines a function `all-namespaces`. Your test runner can require that namespace.
 
+# Updating `rules_clojure` dependencies
 
-## Toolchains
+- Update the `artifacts` within `maven_install(name = "frozen_deps")` in `WORKSPACE`.
+- Run `REPIN=1 bazel run @unpinned_frozen_deps//:pin` to fetch the new dependency tree and write it out to `frozen_deps_install.json`.
+- Run `bazel sync` to ensure the latest deps have actually been pulled and are referenced as `http_file` entries in `external/frozen_deps/defs.bzl`.
+- Run `./tools/freeze-deps.py --zip deps/rules_clojure_maven_deps.zip`.
+- Check everything into the repository.
 
-Rules require `@rules_clojure//:toolchain` type.
+## Why `rules_clojure_maven_deps.zip`?
 
-Default is registered with `rules_clojure_toolchains` from [@rules_clojure//:repositories.bzl](repositories.bzl)
+This is following a pattern used by the Bazel team to handle dependencies via `rules_jvm_external`, in `contrib/rules_jvm` and multiple others. The idea is as follows:
+- Pin dependencies with explicit checksum shas, so that if a package is compromised and a malicious version of an existing release is uploaded (or a new release that our Maven coordinates allow), we can detect and error on that.
+- Use standard Bazel tooling to fetch those dependencies:
+  - Has automatic checksum validation.
+  - Allows standard Bazel options to add URL mirrors, set authentication for hosts, etc.
+- Reference the pinned dependencies elsewhere in the package, so that the unpinned, non-Bazel-downloaded, versions are only used by the team maintaining the rules, when bumping the dependencies.
 
-Custom toolchain can be defined with `clojure_toolchain` rule from [@rules_clojure//:toolchains.bzl](toolchains.bzl)
-
-Please see [example](examples/setup/custom) of custom toolchain.
+This makes things much nicer and more standard for users of the rules.
 
 # Known Issues
 

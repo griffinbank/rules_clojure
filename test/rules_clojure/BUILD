@@ -8,11 +8,10 @@ clojure_library(name="test-deps",
                 deps=["//src/rules_clojure:libworker",
                       "//src/rules_clojure:libcompile",
                       "//src/rules_clojure:srcjar"],
-                data=["@rules_clojure_maven//:org_clojure_clojure",
-                      "@rules_clojure_maven//:org_clojure_spec_alpha",
-                      "@rules_clojure_maven//:org_clojure_core_specs_alpha",
-
-                      "@rules_clojure_maven//:org_clojure_tools_deps_alpha"])
+                data=["@rules_clojure_maven_deps//:org_clojure_clojure",
+                      "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
+                      "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
+                      "@rules_clojure_maven_deps//:org_clojure_tools_deps_alpha"])
 
 clojure_test(name="worker-test",
              deps=[":test-deps"],

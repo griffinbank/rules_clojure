@@ -20,26 +20,6 @@ Builds a wrapper shell script with the same name as the rule.
 | main |  A namespace to find a -main function for execution.   | String | required |  |
 
 
-<a name="#clojure_java_library"></a>
-
-## clojure_java_library
-
-<pre>
-clojure_java_library(<a href="#clojure_java_library-name">name</a>, <a href="#clojure_java_library-deps">deps</a>, <a href="#clojure_java_library-namespaces">namespaces</a>)
-</pre>
-
-Compiles given namespaces to java.
-
-**ATTRIBUTES**
-
-
-| Name  | Description | Type | Mandatory | Default |
-| :-------------: | :-------------: | :-------------: | :-------------: | :-------------: |
-| name |  A unique name for this target.   | <a href="https://bazel.build/docs/build-ref.html#name">Name</a> | required |  |
-| deps |  Dependencies to compile.   | <a href="https://bazel.build/docs/build-ref.html#labels">List of labels</a> | required |  |
-| namespaces |  Namespaces in classpath to compile.   | List of strings | required |  |
-
-
 <a name="#clojure_library"></a>
 
 ## clojure_library
