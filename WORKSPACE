@@ -51,9 +51,8 @@ maven_install(
         "org.clojure:data.json:2.4.0",
         "org.clojure:java.classpath:1.0.0",
         "org.clojure:tools.namespace:1.1.0",
-        "org.clojure:tools.deps.alpha:0.14.1212",
-        "org.projectodd.shimdandy:shimdandy-api:1.2.1",
-        "org.projectodd.shimdandy:shimdandy-impl:1.2.1"],
+        "org.clojure:tools.deps.alpha:0.14.1212"
+    ],
     maven_install_json = "@//:frozen_deps_install.json",
     fail_if_repin_required = True,
     repositories = [
