@@ -21,13 +21,13 @@ java_binary(
     jvm_flags=["-Dclojure.main.report=stderr",
                "-cp $${CLASSPATH}:worker-classes"],
     resource_strip_prefix="src",
-    runtime_deps=["@rules_clojure_maven//:org_clojure_clojure",
-                  "@rules_clojure_maven//:org_clojure_spec_alpha",
-                  "@rules_clojure_maven//:org_clojure_core_specs_alpha",
-                  "@rules_clojure_maven//:org_clojure_core_cache",
-                  "@rules_clojure_maven//:org_clojure_data_json",
-                  "@rules_clojure_maven//:org_clojure_java_classpath",
-                  "@rules_clojure_maven//:org_clojure_tools_namespace"])
+    runtime_deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
+                  "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
+                  "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
+                  "@rules_clojure_maven_deps//:org_clojure_core_cache",
+                  "@rules_clojure_maven_deps//:org_clojure_data_json",
+                  "@rules_clojure_maven_deps//:org_clojure_java_classpath",
+                  "@rules_clojure_maven_deps//:org_clojure_tools_namespace"])
 
 genrule(
     name="bootstrap-worker",
@@ -49,9 +49,9 @@ genrule(
 
 java_import(name="libworker",
             jars=["libworker.jar"],
-            runtime_deps=["@rules_clojure_maven//:org_clojure_clojure",
-                          "@rules_clojure_maven//:org_clojure_spec_alpha",
-                          "@rules_clojure_maven//:org_clojure_core_specs_alpha"],
+            runtime_deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
+                          "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
+                          "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha"],
             data=[":bootstrap-worker"])
 
 java_import(name="libcompile",
@@ -69,12 +69,12 @@ clojure_library(
     name= "libgen_build",
     srcs=["gen_build.clj", "fs.clj", "parse.clj"],
     resource_strip_prefix = "src",
-    deps=["@rules_clojure_maven//:org_clojure_clojure",
-          "@rules_clojure_maven//:org_clojure_spec_alpha",
-          "@rules_clojure_maven//:org_clojure_core_specs_alpha",
-          "@rules_clojure_maven//:org_clojure_tools_namespace",
-          "@rules_clojure_maven//:org_clojure_tools_deps_alpha",
-          "@rules_clojure_maven//:org_clojure_data_json"],
+    deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
+          "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
+          "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
+          "@rules_clojure_maven_deps//:org_clojure_tools_namespace",
+          "@rules_clojure_maven_deps//:org_clojure_tools_deps_alpha",
+          "@rules_clojure_maven_deps//:org_clojure_data_json"],
     aot=["clojure.java.classpath",
          "clojure.tools.deps.alpha.extensions",
          "clojure.tools.deps.alpha.util.session",
@@ -107,9 +107,9 @@ clojure_library(name= "testrunner",
                 srcs=["testrunner.clj"],
                 resource_strip_prefix="src",
                 aot=["rules-clojure.testrunner"],
-                deps=["@rules_clojure_maven//:org_clojure_clojure",
-                      "@rules_clojure_maven//:org_clojure_spec_alpha",
-                      "@rules_clojure_maven//:org_clojure_core_specs_alpha"])
+                deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
+                      "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
+                      "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha"])
 
 java_library(name="srcjar",
              resources=glob(["*.clj"]),

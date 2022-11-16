@@ -5,8 +5,8 @@ local_repository(
     path = "../../..",
 )
 
-load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies", "rules_clojure_toolchains")
+load("@rules_clojure//:repositories.bzl", "rules_clojure_deps")
+rules_clojure_deps()
 
-rules_clojure_dependencies()
-
-rules_clojure_toolchains()
+load("@rules_clojure//:setup.bzl", "rules_clojure_setup")
+rules_clojure_setup()
