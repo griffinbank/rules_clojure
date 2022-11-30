@@ -362,14 +362,15 @@
   "returns a map of class symbol to jarpath for all jars on the classpath"
   [basis]
   {:post [(s/valid? ::class->jar %)]}
-  (->> basis
-       :classpath
-       (mapcat (fn [[path {:keys [lib-name]}]]
-                 (when lib-name
-                   (->> (jar-classes path)
-                        (map (fn [c]
-                               [c (fs/->path path)]))))))
-       (into {})))
+  (into {}
+        (mapcat
+          (fn [path]
+            (let [{:keys [lib-name]} (get-in basis [:classpath path])]
+              (when lib-name
+                (->> (jar-classes path)
+                     (map (fn [c]
+                            [c (fs/->path path)]))))))
+          (:classpath-roots basis))))
 
 (defn expand-deps- [basis]
   (let [ex-svc (concurrent/new-executor 2)]
@@ -739,17 +740,18 @@
               (gen-dir args dir)))
        (dorun)))
 
+(defn path->absolute
+  [path deps-edn-path]
+  (if (= "jar" (-> path fs/->path fs/extension))
+    (fs/->path path)
+    (fs/->path (fs/dirname deps-edn-path) path)))
+
 (defn basis-absolute-source-paths
   "By default the source directories on the basis `:classpath` are relative to the deps.edn. Absolute-ize them"
   [basis deps-edn-path]
-  (reduce (fn [basis [path info]]
-            (if (= "jar" (-> path fs/->path fs/extension))
-              (-> basis
-                  (update-in [:classpath] dissoc path)
-                  (assoc-in [:classpath (fs/->path path)] info))
-              (-> basis
-                  (update-in [:classpath] dissoc path)
-                  (assoc-in [:classpath (fs/->path (fs/dirname deps-edn-path) path)] info)))) basis (:classpath basis)))
+  (-> basis
+      (update :classpath update-keys #(path->absolute % deps-edn-path))
+      (update :classpath-roots (fn [cp-roots] (map #(path->absolute % deps-edn-path) cp-roots)))))
 
 (s/fdef make-basis :args (s/cat :a (s/keys :req-un [::read-deps ::aliases ::repository-dir ::deps-edn-path])) :ret ::basis)
 (defn make-basis
