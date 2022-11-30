@@ -5,7 +5,7 @@
             [clojure.spec.alpha :as s]
             [rules-clojure.jar :as jar]
             [rules-clojure.util :as util]
-            [rules-clojure.persistent-classloader :as pcl ])
+            [rules-clojure.persistent-classloader :as pcl])
   (:import java.nio.charset.StandardCharsets
            java.util.concurrent.TimeUnit))
 
@@ -75,7 +75,7 @@
                      1)))
           _ (.flush out-printer)
           resp (merge
-                {:exit_code exit
+                {:exitCode exit
                  :output (str baos)}
                 (when requestId
                   {:requestId requestId}))]

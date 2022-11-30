@@ -162,9 +162,9 @@ def clojure_jar_impl(ctx):
         inputs = inputs,
         mnemonic = "ClojureCompile",
         progress_message = "Compiling %s" % ctx.label,
-        execution_requirements={"supports-workers":"1",
+        execution_requirements={"supports-workers": "1",
                                 "supports-multiplex-workers": "1",
-                                "requires-worker-protocol" : "json"})
+                                "requires-worker-protocol": "json"})
 
     return [
         default_info,
