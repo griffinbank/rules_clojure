@@ -69,7 +69,7 @@
 
 (defn get-ns-decl [all-ns-decls ns]
   (let [ret (get all-ns-decls ns)]
-    (assert ret (print-str "could not find ns-decl for" ns))
+    (assert ret (print-str "could not find ns-decl for" ns ". Is it on the classpath?" (keys all-ns-decls)))
     ret))
 
 (defn classpath-resources [classpath]
@@ -179,8 +179,8 @@
   [{:keys [classpath
            classes-dir
            output-jar]} nses]
-  (assert (every? fs/file? classpath))
-  (assert (string? classes-dir))
+  {:pre [(every? fs/file? classpath)
+         (string? classes-dir)]}
 
   (let [topo-nses (topo-sort classpath)
         all-ns-decls (ns->ns-decls classpath)

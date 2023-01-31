@@ -69,3 +69,15 @@ rules_clojure_deps()
 
 load("//:setup.bzl", "rules_clojure_setup")
 rules_clojure_setup()
+
+
+# used for testing
+maven_install(
+    name = "clojure_old",
+    artifacts = [
+        "org.clojure:clojure:1.8.0",],
+    fail_if_repin_required = True,
+    repositories = [
+        "https://repo1.maven.org/maven2",
+        "https://repo.clojars.org/"
+    ])

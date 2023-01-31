@@ -51,8 +51,11 @@
   (assert classloader-strategy)
   (let [compile-script (jar/get-compilation-script-json req)]
     (try
+      (assert (:classpath req))
       (pcl/with-classloader classloader-strategy (select-keys req [:classpath :aot-nses :input-map])
         (fn [cl]
+          (assert cl)
+          (assert compile-script)
           (let [ret (util/shim-eval cl compile-script)]
             (when (seq ret)
               (println ret)))

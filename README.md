@@ -52,16 +52,16 @@ It is likely you're interested in using Bazel because you have large projects wi
 
 `clojure_library` produces a jar.
 
-- `srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar by default (.classfiles resulting from the AOT will be added to the jar).
+- `srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar by default (.classfiles resulting from the AOT will be added to the jar). If you want the .clj to be present in the final jar, add it in `resources`
 - `deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc).
 - `aot` is a list of namespaces to compile, non-transitively.
 - `resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use [resource_strip_prefix](https://docs.bazel.build/versions/main/be/java.html#java_library.resource_strip_prefix), which behaves the same as in `java_library`.
 
-Note that `clojure_library` AOT is _non-transitive_. By default `(clojure.core/compile 'foo.bar)` will AOT foo.bar and all of its dependencies, which is non-deterministic over time if foo.bar's dependencies change. `clojure_library` `require`s all dependencies of foo.bar and then compiles, resulting in a jar containing only foo.bar .classfiles.
+Note that `clojure_library` AOT is _non-transitive_. By default `(clojure.core/compile 'foo.bar)` will AOT foo.bar and all of its dependencies, which prevents incremental compilation. `clojure_library` `require`s all dependencies in the foo.bar ns declaration and then compiles, resulting in a jar containing only foo.bar .class files.
 
 If you don't need to AOT, `clojure_library` isn't necessary, just use `java_library` with `resource_strip_prefix`.
 
-Because of Clojure's general lack of concern about the difference between runtime and compile-time (e.g. AOT), prefer using `deps` over `runtime_deps`. A downstream library might depend on the library, and whether it's a `dep` or `runtime_dep` depends on whether the downstream library is AOTing or not.
+Note that AOT will determine whether a library should appear in `deps` or `runtime_deps`. If a library is being AOT'd, everything that it requires will need to appear in `deps`. If it is not being AOT'd, dependencies should be listed in `runtime_deps`.
 
 ### clojure_repl
 
