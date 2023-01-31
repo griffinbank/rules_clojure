@@ -41,7 +41,7 @@
   (let [cl (pcl/new-classloader- (map m2-path clojure-deps))]
     (.loadClass cl "clojure.lang.RT")))
 
-(deftest can-reuse
+(deftest caching-clean-thread-local-can-reuse
   (let [strategy (pcl/caching-clean-GAV-thread-local)
         classpath (-> (map m2-path clojure-deps)
                       (set)
@@ -52,3 +52,5 @@
         cl2 (atom nil)
         _ (pcl/with-classloader strategy {:classpath classpath} (fn [cl] (reset! cl2 cl)))]
     (is (= (.getParent @cl1) (.getParent @cl2)))))
+
+(deftest digests-will-invalidate)

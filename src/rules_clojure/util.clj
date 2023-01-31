@@ -51,7 +51,7 @@
 
 (defn shim-eval [cl s]
   (with-context-classloader cl
-    (let [script (shim-invoke cl "clojure.core" "read-string" s)]
+    (let [script (shim-invoke cl "clojure.core" "read-string" s)          ]
       (shim-invoke cl "clojure.core" "eval" script))))
 
 (defn bind-compiler-loader [cl]

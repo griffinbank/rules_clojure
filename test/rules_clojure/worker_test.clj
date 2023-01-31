@@ -60,7 +60,9 @@
 (deftest process-persistent-works
   (let [req (-> basic-req with-temp-output)
         work-req {:arguments [(json/write-str req)]
-                  :requestId 1}
+                  :requestId 1
+                  :inputs (map (fn [p]
+                                 {:path p :digest (str (hash p))}) (util/classpath))}
         in-bais (java.io.ByteArrayInputStream. (-> work-req json/write-str (.getBytes "UTF-8")))
         in-reader (LineNumberingPushbackReader. (InputStreamReader. in-bais))
         pipe-in (PipedInputStream.)
@@ -79,7 +81,11 @@
     (let [resp (deref resp-f 2000 nil)
           _ (is resp)
           resp-json (json/read-str resp :key-fn keyword)]
+      (when-not (s/valid? ::worker/work-response resp-json)
+        (s/explain ::worker/work-response resp-json))
       (is (s/valid? ::worker/work-response resp-json))
-      (is (= 0 (:exit_code resp-json))))))
+      (when-not (zero? (:exitCode resp-json))
+        (println resp-json))
+      (is (= 0 (:exitCode resp-json))))))
 
 ;; TODO process-persistent multiplex vs. singleplex

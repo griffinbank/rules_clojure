@@ -4,4 +4,6 @@
             [rules-clojure.persistent-classloader :as pcl]))
 
 (deftest contains-protocols
-  (is (c/contains-protocols? 'rules-clojure.persistent-classloader)))
+  (is (c/contains-protocols? 'rules-clojure.persistent-classloader))
+
+  (is (not (c/contains-protocols? 'rules-clojure.compile-test))))

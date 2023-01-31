@@ -18,7 +18,7 @@
 (defn contains-protocols? [ns]
   (assert (find-ns ns) (print-str ns "is not loaded"))
   (->> ns
-       ns-map
+       ns-interns
        vals
        (some (fn [x]
                (try

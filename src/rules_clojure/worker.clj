@@ -28,12 +28,16 @@
 (s/def ::arguments (s/cat :c ::compile-req))
 
 (s/def ::requestId nat-int?)
-(s/def ::exit_code nat-int?)
+(s/def ::path string?)
+(s/def ::digest string?)
+(s/def ::input (s/keys :req [::path ::digest]))
+(s/def ::inputs (s/coll-of ::input))
+(s/def ::exitCode nat-int?)
 (s/def ::output string?)
 
 ;; requestId is not present in singleplex mode, required in multiplex mode. We don't have a good way of detecting which mode we're running in, so mark it optional
-(s/def ::work-request (s/keys :req-un [::arguments] :opt-un [::requestId]))
-(s/def ::work-response (s/keys :req-un [::exit_code ::output] :opt-un [::requestId]))
+(s/def ::work-request (s/keys :req-un [::arguments ::inputs] :opt-un [::requestId]))
+(s/def ::work-response (s/keys :req-un [::exitCode ::output] :opt-un [::requestId]))
 
 (defn all-dep-map-jars [dep-map]
   (apply set/union (set (keys dep-map)) (set (vals dep-map))))
@@ -47,7 +51,7 @@
   (assert classloader-strategy)
   (let [compile-script (jar/get-compilation-script-json req)]
     (try
-      (pcl/with-classloader classloader-strategy (select-keys req [:classpath :aot-nses])
+      (pcl/with-classloader classloader-strategy (select-keys req [:classpath :aot-nses :input-map])
         (fn [cl]
           (let [ret (util/shim-eval cl compile-script)]
             (when (seq ret)
@@ -61,14 +65,22 @@
   (let [req-json (json/read-str (slurp (io/file (.substring (last args) 1))) :key-fn keyword)]
     (process-request (assoc req-json :classloader-strategy (pcl/slow-naive)))))
 
-(defn process-persistent-1 [{:keys [arguments requestId classloader-strategy]}]
+(defn input-map [inputs]
+  (->> inputs
+       (map (fn [{:keys [path digest]}]
+              [path digest]))
+       (into {})))
+
+(defn process-persistent-1 [{:keys [arguments requestId classloader-strategy inputs] :as work-req}]
   (let [baos (java.io.ByteArrayOutputStream.)
         out-printer (java.io.PrintWriter. baos true StandardCharsets/UTF_8)
         real-out *out*]
     (let [exit (binding [*out* out-printer]
                  (try
                    (let [compile-req (json/read-str (first arguments) :key-fn keyword)]
-                     (process-request (assoc compile-req :classloader-strategy classloader-strategy)))
+                     (process-request (assoc compile-req
+                                             :classloader-strategy classloader-strategy
+                                             :input-map (input-map inputs))))
                    0
                    (catch Throwable t
                      (println t) ;; print to bazel str
@@ -86,11 +98,11 @@
 (defn process-persistent []
   (let [num-processors (-> (Runtime/getRuntime) .availableProcessors)
         executor (java.util.concurrent.Executors/newWorkStealingPool num-processors)
-        classloader-strategy (pcl/caching-clean-GAV-thread-local)]
+        classloader-strategy (pcl/caching-clean-digest-thread-local)]
     (loop []
       (if-let [line (read-line)]
         (let [work-req (json/read-str line :key-fn keyword)]
-          (util/print-err "got req")
+          ;; (util/print-err "got req" work-req)
           (let [out *out*
                 err *err*]
             (.submit executor ^Runnable (fn []
