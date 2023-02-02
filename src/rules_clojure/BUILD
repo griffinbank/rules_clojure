@@ -65,16 +65,26 @@ java_binary(name="worker",
                        "-XX:MaxMetaspaceSize=2g"],
             runtime_deps=["libworker"])
 
+clojure_library(name="libfs",
+                srcs=["fs.clj"],
+                resource_strip_prefix="src",
+                resources=["fs.clj"],
+                aot=["rules-clojure.fs"],
+                deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
+                      "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
+                      "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha"])
+
 clojure_library(
     name= "libgen_build",
-    srcs=["gen_build.clj", "fs.clj", "parse.clj"],
+    srcs=["gen_build.clj", "parse.clj"],
     resource_strip_prefix = "src",
     deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
           "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
           "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
           "@rules_clojure_maven_deps//:org_clojure_tools_namespace",
           "@rules_clojure_maven_deps//:org_clojure_tools_deps_alpha",
-          "@rules_clojure_maven_deps//:org_clojure_data_json"],
+          "@rules_clojure_maven_deps//:org_clojure_data_json",
+          "libfs"],
     aot=["clojure.java.classpath",
          "clojure.tools.deps.alpha.extensions",
          "clojure.tools.deps.alpha.util.session",
@@ -94,7 +104,7 @@ clojure_library(
          "clojure.tools.namespace.track",
          "clojure.tools.namespace.file",
          "clojure.tools.namespace.find",
-         "rules-clojure.fs",
+
          "rules-clojure.gen-build",
          "rules-clojure.parse"])
 

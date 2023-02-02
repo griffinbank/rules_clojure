@@ -37,6 +37,7 @@
     (let [v (shim-var cl ns name)
           ifn (.loadClass cl "clojure.lang.IFn")
           m (.getDeclaredMethod ifn "invoke" (into-array Class (take (count args) (repeat Object))))]
+      (assert m)
       (.invoke m v (into-array Object args)))))
 
 (defn shim-deref [cl ns name]

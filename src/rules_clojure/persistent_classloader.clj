@@ -27,7 +27,9 @@
     parent)))
 
 (defn add-url [cl p]
-  (.addURL cl (-> p io/file .toURL)))
+  (let [pf (io/file p)]
+    (assert (.exists pf) (print-str p "not found"))
+    (.addURL cl (.toURL pf))))
 
 (defn jar-files [path]
   (-> (JarFile. (str path))
@@ -38,11 +40,6 @@
 
 (defn jar? [path]
   (re-find #".jar$" path))
-
-(defn clojure? [path]
-  (or (re-find #"org/clojure/clojure/.*.jar$" path)
-      (re-find #"org/clojure/spec.alpha/.*.jar$" path)
-      (re-find #"org/clojure/core.specs.alpha/.*.jar$" path)))
 
 (defprotocol ClassLoaderStrategy
   (with-classloader [this args f]
@@ -108,6 +105,8 @@
         (let [{cl-cache :classloader
                input-cache :input-map} (.get cache)
               cp-desired (set classpath)
+              _ (when-not (s/valid? ::input-map input-map)
+                  (s/explain ::input-map input-map))
               _ (assert (s/valid? ::input-map input-map))
               _ (assert (seq input-map))
               input-jars (->> input-map
@@ -125,6 +124,7 @@
                                           cl-cache))
                                       (do
                                         ;; (println "cache miss")
+                                        (assert (seq input-jars))
                                         (new-classloader- (keys input-jars))))
               classloader (new-classloader- cp-dirs cacheable-classloader)]
           (let [ret (f classloader)

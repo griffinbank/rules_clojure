@@ -1,8 +1,12 @@
 (ns rules-clojure.persistent-classloader-test
   (:require [clojure.test :refer :all]
+            [clojure.java.io :as io]
+            [clojure.reflect :as reflect]
+            [rules-clojure.fs :as fs]
             [rules-clojure.util :as util]
             [rules-clojure.persistent-classloader :as pcl]
-            [rules-clojure.persistentClassLoader])
+            [rules-clojure.persistentClassLoader]
+            [rules-clojure.test-utils :as test-utils])
   (:import java.lang.ClassLoader
            java.net.URL
            rules_clojure.persistentClassLoader))
@@ -10,47 +14,62 @@
 (deftest it-loads
   (is (instance? ClassLoader (pcl/new-classloader- []))))
 
-(def clojure-deps ["org/clojure/clojure/1.11.1/clojure-1.11.1.jar"
-                   "org/clojure/spec.alpha/0.3.218/spec.alpha-0.3.218.jar"
-                   "org/clojure/core.specs.alpha/0.2.62/core.specs.alpha-0.2.62.jar"])
-
-(def shimdandy-deps ["org/projectodd/shimdandy/shimdandy-impl/1.2.1/shimdandy-impl-1.2.1.jar"])
-
-(def test-check ["org/clojure/test.check/1.1.1/test.check-1.1.1.jar"])
-
-(defn libcompile-path []
-  (or
-   (->> (util/classpath)
-        (filter (fn [p] (= "src" p)))
-        first)
-   (->> (util/classpath)
-        (filter (fn [p] (re-find #"rules_clojure/libcompile.jar" p)))
-        first)))
-
-(defn m2-path [p]
-  (let [root (str (System/getProperty "user.home") "/.m2/repository/")]
-    (str root p)))
-
-(defn bazel-path [p])
-
 (deftest correct-parent
   (let [p (.getParent (ClassLoader/getSystemClassLoader))]
     (is (= p (.getParent (persistentClassLoader. (into-array URL []) p))))))
 
-(deftest can-load-clojure
-  (let [cl (pcl/new-classloader- (map m2-path clojure-deps))]
+(deftest can-load-clojure-util-classpath
+  (let [cl (pcl/new-classloader- (test-utils/runfiles-jars "CLOJURE_JARS"))]
     (.loadClass cl "clojure.lang.RT")))
 
+(deftest classloader-isolation
+  (let [worker-version *clojure-version*
+        classpath-old (test-utils/runfiles-jars "CLOJURE_OLD")]
+    (assert (seq classpath-old))
+    (doseq [p classpath-old]
+      (assert (-> p io/file .exists) p))
+    (is (= 11 (:minor worker-version)))
+    (pcl/with-classloader (pcl/slow-naive) {:classpath classpath-old}
+      (fn [cl]
+        (is (= 8 (util/shim-eval cl "(get *clojure-version* :minor)")))))))
+
+(deftest can-load-specs
+  (let [worker-version *clojure-version*
+        classpath (test-utils/runfiles-jars "CLOJURE_JARS")]
+    (is (= 11 (:minor worker-version)))
+    (let [strategy (pcl/slow-naive)]
+      (pcl/with-classloader strategy {:classpath classpath}
+        (fn [cl]
+          (is (util/shim-eval cl "(do (require 'clojure.spec.alpha) (clojure.spec.alpha/valid? integer? 3))")))))))
+
 (deftest caching-clean-thread-local-can-reuse
-  (let [strategy (pcl/caching-clean-GAV-thread-local)
-        classpath (-> (map m2-path clojure-deps)
-                      (set)
-                      ;; needs rules-clojure.compile to determine whether to reuse
-                      (conj (libcompile-path)))
+  (let [strategy (pcl/caching-clean-digest-thread-local)
+        classpath (test-utils/runfiles-jars "CLOJURE_JARS")
+        _ (assert (seq classpath))
+        input-map (->> classpath
+                       (map (fn [p]
+                              [p ""]))
+                       (into {}))
         cl1 (atom nil)
-        _ (pcl/with-classloader strategy {:classpath classpath} (fn [cl] (reset! cl1 cl)))
+        _ (pcl/with-classloader strategy {:classpath classpath
+                                          :input-map input-map} (fn [cl] (reset! cl1 cl)))
         cl2 (atom nil)
-        _ (pcl/with-classloader strategy {:classpath classpath} (fn [cl] (reset! cl2 cl)))]
+        _ (pcl/with-classloader strategy {:classpath classpath
+                                          :input-map input-map} (fn [cl] (reset! cl2 cl)))]
     (is (= (.getParent @cl1) (.getParent @cl2)))))
 
-(deftest digests-will-invalidate)
+(deftest digests-changing-invalidate
+  (let [strategy (pcl/caching-clean-digest-thread-local)
+        classpath (test-utils/runfiles-jars "CLOJURE_JARS")
+        input-map (->> classpath
+                       (map (fn [p]
+                              [p ""]))
+                       (into {}))
+
+        cl1 (atom nil)
+        _ (pcl/with-classloader strategy {:classpath classpath
+                                          :input-map input-map} (fn [cl] (reset! cl1 cl)))
+        cl2 (atom nil)
+        _ (pcl/with-classloader strategy {:classpath classpath
+                                          :input-map (assoc input-map (first classpath) "new")} (fn [cl] (reset! cl2 cl)))]
+    (is (not= (.getParent @cl1) (.getParent @cl2)))))

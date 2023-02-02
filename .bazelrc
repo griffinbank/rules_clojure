@@ -1,0 +1,4 @@
+test --test_output=all
+test --verbose_failures
+
+build --java_runtime_version=remotejdk_11
