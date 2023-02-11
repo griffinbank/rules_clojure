@@ -132,7 +132,7 @@
                                (require 'rules-clojure.compile)
                                (some (fn [n#]
                                        (or (rules-clojure.compile/contains-protocols? (symbol n#))
-                                           )) [~@aot-nses])))
+                                           (rules-clojure.compile/contains-deftypes? (symbol n#)))) [~@aot-nses])))
                 contains-protocols? (util/shim-eval classloader script)]
             (if-not contains-protocols?
               (.set cache {:input-map input-jars
