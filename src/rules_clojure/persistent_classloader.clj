@@ -115,7 +115,14 @@
                               (into {}))
               cp-dirs (set (remove jar? classpath))
 
-              cacheable-classloader (if (and cl-cache (compatible-inputs? input-jars input-cache))
+              cacheable-classloader (if (and cl-cache
+                                             (compatible-inputs? input-jars input-cache)
+                                             (every? (fn [ns]
+                                                       (let [loaded? (util/shim-eval cl-cache (str
+                                                                                               `(do
+                                                                                                  (require 'rules-clojure.compile)
+                                                                                                  (rules-clojure.compile/loaded? (symbol ~ns)))))]
+                                                         (not loaded?))) aot-nses))
                                       (let [cp-new (set/difference (set (keys input-jars)) (set (keys input-cache)))]
                                         (doseq [p cp-new]
                                           (add-url cl-cache p))

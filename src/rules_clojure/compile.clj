@@ -82,6 +82,10 @@
   (binding [*out* *err*]
     (apply println args)))
 
+(defn loaded? [ns]
+  (assert (symbol? ns))
+  (contains? (loaded-libs) ns))
+
 (defn unconditional-compile
   "the clojure compiler works by binding *compile-files* true and then
   calling `load`. `load` looks for both the source file and .class. If
@@ -96,6 +100,8 @@
   [ns]
   (let [[src-path src-resource] (src-resource ns)]
     (assert src-resource (print-str "couldn't find a .clj or .cljc file for" ns "on classpath"))
+    (when  (loaded? ns)
+      (println "WARNING" ns "already loaded"))
     (try
       (with-open [rdr (clojure.java.io/reader src-resource)]
         (binding [*out* *err*
