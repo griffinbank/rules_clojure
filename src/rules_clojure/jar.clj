@@ -122,31 +122,53 @@
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses] :as args}]
   {:pre [(s/valid? ::compile args)]}
   (let [temp (Files/createTempFile (fs/dirname output-jar) (fs/filename output-jar) "jar" (into-array FileAttribute []))
-        aot-files (->> classes-dir fs/ls-r (filter (fn [p] (-> p fs/path->file .isFile))))
-        resources (->> resources (map (fn [r] (fs/->path src-dir r))) (map (fn [p] (fs/path-relative-to src-dir p))))]
+        aot-files (->> classes-dir
+                       fs/ls-r
+                       (filter (fn [p] (-> p fs/path->file .isFile)))
+                       sort)
+        resources (->> resources
+                       (map (fn [r] (fs/->path src-dir r)))
+                       (map (fn [p] (fs/path-relative-to src-dir p)))
+                       sort)]
 
     (when (and (seq aot-nses) (not (seq aot-files)))
       (assert false (print-str "create-jar" output-jar "aot-nses" aot-nses "but no aot output files:" classes-dir)))
 
-    (with-open [jar-os (-> temp fs/path->file FileOutputStream. BufferedOutputStream. JarOutputStream.)]
-      (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
-      (.write ^Manifest manifest jar-os)
-      (.closeEntry jar-os)
-      (doseq [r resources
-              :let [^Path full-path (fs/->path src-dir r)
-                    file (.toFile full-path)
-                    name (str (fs/path-relative-to src-dir full-path))]]
-        (assert (fs/exists? full-path) (str full-path))
-        (assert (.isFile file))
-        (put-next-entry! jar-os name (Files/getLastModifiedTime full-path (into-array LinkOption [])))
-        (io/copy file jar-os)
-        (.closeEntry jar-os))
-      (doseq [^Path path aot-files
-              :let [file (.toFile path)
-                    name (str (fs/path-relative-to classes-dir path))]]
-        (put-next-entry! jar-os name (Files/getLastModifiedTime path (into-array LinkOption [])))
-        (io/copy file jar-os)
-        (.closeEntry jar-os)))
+    (let [latest-time (volatile! (FileTime/from (Instant/EPOCH)))
+          ;; Compare t with the current latest time
+          ;; may update latest-time, always returns t
+          find-latest (fn [t]
+                        (vswap! latest-time (fn [m]
+                                              (let [cmp (compare m t)]
+                                                (if (neg? cmp)
+                                                  t
+                                                  m))))
+                        t)]
+     (with-open [jar-os (-> temp fs/path->file FileOutputStream. BufferedOutputStream. JarOutputStream.)]
+       (doseq [r resources
+               :let [^Path full-path (fs/->path src-dir r)
+                     file            (.toFile full-path)
+                     name            (str (fs/path-relative-to src-dir full-path))]]
+         (assert (fs/exists? full-path) (str full-path))
+         (assert (.isFile file))
+         (->> (Files/getLastModifiedTime full-path (into-array LinkOption []))
+              (find-latest)
+              (put-next-entry! jar-os name))
+         (io/copy file jar-os)
+         (.closeEntry jar-os))
+       (doseq [^Path path aot-files
+               :let [file (.toFile path)
+                     name (str (fs/path-relative-to classes-dir path))]]
+         (->> (Files/getLastModifiedTime path (into-array LinkOption []))
+              (find-latest)
+              (put-next-entry! jar-os name))
+         (io/copy file jar-os)
+         (.closeEntry jar-os))
+
+       ;; Write the MANIFEST with the latest file time
+       (put-next-entry! jar-os JarFile/MANIFEST_NAME @latest-time)
+       (.write ^Manifest manifest jar-os)
+       (.closeEntry jar-os)))
     (fs/mv temp output-jar)
     (assert (fs/exists? output-jar) (print-str "jar not found:" output-jar))))
 
