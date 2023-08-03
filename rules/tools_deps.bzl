@@ -129,9 +129,10 @@ clojure_tools_deps = repository_rule(
              "_rules_clj_deps": attr.label(default="@rules_clojure//:deps.edn"),
              "_rules_clj_src": attr.label(default="@rules_clojure//:src")})
 
-def clojure_gen_srcs(name):
+def clojure_gen_srcs(name, **kwargs):
     native.alias(name=name,
-                 actual= "@deps//scripts:gen_srcs")
+                 actual= "@deps//scripts:gen_srcs",
+                 **kwargs)
 
 def clojure_gen_namespace_loader(name, output_filename, output_ns_name, output_fn_name, in_dirs, exclude_nses, platform, deps_edn):
     native.java_binary(name=name,
