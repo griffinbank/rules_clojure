@@ -128,8 +128,8 @@
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses] :as args}]
   {:pre [(s/valid? ::compile args)]}
   (let [temp (Files/createTempFile (fs/dirname output-jar) (fs/filename output-jar) "jar" (into-array FileAttribute []))
-        aot-files (->> classes-dir fs/ls-r (filter (fn [p] (-> p fs/path->file .isFile))))
-        resources (->> resources (map (fn [r] (fs/->path src-dir r))) (map (fn [p] (fs/path-relative-to src-dir p))))]
+        aot-files (->> classes-dir fs/ls-r (filter (fn [p] (-> p fs/path->file .isFile))) sort)
+        resources (->> resources (map (fn [r] (fs/->path src-dir r))) (map (fn [p] (fs/path-relative-to src-dir p))) sort)]
 
     (when (and (seq aot-nses) (not (seq aot-files)))
       (assert false (print-str "create-jar" output-jar "aot-nses" aot-nses "but no aot output files:" classes-dir)))
