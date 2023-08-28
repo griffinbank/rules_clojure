@@ -7,7 +7,7 @@ CLJ_VERSIONS_MAC = {
 
 CLJ_VERSIONS_LINUX = {
     "1.10.3.1087": ("https://download.clojure.org/install/linux-install-1.10.3.1087.sh", "fd3d465ac30095157ce754f1551b840008a6e3503ce5023d042d0490f7bafb98"),
-    "1.11.1.1347": ("https://download.clojure.org/install/linux-install-1.11.1.1347.sh", "d9158bf3a1d92fbf8551656e47a86f42e93d10f1db9defa2124bfee206ce8c8f")
+    "1.11.1.1347": ("https://download.clojure.org/install/linux-install-1.11.1.1347.sh", "73a780bac41fc43ac624973f4f6ac4e46f293fe25aa43636b477bcc9ce2875de")
 }
 
 clj_install_prefix = "tools.deps"
