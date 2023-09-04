@@ -21,14 +21,16 @@
     m))
 
 (def default-file-modified-time-millis
-  (-> (LocalDateTime/of 2020 1 1 0 0 0)
+  ;; this timestamp should always be newer than 'now', in case we
+  ;; include .clj from 3rd party jars, which have real last modified
+  ;; times.
+  (-> (LocalDateTime/of 2038 1 1 0 0 0)
       (.atZone (ZoneId/of "UTC"))
       (.toInstant)
       (.toEpochMilli)))
 
 (def default-class-file-modified-time-millis
   (+ default-file-modified-time-millis 2000))
-
 
 (defn put-next-entry! [^JarOutputStream target ^String name]
   ;; We want reproducible builds and so must use fixed file modification times.
