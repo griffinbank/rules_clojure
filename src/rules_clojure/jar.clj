@@ -1,24 +1,18 @@
 (ns rules-clojure.jar
-  (:require [clojure.data.json :as json]
-            [clojure.java.classpath :as cp]
+  (:require [clojure.java.classpath :as cp]
             [clojure.java.io :as io]
             [clojure.set :as set]
-            [clojure.stacktrace :as pst]
-            [clojure.string :as str]
             [clojure.spec.alpha :as s]
-            [clojure.tools.namespace.file :as file]
-            [clojure.tools.namespace.find :as find]
-            [rules-clojure.parse :as parse]
-            [clojure.tools.namespace.track :as track]
+            [clojure.string :as str]
             [clojure.tools.namespace.dependency :as dep]
-            [rules-clojure.fs :as fs])
-  (:import clojure.lang.DynamicClassLoader
-           clojure.lang.RT
-           [java.io BufferedOutputStream FileOutputStream File]
-           [java.util.jar Manifest JarEntry JarFile JarOutputStream]
-           [java.nio.file Files Path Paths FileSystem FileSystems LinkOption]
+            [clojure.tools.namespace.find :as find]
+            [rules-clojure.fs :as fs]
+            [rules-clojure.parse :as parse])
+  (:import [java.io BufferedOutputStream File FileOutputStream]
+           [java.nio.file Files Path]
            [java.nio.file.attribute FileAttribute FileTime]
-           java.time.Instant))
+           [java.time LocalDateTime ZoneId]
+           [java.util.jar JarEntry JarFile JarOutputStream Manifest]))
 
 (def manifest
   (let [m (Manifest.)]
@@ -26,17 +20,31 @@
       (.putValue "Manifest-Version" "1.0"))
     m))
 
-(defn put-next-entry! [^JarOutputStream target ^String name last-modified-time]
-  ;; set last modified time. When both the .class and .clj are
-  ;; present, Clojure loads the one with the newer file modification
-  ;; time. This completely breaks reproducible builds because we can't
-  ;; set the modified-time to 0 on .class files. Setting to zero means
-  ;; if anything on the classpath includes the .clj version, the .clj
-  ;; will be loaded because its last-modified timestamp will be
-  ;; non-zero
-  (.putNextEntry target
-                 (doto (JarEntry. name)
-                   (.setLastModifiedTime last-modified-time))))
+(def default-file-modified-time-millis
+  ;; this timestamp should always be newer than 'now', in case we
+  ;; include .clj from 3rd party jars, which have real last modified
+  ;; times.
+  (-> (LocalDateTime/of 2038 1 1 0 0 0)
+      (.atZone (ZoneId/of "UTC"))
+      (.toInstant)
+      (.toEpochMilli)))
+
+(def default-class-file-modified-time-millis
+  (+ default-file-modified-time-millis 2000))
+
+(defn put-next-entry! [^JarOutputStream target ^String name]
+  ;; We want reproducible builds and so must use fixed file modification times.
+  ;; When both the .class and .clj are present, Clojure loads the one with the
+  ;; newer file modification time, so always give class files newer modification times.
+  ;;
+  ;; Follows the same convention as bazel
+  ;; https://github.com/bazelbuild/bazel/blob/d1fdc5303fd3cc22c5091aa4ce7df02eef09d922/src/java_tools/buildjar/java/com/google/devtools/build/buildjar/jarhelper/JarHelper.java#L114-L129
+  (let [last-modified-time (if (str/ends-with? name ".class")
+                             default-class-file-modified-time-millis
+                             default-file-modified-time-millis)]
+    (.putNextEntry target
+                   (doto (JarEntry. name)
+                     (.setLastModifiedTime (FileTime/fromMillis last-modified-time))))))
 
 ;; See https://clojure.atlassian.net/browse/CLJ-2303. Compiling is an
 ;; unconditional `load`. Imagine two namespaces, A, B. A contains a
@@ -122,14 +130,14 @@
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses] :as args}]
   {:pre [(s/valid? ::compile args)]}
   (let [temp (Files/createTempFile (fs/dirname output-jar) (fs/filename output-jar) "jar" (into-array FileAttribute []))
-        aot-files (->> classes-dir fs/ls-r (filter (fn [p] (-> p fs/path->file .isFile))))
-        resources (->> resources (map (fn [r] (fs/->path src-dir r))) (map (fn [p] (fs/path-relative-to src-dir p))))]
+        aot-files (->> classes-dir fs/ls-r (filter (fn [p] (-> p fs/path->file .isFile))) sort)
+        resources (->> resources (map (fn [r] (fs/->path src-dir r))) (map (fn [p] (fs/path-relative-to src-dir p))) sort)]
 
     (when (and (seq aot-nses) (not (seq aot-files)))
       (assert false (print-str "create-jar" output-jar "aot-nses" aot-nses "but no aot output files:" classes-dir)))
 
     (with-open [jar-os (-> temp fs/path->file FileOutputStream. BufferedOutputStream. JarOutputStream.)]
-      (put-next-entry! jar-os JarFile/MANIFEST_NAME (FileTime/from (Instant/now)))
+      (put-next-entry! jar-os JarFile/MANIFEST_NAME)
       (.write ^Manifest manifest jar-os)
       (.closeEntry jar-os)
       (doseq [r resources
@@ -138,13 +146,13 @@
                     name (str (fs/path-relative-to src-dir full-path))]]
         (assert (fs/exists? full-path) (str full-path))
         (assert (.isFile file))
-        (put-next-entry! jar-os name (Files/getLastModifiedTime full-path (into-array LinkOption [])))
+        (put-next-entry! jar-os name)
         (io/copy file jar-os)
         (.closeEntry jar-os))
       (doseq [^Path path aot-files
               :let [file (.toFile path)
                     name (str (fs/path-relative-to classes-dir path))]]
-        (put-next-entry! jar-os name (Files/getLastModifiedTime path (into-array LinkOption [])))
+        (put-next-entry! jar-os name)
         (io/copy file jar-os)
         (.closeEntry jar-os)))
     (fs/mv temp output-jar)
