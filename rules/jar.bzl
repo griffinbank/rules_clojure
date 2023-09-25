@@ -94,6 +94,8 @@ def clojure_jar_impl(ctx):
 
     runfiles = ctx.runfiles(files = ctx.files.data)
 
+    worker_classpath_depset = depset(transitive=[d[JavaInfo].transitive_runtime_jars for d in ctx.attr._libworker])
+
     for dep in ctx.attr.srcs + ctx.attr.deps + ctx.attr.data + ctx.attr.compiledeps + ctx.attr._libcompile:
         if JavaInfo in dep:
             compile_deps.append(dep[JavaInfo])
@@ -152,12 +154,17 @@ def clojure_jar_impl(ctx):
         output = args_file,
         content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_runtime_jars.to_list() + native_libs + [args_file]
+    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_runtime_jars.to_list() + native_libs + [args_file] + ctx.attr._jdk[java_common.JavaRuntimeInfo].files.to_list() + worker_classpath_depset.to_list()
+
+    worker_classpath_str = ":".join([d.path for d in worker_classpath_depset.to_list()])
 
     ctx.actions.run(
-        executable=ctx.executable._clojureworker_binary,
-        arguments=["-m", "rules-clojure.worker",
-                   "@%s" % args_file.path],
+        executable=ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
+        arguments= ctx.attr.jvm_flags + [
+            "-cp", worker_classpath_str,
+            "clojure.main",
+            "-m", "rules-clojure.worker",
+            "@%s" % args_file.path],
         outputs = [output_jar, classes_dir],
         inputs = inputs,
         mnemonic = "ClojureCompile",

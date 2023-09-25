@@ -285,8 +285,7 @@ This makes things much nicer and more standard for users of the rules.
 
 # Known Issues
 
-- builds are non-reproducible for two reasons:
-  - Builds set the file modification time to current time. This is because clojure.lang.RT looks at file modification times when deciding whether to load a .clj or .class file. Setting the file modification time to the epoch for .class files would mean that if a source .clj is on the classpath with a non-zero modification time, it would always take precedence over an AOT .class file
+- builds are non-reproducible for one reason:
   - there isn't a public API to reset the ID clojure uses for naming anonymous functions, which means anonymous AOT function names are non-deterministic
 - When using gen-deps, I haven't found a way to identify :provided dependencies. Those have to be added by hand for now
 - Do not use `user.clj`. If there is a user.clj at the root of your classpath, it will be loaded every time a new Clojure runtime is created, which can be many times during an AOT job. Additionally, dependencies in the user.clj are invisible to `gen-build`
