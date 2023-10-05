@@ -130,6 +130,8 @@
 (defn -main [& args]
   (set-uncaught-exception-handler!)
   (let [persistent? (some (fn [a] (= "--persistent_worker" a)) args)
+        _ (when-not persistent?
+            (util/print-err "warning, non-persistent compilation, this will likely be slow"))
         f (if persistent?
             (fn [_args] (process-persistent))
             process-ephemeral)]
