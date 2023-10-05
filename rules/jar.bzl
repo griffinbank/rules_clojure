@@ -154,17 +154,16 @@ def clojure_jar_impl(ctx):
         output = args_file,
         content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_runtime_jars.to_list() + native_libs + [args_file] + ctx.attr._jdk[java_common.JavaRuntimeInfo].files.to_list() + worker_classpath_depset.to_list()
+    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_runtime_jars.to_list() + native_libs + [args_file] + worker_classpath_depset.to_list()
 
     worker_classpath_str = ":".join([d.path for d in worker_classpath_depset.to_list()])
 
     ctx.actions.run(
-        executable=ctx.attr._jdk[java_common.JavaRuntimeInfo].java_executable_exec_path,
-        arguments= ctx.attr.jvm_flags + [
-            "-cp", worker_classpath_str,
-            "clojure.main",
-            "-m", "rules-clojure.worker",
-            "@%s" % args_file.path],
+        executable= ctx.executable._clojureworker_binary,
+        arguments=
+        ["--jvm_flags=" + f for f in ctx.attr.jvm_flags] +
+        ["-m", "rules-clojure.worker",
+         "@%s" % args_file.path],
         outputs = [output_jar, classes_dir],
         inputs = inputs,
         mnemonic = "ClojureCompile",

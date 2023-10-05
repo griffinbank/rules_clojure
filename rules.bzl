@@ -13,11 +13,12 @@ clojure_library = rule(
         "compiledeps": attr.label_list(default = []),
         "javacopts": attr.string_list(default = [], allow_empty = True, doc = "Optional javac compiler options"),
         "jvm_flags": attr.string_list(default=[], doc = "Optional jvm_flags to pass to the worker binary"),
-        "_jdk": attr.label(default = Label("@bazel_tools//tools/jdk:current_java_runtime"), providers = [java_common.JavaRuntimeInfo],),
+        "_clojureworker_binary": attr.label(doc="Label for the ClojureWorker binary", default=Label("@rules_clojure//src/rules_clojure:worker"), executable = True, cfg="exec"),
         "_libworker": attr.label_list(doc="extra jars to go in the worker env", default = [Label("@rules_clojure//src/rules_clojure:libworker")], providers=[[JavaInfo]]),
         "_libcompile": attr.label_list(doc="extra jars to go in the compile env", default = [Label("@rules_clojure//src/rules_clojure:libcompile")], providers=[[JavaInfo]])
     },
     provides = [JavaInfo],
+    toolchains = ["@bazel_tools//tools/jdk:toolchain_type"],
     implementation = _clojure_jar_impl)
 
 
