@@ -653,7 +653,8 @@
                                                              (cond-> m
                                                                (seq (:deps m)) (update :deps (comp vec dedupe sort))
                                                                (:deps m) (update :deps (comp vec dedupe sort)))))))))
-        (when (and clj? test?)
+        (when (and (or clj?
+                       cljc?) test?)
           (emit-bazel (list 'clojure_test (kwargs (merge-with into
                                                               {:name test-label
                                                                :test_ns (str ns-name)
