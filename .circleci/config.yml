@@ -6,7 +6,11 @@ jobs:
       - image: gcr.io/bazel-public/bazel:5.4.0
     steps:
       - checkout
-      - run: bazel test //...
+      - run:
+          command: bazel test //...
+      - run:
+          command: bazel test //...
+          working_directory: examples/simple
 
 workflows:
   test-workflow:
