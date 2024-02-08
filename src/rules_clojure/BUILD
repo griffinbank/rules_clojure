@@ -61,8 +61,8 @@ java_import(name="libcompile",
 java_binary(name="worker",
             main_class="clojure.main",
             jvm_flags=["-Dclojure.main.report=stderr",
-                       "-Xmx1g",
-                       "-XX:MaxMetaspaceSize=2g"],
+                       "-Xmx2g",
+                       "-XX:MaxMetaspaceSize=4g"],
             runtime_deps=["libworker"])
 
 clojure_library(name="libfs",
