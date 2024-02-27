@@ -714,7 +714,6 @@
                      (when library?
                        (str
                          (emit-bazel (list 'clojure_library (kwargs {:name "__clj_lib"
-                                                                     :tags ["clj_lib"]
                                                                      :deps (vec
                                                                              (concat
                                                                                (dedupe (map (fn [p] (str ":" (fs/basename p))) paths))
@@ -726,7 +725,6 @@
                      (when filegroup?
                        (emit-bazel (list 'filegroup (kwargs (merge
                                                               {:name "__clj_files"
-                                                               :tags ["clj_files"]
                                                                :srcs (mapv fs/filename paths)
                                                                :data (mapv (fn [p]
                                                                              (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_files")) clj-subdirs)}))))))]
