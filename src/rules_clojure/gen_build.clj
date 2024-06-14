@@ -277,6 +277,12 @@
        (not (contains? (set/union no-aot (get-in deps-bazel [:no-aot])) ns))
        (not (is-aoted? path ns))))
 
+(defn ns-matches-path?
+  [ns path]
+  (str/starts-with?
+    path
+    (str/escape (str ns) {\. "/" \- "_"})))
+
 (defn ->dep-ns->label [{:keys [basis deps-bazel deps-repo-tag] :as args}]
   {:pre [(map? basis)
          deps-bazel]
@@ -815,7 +821,8 @@
                                                                  (str ":" (library->label lib)))))
                                                external-label (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
                                                extra-args (-> deps-bazel
-                                                              (get-in [:deps external-label]))]
+                                                              (get-in [:deps external-label]))
+                                               jarfile (JarFile. (fs/path->file jarpath))]
                                            (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
 
                                            (vec
@@ -827,31 +834,35 @@
                                                                                                    {:deps deps
                                                                                                     :runtime_deps deps})
                                                                                                  extra-args))))]
-                                             (->> (find/find-ns-decls [(fs/path->file jarpath)] find/clj)
-                                                  ;; markdown-to-hiccup contains a .cljs build, with two identical copies of `markdown/links.cljc`, and two distinct copies of `markdown/core.clj`. For correctness, probably need to get the path inside the jar, and remove files that aren't in the correct position to be loaded
-                                                  (group-by parse/name-from-ns-decl)
-                                                  vals
-                                                  (map first)
-                                                  (filter (fn [ns-decl]
-                                                            (should-compile-namespace? deps-bazel jarpath (parse/name-from-ns-decl ns-decl))))
-                                                  (map (fn [ns-decl]
-                                                         (let [ns (parse/name-from-ns-decl ns-decl)
-                                                               extra-deps (-> deps-bazel (get-in [:deps (str deps-repo-tag "//:" (internal-dep-ns-aot-label lib ns))]))]
-                                                           (emit-bazel (list 'clojure_library (kwargs (->
-                                                                                                       (merge-with
-                                                                                                        into
-                                                                                                        {:name (internal-dep-ns-aot-label lib ns)
-                                                                                                         :aot [(str ns)]
-                                                                                                         :deps [(str deps-repo-tag "//:" label)
-                                                                                                                (str deps-repo-tag "//:org_clojure_clojure")]
-                                                                                                         ;; TODO the source jar doesn't need to be in runtime_deps
-                                                                                                         :runtime_deps []}
-                                                                                                        (ns-deps (select-keys args [:dep-ns->label :jar->lib :deps-repo-tag]) ns-decl :clj)
-                                                                                                        extra-deps)
-                                                                                                       (as-> m
-                                                                                                           (cond-> m
-                                                                                                             (seq (:deps m)) (update :deps (comp vec distinct))
-                                                                                                             (:deps m) (update :deps (comp vec distinct))))))))))))))))))
+                                             (->>
+                                               ;; TODO: Update to tools.namespace 1.4.1 which has metadata of the source path on the ns-decl so this dance isn't needed.
+                                               (find/sources-in-jar jarfile)
+                                               (keep
+                                                 (fn [path]
+                                                   (when-let [ns-decl (find/read-ns-decl-from-jarfile-entry jarfile path)]
+                                                     (when (ns-matches-path? (parse/name-from-ns-decl ns-decl) path)
+                                                       ns-decl))))
+                                               (filter
+                                                 (fn [ns-decl]
+                                                   (should-compile-namespace? deps-bazel jarpath (parse/name-from-ns-decl ns-decl))))
+                                               (group-by parse/name-from-ns-decl)
+                                               (map (fn [[ns ns-decls]]
+                                                      (let [extra-deps (-> deps-bazel (get-in [:deps (str deps-repo-tag "//:" (internal-dep-ns-aot-label lib ns))]))]
+                                                        (emit-bazel (list 'clojure_library (kwargs (->
+                                                                                                     (merge-with
+                                                                                                       into
+                                                                                                       {:name (internal-dep-ns-aot-label lib ns)
+                                                                                                        :aot [(str ns)]
+                                                                                                        :deps [(str deps-repo-tag "//:" label)
+                                                                                                               (str deps-repo-tag "//:org_clojure_clojure")]
+                                                                                                        ;; TODO the source jar doesn't need to be in runtime_deps
+                                                                                                        :runtime_deps []}
+                                                                                                       (apply merge-with into (map #(ns-deps (select-keys args [:dep-ns->label :jar->lib :deps-repo-tag]) % :clj) ns-decls))
+                                                                                                       extra-deps)
+                                                                                                     (as-> m
+                                                                                                       (cond-> m
+                                                                                                         (seq (:deps m)) (update :deps (comp vec distinct))
+                                                                                                         (:deps m) (update :deps (comp vec distinct))))))))))))))))))
                           [(emit-bazel (list 'clojure_library (kwargs
                                                                {:name "__all"
                                                                 :deps (->> jar->lib
