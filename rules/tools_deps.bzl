@@ -2,12 +2,12 @@ load("//:rules.bzl", "clojure_library", "clojure_binary")
 
 CLJ_VERSIONS_MAC = {
     "1.10.3.1087": ("https://download.clojure.org/install/clojure-tools-1.10.3.1087.tar.gz", "a6b3b3547adc6da6ca5cfe10e037f1fde88a78f948372bb598ef4d0859da3e94"),
-    "1.11.1.1347": ("https://download.clojure.org/install/clojure-tools-1.11.1.1347.tar.gz", "d5e6c03e4eb8b49b7f0a9b77a4a7cc4cde7460004a3df96a1b4e797f842ebfe3")
+    "1.11.1.1347": ("https://github.com/clojure/brew-install/releases/download/1.11.1.1347/clojure-tools-1.11.1.1347.tar.gz", "d5e6c03e4eb8b49b7f0a9b77a4a7cc4cde7460004a3df96a1b4e797f842ebfe3")
 }
 
 CLJ_VERSIONS_LINUX = {
     "1.10.3.1087": ("https://download.clojure.org/install/linux-install-1.10.3.1087.sh", "fd3d465ac30095157ce754f1551b840008a6e3503ce5023d042d0490f7bafb98"),
-    "1.11.1.1347": ("https://download.clojure.org/install/linux-install-1.11.1.1347.sh", "73a780bac41fc43ac624973f4f6ac4e46f293fe25aa43636b477bcc9ce2875de")
+    "1.11.1.1347": ("https://github.com/clojure/brew-install/releases/download/1.11.1.1347/linux-install-1.11.1.1347.sh", "73a780bac41fc43ac624973f4f6ac4e46f293fe25aa43636b477bcc9ce2875de")
 }
 
 clj_install_prefix = "tools.deps"
