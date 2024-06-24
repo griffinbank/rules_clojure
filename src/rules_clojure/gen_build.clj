@@ -822,9 +822,8 @@
                                                external-label (jar->label (select-keys args [:jar->lib :deps-repo-tag]) jarpath)
                                                extra-args (-> deps-bazel
                                                               (get-in [:deps external-label]))
+                                               _ (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
                                                jarfile (JarFile. (fs/path->file jarpath))]
-                                           (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
-
                                            (vec
                                             (concat
                                              [(emit-bazel (list 'java_import (kwargs (merge-with into
