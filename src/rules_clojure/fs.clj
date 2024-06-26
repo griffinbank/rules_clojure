@@ -139,3 +139,6 @@
 
 (defn new-temp-file [dir prefix suffix]
   (Files/createTempFile (->path dir) prefix suffix (into-array FileAttribute [])))
+
+(defn spit-file [f content & opts]
+  (apply spit f (str content "\n") opts))
