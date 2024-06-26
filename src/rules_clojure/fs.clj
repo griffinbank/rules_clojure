@@ -141,4 +141,6 @@
   (Files/createTempFile (->path dir) prefix suffix (into-array FileAttribute [])))
 
 (defn spit-file [f content & opts]
-  (apply spit f (str content "\n") opts))
+  (let [has-newline? (= \newline (last content))
+        content (if has-newline? content (str content \newline))]
+    (apply spit f (str content) opts)))
