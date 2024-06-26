@@ -139,3 +139,8 @@
 
 (defn new-temp-file [dir prefix suffix]
   (Files/createTempFile (->path dir) prefix suffix (into-array FileAttribute [])))
+
+(defn spit-file [f content & opts]
+  (let [has-newline? (= \newline (last content))
+        content (if has-newline? content (str content \newline))]
+    (apply spit f (str content) opts)))
