@@ -1,5 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
+load("@rules_graalvm//graalvm:defs.bzl", "native_image")
 load("//:rules.bzl", "clojure_library", "clojure_binary")
 
 exports_files(glob(["*.clj"]))
@@ -112,6 +113,12 @@ java_binary(name="gen_build",
             main_class="rules_clojure.gen_build",
             runtime_deps=[":libgen_build"],
             jvm_flags = ["-Xmx500m", "-XX:MaxMetaspaceSize=500m"])
+
+native_image(
+    name = "gen_build_native",
+    main_class = "rules_clojure.gen_build",
+    deps = [":libgen_build"],
+)
 
 clojure_library(name= "testrunner",
                 srcs=["testrunner.clj"],

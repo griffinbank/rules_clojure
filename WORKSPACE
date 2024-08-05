@@ -81,3 +81,27 @@ maven_install(
         "https://repo1.maven.org/maven2",
         "https://repo.clojars.org/"
     ])
+
+http_archive(
+    name = "rules_graalvm",
+    sha256 = "3ef2f1583a4849d03209a43b0b507f172299c3045e585b6ffa7144a2bc12ae18",
+    strip_prefix = "rules_graalvm-0.11.2",
+    urls = [
+        "https://github.com/sgammon/rules_graalvm/releases/download/v0.11.2/rules_graalvm-0.11.2.zip",
+    ],
+)
+
+load("@rules_graalvm//graalvm:repositories.bzl", "graalvm_repository")
+
+graalvm_repository(
+    name = "graalvm",
+    distribution = "ce",  # `oracle`, `ce`, or `community`
+    java_version = "22",  # `17`, `20`, `21`, or `22` as supported by the version provided
+    version = "22.0.0",  # gvm sdk version format like `24.x.x` also supported
+)
+
+load("@rules_graalvm//graalvm:workspace.bzl", "register_graalvm_toolchains", "rules_graalvm_repositories")
+
+rules_graalvm_repositories()
+
+register_graalvm_toolchains()
