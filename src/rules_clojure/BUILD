@@ -118,6 +118,14 @@ native_image(
     name = "gen_build_native",
     main_class = "rules_clojure.gen_build",
     deps = [":libgen_build"],
+    extra_args = [
+        "--initialize-at-build-time",
+        "--enable-http",
+        "--enable-https",
+        "--enable-all-security-services",
+        "-march=native",
+        "-J-Dclojure.compiler.direct-linking=true",
+    ],
 )
 
 clojure_library(name= "testrunner",

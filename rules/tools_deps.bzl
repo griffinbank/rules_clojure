@@ -69,18 +69,37 @@ def _install_scripts(repository_ctx):
                         executable = True,
                         content = """
 package(default_visibility = ["//visibility:public"])
+load("@rules_graalvm//graalvm:defs.bzl", "native_image")
 
-java_binary(name="gen_srcs",
+native_image(
+    name="gen_srcs_native",
     main_class="rules_clojure.gen_build",
-    runtime_deps=["@rules_clojure//src/rules_clojure:libgen_build"],
-    args=["srcs",
-          ":deps-edn-path", "{deps_edn_path}",
-          ":repository-dir", "{repository_dir}",
-          ":deps-build-dir", "{deps_build_dir}",
-          ":deps-repo-tag", "{deps_repo_tag}",
-          ":aliases", "\\"{aliases}\\""],
-    data=["{deps_edn_label}"])
+    deps=["@rules_clojure//src/rules_clojure:libgen_build"],
+    extra_args = [
+        "--initialize-at-build-time",
+        "--enable-http",
+        "--enable-https",
+        "--enable-all-security-services",
+        "-march=native",
+        "-J-Dclojure.compiler.direct-linking=true",
+    ],
+)
 
+genrule(
+    name = "gen_srcs",
+    executable = True,
+    tags = ["no-exec-remote"],
+    tools = [":gen_srcs_native"],
+    srcs = ["{deps_edn_label}"],
+    outs = ["done.sh"],
+    cmd = \"\"\"
+        export BUILD_WORKSPACE_DIRECTORY=$$(realpath)
+        GEN_SRCS_BIN=$$(realpath $(execpath :gen_srcs_native))
+        $$GEN_SRCS_BIN srcs :deps-edn-path {deps_edn_path} :repository-dir {repository_dir} :deps-build-dir {deps_build_dir} :deps-repo-tag {deps_repo_tag} :aliases \\"{aliases}\\"
+
+        echo "echo \"done\"" > $(execpath done.sh)
+    \"\"\",
+)
  """.format(deps_repo_tag = "@" + repository_ctx.attr.name,
             deps_edn_label = repository_ctx.attr.deps_edn,
             deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
