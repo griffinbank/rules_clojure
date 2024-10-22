@@ -127,7 +127,7 @@ def clojure_jar_impl(ctx):
     else:
         src_dir = None
 
-    compile_classpath = compile_info.transitive_runtime_deps.to_list() + ctx.files.compiledeps + [classes_dir]
+    compile_classpath = compile_info.transitive_runtime_jars.to_list() + ctx.files.compiledeps + [classes_dir]
     compile_classpath = [f.path for f in compile_classpath]
     compile_classpath = compile_classpath + [p for p in [src_dir] if p]
 
