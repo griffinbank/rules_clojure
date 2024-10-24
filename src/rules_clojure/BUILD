@@ -31,7 +31,7 @@ java_binary(
 
 genrule(
     name="bootstrap-worker",
-    exec_tools=["bootstrap-deps"],
+    tools=["bootstrap-deps"],
     cmd="""
     mkdir -p worker-classes
     $(location :bootstrap-deps) -m rules-clojure.bootstrap-worker $(location :libworker.jar)
@@ -40,7 +40,7 @@ genrule(
 
 genrule(
     name="bootstrap-compiler",
-    exec_tools=["bootstrap-deps"],
+    tools=["bootstrap-deps"],
     cmd="""
     mkdir -p compiler-classes
     $(location :bootstrap-deps) -m rules-clojure.bootstrap-compiler $(location :libcompile.jar)
