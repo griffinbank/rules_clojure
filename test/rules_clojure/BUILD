@@ -50,3 +50,7 @@ clojure_test(name="persistent-classloader-test",
 clojure_test(name="compile-test",
              deps=[":test-deps"],
              test_ns = "rules-clojure.compile-test")
+
+clojure_test(name="fs-test",
+             deps=[":test-deps"],
+             test_ns = "rules-clojure.fs-test")
