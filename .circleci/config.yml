@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   test:
     docker:
-      - image: gcr.io/bazel-public/bazel:5.4.0
+      - image: gcr.io/bazel-public/bazel:7.4.1
     steps:
       - checkout
       - run:
