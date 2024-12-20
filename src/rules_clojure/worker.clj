@@ -100,8 +100,11 @@
 
 (defn process-persistent []
   (let [num-processors (-> (Runtime/getRuntime) .availableProcessors)
-        executor (java.util.concurrent.Executors/newWorkStealingPool num-processors)
-        classloader-strategy (pcl/caching-clean-digest-thread-local)]
+        ;; executor (java.util.concurrent.Executors/newFixedThreadPool num-processors)
+        ;; classloader-strategy (pcl/caching-disposable-child)
+        executor (java.util.concurrent.Executors/newWorkStealingPool)
+        classloader-strategy (pcl/caching-clean-digest-thread-local)
+        ]
     (loop []
       (if-let [line (read-line)]
         (let [work-req (json/read-str line :key-fn keyword)]

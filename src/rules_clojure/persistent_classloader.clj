@@ -146,3 +146,46 @@
                            :classloader cacheable-classloader})
               (.set cache nil))
             ret))))))
+
+(def persistent-cache (atom {:input-map {}
+                             :classloader (new-classloader- [])}))
+
+(defn caching-disposable-child []
+  (reify ClassLoaderStrategy
+    (with-classloader [this {:keys [classpath aot-nses input-map]} f]
+      (let [{cl-cache :classloader
+             input-cache :input-map} @persistent-cache
+            _ (assert (s/valid? ::input-map input-map) (s/explain-data ::input-map input-map))
+            input-jars (->> input-map
+                            (filter (fn [[path]]
+                                      (jar? path)))
+                            (into {}))
+            cp-dirs (set (remove jar? classpath))
+
+            _ (when (and cl-cache (not (compatible-inputs? input-jars input-cache)))
+                (println "cache miss incompatible inputs"))
+            cacheable-classloader (if (compatible-inputs? input-jars input-cache)
+                                    (let [cp-new (set/difference (set (keys input-jars)) (set (keys input-cache)))]
+                                      (doseq [p cp-new]
+                                        (add-url cl-cache p))
+                                      (swap! persistent-cache (fn [cache]
+                                                                (-> cache
+                                                                    (update :input-map merge input-jars))))
+                                      cl-cache)
+                                    (let [cl (new-classloader- (keys input-jars))]
+                                      (println "cache miss")
+                                      (assert (seq input-jars))
+                                      (reset! persistent-cache {:input-map input-map
+                                                                :classloader cl})
+                                      cl))
+            classloader (new-classloader- cp-dirs cacheable-classloader)]
+        (.setContextClassLoader (Thread/currentThread) classloader)
+        (let [ret (f classloader)
+              script (str `(do
+                             (require 'rules-clojure.compile)
+                             (some (fn [n#]
+                                     (or (rules-clojure.compile/contains-protocols? (symbol n#))
+                                         (rules-clojure.compile/contains-deftypes? (symbol n#)))) [~@aot-nses])))
+              _ (util/shim-eval classloader script)]
+
+          ret)))))

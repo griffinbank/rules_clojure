@@ -109,7 +109,9 @@
           (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last))))
       (catch Exception e
         (throw (ex-info "while compiling" {:ns ns
-                                           :classpath (util/classpath)} e))))))
+                                           :classpath (util/classpath)
+                                           :compile-path *compile-path*
+                                           :compile-dirs (fs/ls-r (fs/->path *compile-path*))} e))))))
 
 (defn non-transitive-compile [dep-nses ns]
   {:pre [(every? symbol? dep-nses)
