@@ -3,14 +3,25 @@ version: 2.1
 jobs:
   test:
     docker:
-      - image: gcr.io/bazel-public/bazel:7.4.1
+      - image: cimg/base:2025.01
     steps:
       - checkout
       - run:
+          command: sudo apt-get update && sudo apt-get install curl openjdk-21-jdk-headless
+      - run:
+          command: curl -OL https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-amd64.deb
+      - run:
+          command: sudo dpkg -i bazelisk-amd64.deb
+      - run:
+          command: java -version
+      - run:
+          command: bazel --version
+      - run:
+          name: unit tests
           command: bazel test //...
       - run:
-          command: bazel test //...
-          working_directory: examples/simple
+          name: example tests
+          command: cd examples/simple && bazel test //...
 
 workflows:
   test-workflow:
