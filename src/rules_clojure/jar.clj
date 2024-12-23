@@ -6,6 +6,7 @@
             [clojure.string :as str]
             [clojure.tools.namespace.dependency :as dep]
             [clojure.tools.namespace.find :as find]
+            [clojure.tools.namespace.file :as ctn.file]
             [rules-clojure.fs :as fs]
             [rules-clojure.parse :as parse])
   (:import [java.io BufferedOutputStream File FileOutputStream]
@@ -46,6 +47,48 @@
                    (doto (JarEntry. name)
                      (.setLastModifiedTime (FileTime/fromMillis last-modified-time))))))
 
+(defn find-ns-decls-1- [path digest]
+  ;; take digest as an argument for cache busting purposes
+  {:pre [(fs/file? path)
+         (string? digest)]}
+  (find/find-ns-decls [path] find/clj))
+
+(def find-ns-decls-1 (memoize find-ns-decls-1-))
+
+(defn find-ns-decl-in-file [file digest]
+  {:pre [(fs/file? file)
+         (string? digest)]}
+  (when (and (fs/normal-file? file)
+             (or (re-find #".clj$" (str file))
+                 (re-find #".cljc$" (str file))))
+    (try
+      (ctn.file/read-file-ns-decl file (:read-opts find/clj))
+      (catch Exception e
+        (if (= :reader-exception (:type (ex-data e)))
+          nil
+          (throw e))))))
+
+(defn find-ns-decls-in-jar- [file digest]
+  {:pre [(fs/file? file)
+         (string? digest)]}
+  (find/find-ns-decls-in-jarfile (JarFile. file) find/clj))
+
+(def find-ns-decls-in-jar (memoize find-ns-decls-in-jar-))
+
+(defn find-ns-decls [inputs]
+  {:post [(or (and (seq inputs) (seq %))
+              (not (seq inputs)))]}
+  (->> inputs
+       (mapcat (fn [[file digest]]
+                 (let [file (io/file file)]
+                   (if (cp/jar-file? file)
+                     (find-ns-decls-in-jar file digest)
+                     (when-let [decl (find-ns-decl-in-file file digest)]
+                       [decl])))))))
+
+(def decl->name (memoize parse/name-from-ns-decl))
+(def decl->deps (memoize parse/deps-from-ns-decl))
+
 ;; See https://clojure.atlassian.net/browse/CLJ-2303. Compiling is an
 ;; unconditional `load`. Imagine two namespaces, A, B. A contains a
 ;; protocol. B depends on A and uses the protocol, and A hasn't been
@@ -56,29 +99,32 @@
 
 (defn topo-sort
   "Return nses on the classpath in topo-sorted order"
-  [classpath]
-  {:pre [(every? fs/file? classpath)]}
+  [ns-decls]
   (let [graph (dep/graph)]
-    (->> classpath
-         (#(find/find-ns-decls % find/clj))
-         (reduce (fn [graph decl]
-                   (let [ns (parse/name-from-ns-decl decl)
-                         graph (dep/depend graph ns 'sentinel)]
+    (->> ns-decls
+         (reduce (fn [graph [ns decl]]
+                   (let [graph (dep/depend graph ns 'sentinel)]
                      (reduce (fn [graph dep]
-                               (dep/depend graph ns dep)) graph (parse/deps-from-ns-decl decl)))) graph)
+                               (assert (symbol? dep))
+                               (dep/depend graph ns dep)) graph (decl->deps decl)))) graph)
          (dep/topo-sort))))
 
-(defn ns->ns-decls [classpath-files]
-  (->> classpath-files
-       (#(find/find-ns-decls % find/clj))
+(defn ns->ns-decls [input-map]
+  {:pre [(map? input-map)]
+   :post [(seq %)
+          (every? (fn [[ns decl]]
+                    (and (symbol? ns)
+                         (seq decl))) %)]}
+  (->> input-map
+       (find-ns-decls)
        (map (fn [decl]
-              [(parse/name-from-ns-decl decl) decl]))
+              (let [name (decl->name decl)]
+                (assert (symbol? name) (print-str (class name) name decl))
+                [name decl])))
        (into {})))
 
 (defn get-ns-decl [all-ns-decls ns]
-  (let [ret (get all-ns-decls ns)]
-    (assert ret (print-str "could not find ns-decl for" ns ". Is it on the classpath?" (keys all-ns-decls)))
-    ret))
+  (get all-ns-decls ns))
 
 (defn classpath-resources [classpath]
   {:pre [(every? fs/file? classpath)]}
@@ -186,18 +232,26 @@
   "Returns a string, a script to eval in the compilation env."
   [{:keys [classpath
            classes-dir
-           output-jar]} nses]
+           input-map] :as req} nses]
   {:pre [(every? fs/file? classpath)
-         (string? classes-dir)]}
+         (string? classes-dir)
+         (every? symbol? nses)
+         (map? input-map)]}
 
-  (let [topo-nses (topo-sort classpath)
-        all-ns-decls (ns->ns-decls classpath)
+  (let [all-ns-decls (ns->ns-decls input-map)
         deps-of (fn [ns]
                   (transitive-deps all-ns-decls ns))
-        compile-nses (set nses)
-        compile-nses (filter (fn [n]
-                               (contains? compile-nses n)) topo-nses) ;; sorted order
-        _ (assert (= (count nses) (count compile-nses)) (print-str "couldn't find nses:" (set/difference (set nses) (set compile-nses))))
+        compile-nses (set (filter (fn [n]
+                                    (find all-ns-decls n)) nses))
+        compile-nses (if (<= (count nses) 1)
+                       nses
+                       ;; if there's more than one ns, compile in topo-sorted order
+                       (->> (topo-sort all-ns-decls)
+                            (filter (fn [n]
+                                      {:pre [(symbol? n)]}
+                                      (contains? compile-nses n)))))
+
+        _ (assert (= (set nses) (set compile-nses)) (print-str "couldn't find nses:" (set/difference (set nses) (set compile-nses)) "\n nses:" nses "compile-nses:" compile-nses))
         script (when (seq compile-nses)
                  `(let [rets# ~(mapv (fn [n] `(do
                                                 (require (quote ~'rules-clojure.compile))
@@ -224,21 +278,6 @@
 
   (create-jar (select-keys args [:src-dir :classes-dir :output-jar :resources :aot-nses])))
 
-(defn find-sources [cp]
-  (concat
-   (->> cp
-        (filter (fn [f] (cp/jar-file? (io/file f))))
-        (mapcat (fn [^File jar]
-                  (map (fn [src]
-                         [jar src]) (find/sources-in-jar (JarFile. jar))))))
-   (->> cp
-        (filter (fn [f] (.isDirectory (io/file f))))
-        (mapcat (fn [dir]
-                  (map (fn [src]
-                         [dir src]) (find/find-sources-in-dir (io/file dir))))))))
-
-(def old-classpath (atom nil))
-
 (defn create-jar-json [json]
   (let [{:keys [src-dir resources aot-nses classes-dir output-jar classpath] :as args} json
         _ (when (seq resources) (assert src-dir))
@@ -257,13 +296,14 @@
                     {:src-dir (fs/->path src-dir)}))))))
 
 (defn get-compilation-script-json [json]
-  (let [{:keys [src-dir resources aot-nses classes-dir output-jar classpath] :as args} json
+  (let [{:keys [src-dir resources aot-nses classes-dir output-jar classpath input-map] :as args} json
         aot-nses (map symbol aot-nses)
         classpath-files (map io/file classpath)
         output-jar (fs/->path output-jar)]
     (str (get-compilation-script {:classpath classpath-files
                                   :classes-dir classes-dir
-                                  :output-jar output-jar} aot-nses))))
+                                  :output-jar output-jar
+                                  :input-map input-map} aot-nses))))
 
 (comment
   (require 'clojure.java.classpath)

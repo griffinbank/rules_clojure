@@ -4,7 +4,8 @@
             [clojure.java.io :as io])
   (:import java.io.File
            [java.nio.file CopyOption Files FileSystem FileSystems Path Paths StandardCopyOption]
-           [java.nio.file.attribute FileAttribute]))
+           [java.nio.file.attribute FileAttribute]
+           java.security.MessageDigest))
 
 (defn path? [x]
   (instance? Path x))
@@ -26,7 +27,7 @@
         d (if (string? d)
             (Paths/get d (into-array String []))
             d)]
-    (assert d (str "path does not exist:" d))
+    (assert d (print-str "path does not exist:" d))
     (reduce (fn [^Path p dir] (.resolve p dir)) d (rest dirs))))
 
 (defn file->path [^File f]
@@ -139,3 +140,13 @@
 
 (defn new-temp-file [dir prefix suffix]
   (Files/createTempFile (->path dir) prefix suffix (into-array FileAttribute [])))
+
+(defn shasum [^Path path]
+  {:pre [(path? path)]
+   :post [(string? %)]}
+  (let [digest (MessageDigest/getInstance "SHA-1")
+        hexer (java.util.HexFormat/of)]
+    (->> path
+        (Files/readAllBytes)
+        (.digest digest)
+        (.formatHex hexer))))

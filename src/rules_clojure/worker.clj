@@ -3,6 +3,7 @@
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
+            [rules-clojure.fs :as fs]
             [rules-clojure.jar :as jar]
             [rules-clojure.util :as util]
             [rules-clojure.persistent-classloader :as pcl])
@@ -46,7 +47,9 @@
   (set classpath))
 
 (defn process-request
-  [{:keys [classloader-strategy] :as req}]
+  [{:keys [classloader-strategy
+           input-map] :as req}]
+  {:pre [(map? input-map)]}
   (util/validate! ::compile-request req)
   (assert classloader-strategy)
   (let [compile-script (jar/get-compilation-script-json req)]
@@ -64,15 +67,35 @@
         (throw (ex-info "exception while compiling" {:request req
                                                      :script compile-script} t))))))
 
-(defn process-ephemeral [args]
-  (let [req-json (json/read-str (slurp (io/file (.substring (last args) 1))) :key-fn keyword)]
-    (process-request (assoc req-json :classloader-strategy (pcl/slow-naive)))))
-
 (defn input-map [inputs]
   (->> inputs
        (map (fn [{:keys [path digest]}]
               [path digest]))
        (into {})))
+
+(defn classpath-input-map [classpath]
+  {:post [(map? %)
+          (every? (fn [[k v]]
+                    (and (string? k) (string? v))) %)]}
+  ;; bazel doesn't pass inputs to ephemeral jobs, so do it ourselves
+  (->> classpath
+       (mapcat (fn [path]
+                 (let [path (fs/->path path)]
+                   (if (fs/directory? (fs/path->file path))
+                     (fs/ls-r path)
+                     [path]))))
+       (filter (fn [path]
+                 (fs/normal-file? (fs/path->file path))))
+       (map (fn [path]
+              [(str path) (fs/shasum path)]))
+       (into {})))
+
+(defn process-ephemeral [args]
+  (let [req-json (json/read-str (slurp (io/file (.substring (last args) 1))) :key-fn keyword)
+        {:keys [classpath]} req-json]
+    (process-request (assoc req-json
+                            :classloader-strategy (pcl/slow-naive)
+                            :input-map (classpath-input-map classpath)))))
 
 (defn process-persistent-1 [{:keys [arguments requestId classloader-strategy inputs] :as work-req}]
   (let [baos (java.io.ByteArrayOutputStream.)
@@ -99,16 +122,12 @@
       (.flush real-out))))
 
 (defn process-persistent []
-  (let [num-processors (-> (Runtime/getRuntime) .availableProcessors)
-        ;; executor (java.util.concurrent.Executors/newFixedThreadPool num-processors)
-        ;; classloader-strategy (pcl/caching-disposable-child)
-        executor (java.util.concurrent.Executors/newWorkStealingPool)
-        classloader-strategy (pcl/caching-clean-digest-thread-local)
-        ]
+  (let [executor (java.util.concurrent.Executors/newWorkStealingPool)
+        classloader-strategy (pcl/caching-threadsafe)]
     (loop []
       (if-let [line (read-line)]
         (let [work-req (json/read-str line :key-fn keyword)]
-          ;; (util/print-err "got req" work-req)
+          (util/print-err "got req" work-req)
           (let [out *out*
                 err *err*]
             (.submit executor ^Runnable (fn []
