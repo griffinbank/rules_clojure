@@ -122,7 +122,7 @@
       (.flush real-out))))
 
 (defn process-persistent []
-  (let [executor (java.util.concurrent.Executors/newWorkStealingPool)
+  (let [executor (java.util.concurrent.Executors/newWorkStealingPool 4)
         classloader-strategy (pcl/caching-threadsafe)]
     (loop []
       (if-let [line (read-line)]
