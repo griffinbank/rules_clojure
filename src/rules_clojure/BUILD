@@ -4,8 +4,8 @@ load("//:rules.bzl", "clojure_library", "clojure_binary")
 
 exports_files(glob(["*.clj"]))
 
-java_binary(
-    name="bootstrap-deps",
+java_library(
+    name="bootstrap",
     resources=["bootstrap_compiler.clj",
                "bootstrap_worker.clj",
                "compile.clj",
@@ -17,9 +17,6 @@ java_binary(
                "persistentClassLoader.clj",
                "util.clj"],
 
-    main_class="clojure.main",
-    jvm_flags=["-Dclojure.main.report=stderr",
-               "-cp $${CLASSPATH}:worker-classes"],
     resource_strip_prefix="src",
     runtime_deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
                   "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
@@ -29,21 +26,28 @@ java_binary(
                   "@rules_clojure_maven_deps//:org_clojure_java_classpath",
                   "@rules_clojure_maven_deps//:org_clojure_tools_namespace"])
 
+java_binary(
+    name="bootstrap-bin",
+    main_class="clojure.main",
+    runtime_deps=[":bootstrap"],
+    jvm_flags=["-Dclojure.main.report=stderr",
+               "-cp $${CLASSPATH}:worker-classes"])
+
 genrule(
     name="bootstrap-worker",
-    tools=["bootstrap-deps"],
+    tools=[":bootstrap-bin"],
     cmd="""
     mkdir -p worker-classes
-    $(location :bootstrap-deps) -m rules-clojure.bootstrap-worker $(location :libworker.jar)
+    $(location :bootstrap-bin) -m rules-clojure.bootstrap-worker $(location :libworker.jar)
     """,
     outs=["libworker.jar"])
 
 genrule(
     name="bootstrap-compiler",
-    tools=["bootstrap-deps"],
+    tools=[":bootstrap-bin"],
     cmd="""
     mkdir -p compiler-classes
-    $(location :bootstrap-deps) -m rules-clojure.bootstrap-compiler $(location :libcompile.jar)
+    $(location :bootstrap-bin) -m rules-clojure.bootstrap-compiler $(location :libcompile.jar)
     """,
     outs=["libcompile.jar"])
 

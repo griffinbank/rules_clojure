@@ -107,9 +107,8 @@ def _run_gen_build(repository_ctx):
             ":deps-build-dir", repository_ctx.path(""),
             ":deps-repo-tag", "@" + repository_ctx.attr.name,
             ":workspace-root", repository_ctx.attr.deps_edn.workspace_root,
-            ":aliases", aliases_str(repository_ctx.attr.aliases)
-            ]
-    ret = repository_ctx.execute(args, quiet=False)
+            ":aliases", aliases_str(repository_ctx.attr.aliases)]
+    ret = repository_ctx.execute(args, quiet=False, environment=repository_ctx.attr.env)
     if ret.return_code > 0:
         fail("gen build failed:", ret.return_code, ret.stdout, ret.stderr)
 
@@ -126,6 +125,7 @@ clojure_tools_deps = repository_rule(
     attrs = {"deps_edn": attr.label(allow_single_file = True),
              "aliases": attr.string_list(default = [], doc = "extra aliases in deps.edn to merge in while resolving deps"),
              "clj_version": attr.string(default="1.11.1.1347"),
+             "env": attr.string_dict(default = {}),
              "_rules_clj_deps": attr.label(default="@rules_clojure//:deps.edn"),
              "_rules_clj_src": attr.label(default="@rules_clojure//:src")})
 

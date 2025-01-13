@@ -5,10 +5,10 @@
             [clojure.spec.alpha :as s]
             [rules-clojure.util :as util]
             [rules-clojure.persistentClassLoader])
-  (:import [java.net URL URLClassLoader]
-           java.util.jar.JarFile
-           java.lang.ref.SoftReference
-           rules_clojure.persistentClassLoader))
+  (:import java.util.jar.JarFile
+           java.net.URL
+           rules_clojure.persistentClassLoader
+           [java.util.concurrent.locks Lock ReentrantLock]))
 
 ;; We want a clean, deterministic build. The naive way to do that is
 ;; to construct a new URLClassloader containing exactly what the user
@@ -64,85 +64,32 @@
           (add-url dirty-classloader p))
         (f dirty-classloader)))))
 
-(defn clear-dead-refs [cache]
-  (swap! cache (fn [cache]
-                 (->> cache
-                      (filter (fn [[k v]]
-                                (.get v)))
-                      (into {})))))
-
-(defn parse-GAV-1
-  "Given the path to a path, attempt to parse out maven Group Artifact Version coordinates, returns nil if it doesn't appear to be in a maven dir"
-  [p]
-  (let [[match group artifact version] (re-find #"repository/(.+)/([^\/]+)/([^\/]+)/\2-\3.jar" p)]
-    (when match
-      [(str group "/" artifact) version])))
-
-(defn compatible-inputs?
-  "Given two maps of jar to digest, return true if they are compatible (all keys in common have the same digest)"
-  [im1 im2]
-  {:pre [(map? im1)
-         (map? im2)
-         (every? (fn [[k v]]
-                     (and (string? k) (string? v))) im1)
-         (every? (fn [[k v]]
-                   (and (string? k) (string? v))) im2)]}
-  (let [common-keys (set/intersection (set (keys im1)) (set (keys im2)))]
-    (= (select-keys im1 common-keys)
-       (select-keys im2 common-keys))))
-
 (s/def ::input-map (s/map-of string? string?))
 
-(defn caching-clean-digest-thread-local
-  "Take a classloader from the cache, if the maven GAV coordinates are
-  not incompatible. Reuse the classloader, iff the namespaces compiled
-  do not contain protocols, because those will cause CLJ-1544 errors
-  if reused. Fastest working implementation."
+(defn caching-threadsafe
+  "Similar to dirty-fast-discard, but multi-threaded. Each thread uses an independent classloader"
   []
-  (let [cache (ThreadLocal.)]
+  (let [cache (ThreadLocal.)
+        reload! (fn [new-classpath]
+                  (let [classloader (new-classloader- new-classpath)]
+                    (.set cache {:classloader classloader
+                                 :loaded? (util/invoker-1 classloader "rules-clojure.compile" "loaded?")
+                                 :contains-protocols? (util/invoker-1 classloader "rules-clojure.compile" "contains-protocols-or-deftypes?")})))
+        init! (fn [classpath]
+                (let [{:keys [classloader]} (.get cache)
+                      _ (when-not classloader
+                          (reload! classpath))
+                      {:keys [classloader]} (.get cache)]
+                  (doseq [p classpath]
+                    (add-url classloader p))))]
     (reify ClassLoaderStrategy
-      (with-classloader [this {:keys [classpath aot-nses input-map]} f]
-        (let [{cl-cache :classloader
-               input-cache :input-map} (.get cache)
-              cp-desired (set classpath)
-              _ (when-not (s/valid? ::input-map input-map)
-                  (s/explain ::input-map input-map))
-              _ (assert (s/valid? ::input-map input-map))
-              _ (assert (seq input-map))
-              input-jars (->> input-map
-                              (filter (fn [[path digest]]
-                                        (jar? path)))
-                              (into {}))
-              cp-dirs (set (remove jar? classpath))
-
-              cacheable-classloader (if (and cl-cache
-                                             (compatible-inputs? input-jars input-cache)
-                                             (every? (fn [ns]
-                                                       (let [loaded? (util/shim-eval cl-cache (str
-                                                                                               `(do
-                                                                                                  (require 'rules-clojure.compile)
-                                                                                                  (rules-clojure.compile/loaded? (symbol ~ns)))))]
-                                                         (not loaded?))) aot-nses))
-                                      (let [cp-new (set/difference (set (keys input-jars)) (set (keys input-cache)))]
-                                        (doseq [p cp-new]
-                                          (add-url cl-cache p))
-                                        (do
-                                          ;; (println "cache hit")
-                                          cl-cache))
-                                      (do
-                                        ;; (println "cache miss")
-                                        (assert (seq input-jars))
-                                        (new-classloader- (keys input-jars))))
-              classloader (new-classloader- cp-dirs cacheable-classloader)]
-          (let [ret (f classloader)
-                script (str `(do
-                               (require 'rules-clojure.compile)
-                               (some (fn [n#]
-                                       (or (rules-clojure.compile/contains-protocols? (symbol n#))
-                                           (rules-clojure.compile/contains-deftypes? (symbol n#)))) [~@aot-nses])))
-                contains-protocols? (util/shim-eval classloader script)]
-            (if-not contains-protocols?
-              (.set cache {:input-map input-jars
-                           :classloader cacheable-classloader})
-              (.set cache nil))
+      (with-classloader [this {:keys [classpath aot-nses]} f]
+        (init! classpath)
+        (let [{:keys [loaded?]} (.get cache)
+              _ (when (some (fn [ns] (loaded? ns)) aot-nses)
+                  (reload! classpath))
+              {:keys [classloader contains-protocols?]} (.get cache)]
+          (let [ret (f classloader)]
+            (when (some (fn [ns] (contains-protocols? ns)) aot-nses)
+              (reload! classpath))
             ret))))))

@@ -44,6 +44,7 @@ clojure_library(
     name = "libbbq",
     srcs = ["bbq.clj"],
     deps = ["foo"],
+    runtime_deps = ["bar"],
     resource_strip_prefix = ["src"],
     aot = ["foo.bbq"])
 ```
@@ -52,9 +53,10 @@ It is likely you're interested in using Bazel because you have large projects wi
 
 `clojure_library` produces a jar.
 
-- `srcs` are present on the classpath while AOTing, but the `.clj` is not added to the jar by default (.classfiles resulting from the AOT will be added to the jar). If you want the .clj to be present in the final jar, add it in `resources`
+- `srcs` are files that should be on the classpath while AOTing. The resulting classfiles will be added to the jar, but `srcs` will not. If you want the .clj to be present in the final jar, add it in `resources`
 - `deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc).
-- `aot` is a list of namespaces to compile, non-transitively.
+- `runtime_deps` works the same as `java_library`
+- `aot` is a list of namespaces to compile.
 - `resources` are unconditionally added to the jar. `rules_java` expects all code to follow the maven directory layout, and does not support building jars from source files in other locations. To avoid Clojure projects being forced into the maven directory layout, use [resource_strip_prefix](https://docs.bazel.build/versions/main/be/java.html#java_library.resource_strip_prefix), which behaves the same as in `java_library`.
 
 Note that `clojure_library` AOT is _non-transitive_. By default `(clojure.core/compile 'foo.bar)` will AOT foo.bar and all of its dependencies, which prevents incremental compilation. `clojure_library` `require`s all dependencies in the foo.bar ns declaration and then compiles, resulting in a jar containing only foo.bar .class files.
@@ -290,6 +292,9 @@ This makes things much nicer and more standard for users of the rules.
 - When using gen-deps, I haven't found a way to identify :provided dependencies. Those have to be added by hand for now
 - Do not use `user.clj`. If there is a user.clj at the root of your classpath, it will be loaded every time a new Clojure runtime is created, which can be many times during an AOT job. Additionally, dependencies in the user.clj are invisible to `gen-build`
 
+# Compatibility
+
+rules_clojure requires JDK 17 or higher. It is currently tested with Bazel 7.4.1 and JDK21
 
 # Thanks
 

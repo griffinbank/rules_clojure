@@ -37,6 +37,11 @@
        (some (fn [v]
                (deftype? ns v)))))
 
+(defn contains-protocols-or-deftypes? [ns]
+  (let [ns (symbol ns)]
+    (or (contains-protocols? ns)
+        (contains-deftypes? ns))))
+
 (defn compile-path-files []
   (-> *compile-path*
       io/file
@@ -83,8 +88,8 @@
     (apply println args)))
 
 (defn loaded? [ns]
-  (assert (symbol? ns))
-  (contains? (loaded-libs) ns))
+  (assert (or (symbol? ns) (string? ns)))
+  (contains? (loaded-libs) (symbol ns)))
 
 (defn unconditional-compile
   "the clojure compiler works by binding *compile-files* true and then
@@ -109,7 +114,9 @@
           (clojure.lang.Compiler/compile rdr src-path (-> src-path (clojure.string/split #"/") last))))
       (catch Exception e
         (throw (ex-info "while compiling" {:ns ns
-                                           :classpath (util/classpath)} e))))))
+                                           :classpath (util/classpath)
+                                           :compile-path *compile-path*
+                                           :compile-dirs (fs/ls-r (fs/->path *compile-path*))} e))))))
 
 (defn non-transitive-compile [dep-nses ns]
   {:pre [(every? symbol? dep-nses)
