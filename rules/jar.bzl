@@ -170,7 +170,8 @@ def clojure_jar_impl(ctx):
         progress_message = "Compiling %s" % ctx.label,
         execution_requirements={"supports-workers": "1",
                                 "supports-multiplex-workers": "1",
-                                "requires-worker-protocol": "json"})
+                                "requires-worker-protocol": "json",
+                                "recycle-runner": "true"})
 
     return [
         default_info,
