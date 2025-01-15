@@ -6,6 +6,8 @@
            [java.nio.file.attribute FileAttribute]
            java.security.MessageDigest))
 
+(set! *warn-on-reflection* true)
+
 (defn path? [x]
   (instance? Path x))
 
@@ -27,7 +29,9 @@
             (Paths/get d (into-array String []))
             d)]
     (assert d (print-str "path does not exist:" d))
-    (reduce (fn [^Path p dir] (.resolve p dir)) d (rest dirs))))
+    (reduce (fn [^Path p ^String dir]
+              (.resolve p dir)) d
+            (rest (map str dirs)))))
 
 (defn file->path [^File f]
   (.toPath f))
