@@ -3,19 +3,22 @@
   (:require [clojure.core.specs.alpha :as cs]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str]
+            [clojure.set :as set]
             [clojure.spec.alpha :as s]
             [clojure.spec.test.alpha :as stest]
-            [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.tools.deps.alpha :as deps]
             [clojure.tools.deps.alpha.util.concurrent :as concurrent]
-            [rules-clojure.parse :as parse]
             [clojure.tools.namespace.find :as find]
-            [rules-clojure.fs :as fs])
-  (:import [clojure.lang Keyword IPersistentVector IPersistentList IPersistentMap Var]
-           [java.nio.file Path]
-           [java.util.jar JarFile])
+            [rules-clojure.fs :as fs]
+            [rules-clojure.parse :as parse])
+  (:import (clojure.lang IPersistentList IPersistentMap IPersistentVector Keyword Var)
+           (java.io File)
+           (java.nio.file Path)
+           (java.util.jar JarEntry JarFile))
   (:gen-class))
+
+(set! *warn-on-reflection* true)
 
 (s/def ::ns-path (s/map-of symbol? ::fs/absolute-path))
 (s/def ::read-deps map?)
@@ -179,7 +182,7 @@
 
 (defn locate-file
   "starting in path, traverse parent directories until finding a file named `name`. Return the path or nil"
-  [path name]
+  [^File path name]
   (let [orig (.getAbsoluteFile path)]
     (loop [path orig]
       (if (seq (str path))
@@ -235,7 +238,7 @@
   (-> (JarFile. (str path))
       (.entries)
       (enumeration-seq)
-      (->> (map (fn [e]
+      (->> (map (fn [^JarEntry e]
                   (.getName e))))))
 
 (defn dir-files [path]
@@ -267,7 +270,8 @@
 
 (defn is-aoted?
   [path ns]
-  (let [class-file (-> ns (#'clojure.core/root-resource) (.substring  1) (str "__init.class"))]
+  (let [root-resource (#'clojure.core/root-resource ns)
+        class-file (str (.substring ^String root-resource  1) "__init.class")]
     (some #(= class-file %) (classpath-files path))))
 
 (def special-namespaces '#{clojure.core.specs.alpha})
@@ -351,7 +355,7 @@
       (.entries)
       (enumeration-seq)
       (->>
-       (some (fn [e]
+       (some (fn [^JarEntry e]
                (re-find #".class$" (.getName e)))))))
 
 (defn jar-ns-decls
@@ -432,7 +436,7 @@
     (when label
       {:deps [label]})))
 
-(defn get-ns-decl [path platform]
+(defn get-ns-decl [^Path path platform]
   (let [form (-> path
                  (.toFile)
                  (slurp)
@@ -532,7 +536,7 @@
 
 (defn path-
   "given the path to a .clj file, return the namespace"
-  [path]
+  [^Path path]
   {:post [(symbol? %)]}
   (-> path
       .toFile
@@ -576,7 +580,7 @@
   (->> basis
        :paths
        (filter (fn [p]
-                 (.startsWith path (fs/->path deps-edn-dir p))))
+                 (.startsWith ^Path path ^Path (fs/->path deps-edn-dir p))))
        first))
 
 (defn reader-features [path]
@@ -689,7 +693,7 @@
                    (sort-by str))
         subdirs (->> dir
                      fs/ls
-                     (filter (fn [p]
+                     (filter (fn [^Path p]
                                (-> p .toFile fs/directory?)))
                      (sort-by str))
         clj-subdirs (->>
