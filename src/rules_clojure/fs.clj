@@ -36,7 +36,7 @@
 (defn file->path [^File f]
   (.toPath f))
 
-(defn path->file [^Path p]
+(defn path->file ^File [^Path p]
   (.toFile p))
 
 (s/fdef absolute :args (s/cat :p path?) :ret path?)
@@ -68,13 +68,13 @@
   (create-directories path))
 
 (s/fdef filename :args (s/cat :p path?) :ret string?)
-(defn filename [path]
+(defn filename [^Path path]
   (-> path
       .getFileName
       str))
 
 (s/fdef dirname :args (s/cat :p path?) :ret path?)
-(defn dirname [path]
+(defn dirname [^Path path]
   (.getParent path))
 
 (s/fdef extension :args (s/cat :p path?) :ret string?)
@@ -103,7 +103,7 @@
 (defn ls-r [dir]
   (->> dir
        ls
-       (mapcat (fn [path]
+       (mapcat (fn [^Path path]
                  (if (-> path .toFile directory?)
                    (concat [path] (ls-r path))
                    [path])))))
@@ -119,7 +119,7 @@
 
 (defn rm-rf [^Path dir]
   (while (seq (ls dir))
-    (doseq [p (ls dir)
+    (doseq [^Path p (ls dir)
             :let [f (path->file p)]]
       (if (directory? f)
         (do
