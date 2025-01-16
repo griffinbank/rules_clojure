@@ -588,6 +588,9 @@
     (clj-path? path) #{:clj}
     (cljs-path? path) #{:cljs}))
 
+(defn prun [f coll]
+  (run! deref (mapv #(future (f %)) coll)))
+
 (s/fdef ns-rules :args (s/cat :a (s/keys :req-un [::basis ::deps-edn-dir ::jar->lib ::deps-repo-tag ::deps-bazel]) :p (s/coll-of fs/path?)))
 (defn ns-rules
   "given a .clj path, return all rules for the file "
@@ -747,9 +750,8 @@
        (distinct)
        (sort-by (comp count str))
        (reverse)
-       (map (fn [dir]
-              (gen-dir args dir)))
-       (dorun)))
+       (prun (fn [dir]
+               (gen-dir args dir)))))
 
 (defn path->absolute
   [path deps-edn-path]
@@ -1028,4 +1030,5 @@
             :deps deps
             :srcs srcs
             :ns-loader gen-namespace-loader)]
-    (f opts)))
+    (f opts)
+    (shutdown-agents)))
