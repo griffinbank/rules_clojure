@@ -15,30 +15,11 @@
   (:import (clojure.lang IPersistentList IPersistentMap IPersistentVector Keyword Var)
            (java.io File)
            (java.nio.file Path)
-           (java.util.concurrent ExecutorService Executors Future TimeUnit)
            (java.util.jar JarEntry JarFile))
   (:gen-class))
 
 (set! *warn-on-reflection* true)
 
-(defn thread-pool-pmap
-  "pmap but uses the provided executor. eagerly submits futures."
-  [^ExecutorService pool f coll]
-  (let [futures (mapv (fn [item]
-                       (.submit pool ^Callable (fn []
-                                                 (f item))))
-                     coll)]
-    (map (fn [^Future fut] (.get fut)) futures)))
-
-(defn shutdown-pool [^ExecutorService pool timeout-ms]
-  (.shutdown pool)
-  (try
-    (when-not (.awaitTermination pool timeout-ms TimeUnit/MILLISECONDS)
-      (.shutdownNow pool))
-    (catch InterruptedException _
-      (.shutdownNow pool))))
-
-(s/def ::pool #(instance? % ExecutorService))
 (s/def ::ns-path (s/map-of symbol? ::fs/absolute-path))
 (s/def ::read-deps map?)
 (s/def ::aliases (s/coll-of keyword?))
@@ -754,10 +735,10 @@
         fs/path->file
         (spit content :encoding "UTF-8"))))
 
-(s/fdef gen-source-paths- :args (s/cat :a (s/keys :req-un [::deps-edn-dir ::src-ns->label ::dep-ns->label ::jar->lib ::deps-repo-tag ::deps-bazel ::pool]) :paths (s/coll-of fs/path?)))
+(s/fdef gen-source-paths- :args (s/cat :a (s/keys :req-un [::deps-edn-dir ::src-ns->label ::dep-ns->label ::jar->lib ::deps-repo-tag ::deps-bazel]) :paths (s/coll-of fs/path?)))
 (defn gen-source-paths-
   "gen-dir for every directory on the classpath."
-  [{:keys [pool] :as args} paths]
+  [args paths]
   (assert (map? (:src-ns->label args)))
   (->> paths
        (mapcat (fn [path]
@@ -766,8 +747,8 @@
        (distinct)
        (sort-by (comp count str))
        (reverse)
-       (thread-pool-pmap pool (fn [dir]
-                                (gen-dir args dir)))
+       (map (fn [dir]
+              (gen-dir args dir)))
        (dorun)))
 
 (defn path->absolute
@@ -810,7 +791,7 @@
      (remove (fn [path]
                (contains? ignore path))))))
 
-(s/fdef gen-source-paths :args (s/cat :a (s/keys :req-un [::deps-edn-path ::deps-bazel ::repository-dir ::deps-repo-tag ::basis ::jar->lib ::deps-bazel ::pool]
+(s/fdef gen-source-paths :args (s/cat :a (s/keys :req-un [::deps-edn-path ::deps-bazel ::repository-dir ::deps-repo-tag ::basis ::jar->lib ::deps-bazel]
                                                  :opt-un [::aliases])))
 (defn gen-source-paths
   "Given the path to a deps.edn file, gen-dir every source file on the classpath
@@ -819,7 +800,7 @@
   repository-dir: output directory in the bazel sandbox where deps should be downloaded
   deps-repo-tag: Bazel workspace repo for deps, typically `@deps`
   "
-  [{:keys [deps-edn-path deps-bazel deps-repo-tag basis jar->lib aliases pool] :as args}]
+  [{:keys [deps-edn-path deps-bazel deps-repo-tag basis jar->lib aliases] :as args}]
   (let [args (merge args
                     {:src-ns->label (->src-ns->label args)
                      :dep-ns->label (->dep-ns->label args)
@@ -951,7 +932,7 @@
                      :lib->jar lib->jar
                      :lib->deps lib->deps})))
 
-(defn srcs [{:keys [repository-dir deps-edn-path deps-repo-tag aliases aot-default pool]
+(defn srcs [{:keys [repository-dir deps-edn-path deps-repo-tag aliases aot-default]
              :or {deps-repo-tag "@deps"}}]
   {:pre [(re-find #"^@" deps-repo-tag) deps-edn-path repository-dir]}
   (let [deps-edn-path (-> deps-edn-path fs/->path fs/absolute)
@@ -973,8 +954,7 @@
               :deps-repo-tag deps-repo-tag
               :basis basis
               :jar->lib jar->lib
-              :class->jar class->jar
-              :pool pool}]
+              :class->jar class->jar}]
     (gen-source-paths args)))
 
 (defn gen-namespace-loader
@@ -1031,14 +1011,12 @@
 (defn -main [& args]
   ;; binding [*print-length* 10
   ;;          *print-level* 3]
-  (let [pool (Executors/newCachedThreadPool)
-        cmd (first args)
+  (let [cmd (first args)
         cmd (keyword cmd)
         opts (apply hash-map (rest args))
         opts (into {} (map (fn [[k v]]
                              [(edn/read-string k) v]) opts))
         opts (-> opts
-                 (assoc :pool pool)
                  (update :aliases (fn [aliases] (-> aliases
                                                     (edn/read-string)
                                                     (#(mapv keyword %)))))
@@ -1050,7 +1028,4 @@
             :deps deps
             :srcs srcs
             :ns-loader gen-namespace-loader)]
-    (try
-      (f opts)
-      (finally
-        (shutdown-pool pool 5000)))))
+    (f opts)))
