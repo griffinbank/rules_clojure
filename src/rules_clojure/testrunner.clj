@@ -1,5 +1,6 @@
 (ns rules-clojure.testrunner
-  (:require [clojure.test])
+  (:require [clojure.test]
+            [cloverage.coverage :as coverage])
   (:gen-class))
 
 (defn -main [& args]
@@ -8,12 +9,7 @@
     (println "testing" the-ns)
     (try
       (require the-ns)
-      (let [test-report (clojure.test/run-tests the-ns)]
-        (println test-report)
-        (if (and (zero? (:fail test-report))
-                 (zero? (:error test-report)))
-          (System/exit 0)
-          (System/exit 1)))
+      (coverage/-main (str the-ns) "--lcov" "--src-ns-path" "src")
       (catch Throwable t
         (println t)
         (System/exit 1)))))
