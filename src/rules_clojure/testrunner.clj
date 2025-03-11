@@ -1,6 +1,17 @@
 (ns rules-clojure.testrunner
   (:require [clojure.test])
+  (:import [sun.misc Signal SignalHandler]
+           [java.lang.management ManagementFactory])
   (:gen-class))
+
+(def old-handler
+  (Signal/handle
+    (Signal. "TERM")
+    (reify SignalHandler
+      (handle [_ signal]
+        (run! println (.dumpAllThreads (ManagementFactory/getThreadMXBean) true true))
+        (when-not (#{SignalHandler/SIG_DFL SignalHandler/SIG_IGN} old-handler)
+          (.handle old-handler signal))))))
 
 (defn -main [& args]
   (assert (string? (first args)) (print-str "first argument must be a string, got" args))
