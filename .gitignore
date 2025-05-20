@@ -2,3 +2,4 @@
 .ijwb/
 bazel-*
 
+.clj-kondo/

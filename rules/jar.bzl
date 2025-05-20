@@ -80,7 +80,6 @@ def printable_label(label):
                       label.name)
 
 def clojure_jar_impl(ctx):
-
     if (len(ctx.attr.srcs) > 0 and len(ctx.attr.aot) == 0):
         fail("srcs but no AOT")
 

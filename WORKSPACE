@@ -64,12 +64,11 @@ maven_install(
 load("@frozen_deps//:defs.bzl", "pinned_maven_install")
 pinned_maven_install()
 
-load ("//:repositories.bzl", "rules_clojure_deps")
+load("//:repositories.bzl", "rules_clojure_deps")
 rules_clojure_deps()
 
 load("//:setup.bzl", "rules_clojure_setup")
 rules_clojure_setup()
-
 
 # used for testing
 maven_install(
