@@ -96,8 +96,8 @@ def _run_gen_build(repository_ctx):
             "-Srepro",
             "-Sdeps", """{:paths ["%s", "%s"]
             :deps {org.clojure/tools.namespace {:mvn/version "1.1.0"}
-            org.clojure/tools.deps.alpha {:mvn/version "0.14.1178"}}}""" % (repository_ctx.path("../rules_clojure/src"),
-                                                                            repository_ctx.path("../rules_clojure~/src")),
+            org.clojure/tools.deps.alpha {:mvn/version "0.14.1178"}}}""" % (repository_ctx.path("../rules_clojure~/src"),
+                                                                            repository_ctx.path("../rules_clojure/src")),
 
             "-J-Dclojure.main.report=stderr",
             "-M",
