@@ -94,9 +94,10 @@ def _symlink_repository(repository_ctx):
 def _run_gen_build(repository_ctx):
     args = [repository_ctx.path("tools.deps/bin/clojure"),
             "-Srepro",
-            "-Sdeps", """{:paths ["%s"]
+            "-Sdeps", """{:paths ["%s", "%s"]
             :deps {org.clojure/tools.namespace {:mvn/version "1.1.0"}
-            org.clojure/tools.deps.alpha {:mvn/version "0.14.1178"}}}""" % repository_ctx.path("../rules_clojure/src"),
+            org.clojure/tools.deps.alpha {:mvn/version "0.14.1178"}}}""" % (repository_ctx.path("../rules_clojure/src"),
+                                                                            repository_ctx.path("../rules_clojure~/src")),
 
             "-J-Dclojure.main.report=stderr",
             "-M",
@@ -125,9 +126,7 @@ clojure_tools_deps = repository_rule(
     attrs = {"deps_edn": attr.label(allow_single_file = True),
              "aliases": attr.string_list(default = [], doc = "extra aliases in deps.edn to merge in while resolving deps"),
              "clj_version": attr.string(default="1.11.1.1347"),
-             "env": attr.string_dict(default = {}),
-             "_rules_clj_deps": attr.label(default="@rules_clojure//:deps.edn"),
-             "_rules_clj_src": attr.label(default="@rules_clojure//:src")})
+             "env": attr.string_dict(default = {})})
 
 def clojure_gen_srcs(name):
     native.alias(name=name,

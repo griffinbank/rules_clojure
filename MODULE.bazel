@@ -1,0 +1,67 @@
+module(
+    name = "rules_clojure",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "rules_jvm_external", version = "6.7")
+
+maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+
+maven.artifact(
+    name = "rules_clojure_maven_deps",
+    group = "org.clojure",
+    artifact = "clojure",
+    version = "1.11.1",
+    exclusions = [
+        "org.clojure:spec.alpha",
+        "org.clojure:core.specs.alpha"
+    ]
+)
+
+maven.artifact(
+    name = "rules_clojure_maven_deps",
+    group = "org.clojure",
+    artifact = "spec.alpha",
+    version = "0.3.218",
+    exclusions = ["org.clojure:clojure"]
+)
+
+maven.artifact(
+    name = "rules_clojure_maven_deps",
+    group = "org.clojure",
+    artifact = "core.specs.alpha",
+    version = "0.2.62",
+    exclusions = [
+        "org.clojure:clojure",
+        "org.clojure:spec.alpha"
+    ]
+)
+
+maven.install(
+    name = "rules_clojure_maven_deps",
+    artifacts = [
+        "org.clojure:data.json:2.4.0",
+        "org.clojure:java.classpath:1.0.0",
+        "org.clojure:tools.namespace:1.1.0",
+        "org.clojure:tools.deps.alpha:0.14.1212"
+    ],
+    # When updating versions, run `REPIN=1 bazel run @rules_clojure_maven_deps//:pin`
+    fail_if_repin_required = True,
+    lock_file = "//:rules_clojure_maven_deps_install.json",
+    repositories = [
+        "https://repo1.maven.org/maven2",
+        "https://repo.clojars.org/"
+    ]
+)
+
+maven.install(
+    name = "clojure_old",
+    artifacts = ["org.clojure:clojure:1.8.0"],
+    fail_if_repin_required = True,
+    repositories = [
+        "https://repo1.maven.org/maven2",
+        "https://repo.clojars.org/"
+    ]
+)
+
+use_repo(maven, "rules_clojure_maven_deps", "clojure_old")
