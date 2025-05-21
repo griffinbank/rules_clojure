@@ -13,6 +13,9 @@ CLJ_VERSIONS_LINUX = {
 clj_install_prefix = "tools.deps"
 clj_path = clj_install_prefix + "/bin/clojure"
 
+def get_deps_repo_tag(repository_ctx):
+    return repository_ctx.original_name if hasattr(repository_ctx, "original_name") else repository_ctx.attr.name
+
 def _install_clj_mac(repository_ctx):
     clj_version = repository_ctx.attr.clj_version
 
@@ -65,6 +68,7 @@ def aliases_str(aliases):
     return str("[" + " ".join([ (":%s" % (a)) for a in aliases]) + "]")
 
 def _install_scripts(repository_ctx):
+    deps_repo_tag = get_deps_repo_tag(repository_ctx)
     repository_ctx.file(repository_ctx.path("scripts/BUILD.bazel"),
                         executable = True,
                         content = """
@@ -81,7 +85,7 @@ java_binary(name="gen_srcs",
           ":aliases", "\\"{aliases}\\""],
     data=["{deps_edn_label}"])
 
- """.format(deps_repo_tag = "@" + repository_ctx.original_name,
+ """.format(deps_repo_tag = "@" + deps_repo_tag,
             deps_edn_label = repository_ctx.attr.deps_edn,
             deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
             repository_dir = repository_ctx.path("repository"),
@@ -92,6 +96,7 @@ def _symlink_repository(repository_ctx):
     repository_ctx.symlink(repository_ctx.os.environ["HOME"] + "/.m2/repository", repository_ctx.path("repository"))
 
 def _run_gen_build(repository_ctx):
+    deps_repo_tag = get_deps_repo_tag(repository_ctx)
     args = [repository_ctx.path("tools.deps/bin/clojure"),
             "-Srepro",
             "-Sdeps", """{:paths ["%s", "%s"]
@@ -106,7 +111,7 @@ def _run_gen_build(repository_ctx):
             ":deps-edn-path", repository_ctx.path(repository_ctx.attr.deps_edn),
             ":repository-dir", repository_ctx.path("repository/"),
             ":deps-build-dir", repository_ctx.path(""),
-            ":deps-repo-tag", "@" + repository_ctx.original_name,
+            ":deps-repo-tag", "@" + deps_repo_tag,
             ":workspace-root", repository_ctx.attr.deps_edn.workspace_root,
             ":aliases", aliases_str(repository_ctx.attr.aliases)]
     ret = repository_ctx.execute(args, quiet=False, environment=repository_ctx.attr.env)
