@@ -13,6 +13,9 @@ CLJ_VERSIONS_LINUX = {
 clj_install_prefix = "tools.deps"
 clj_path = clj_install_prefix + "/bin/clojure"
 
+def get_deps_repo_tag(repository_ctx):
+    return repository_ctx.original_name if hasattr(repository_ctx, "original_name") else repository_ctx.attr.name
+
 def _install_clj_mac(repository_ctx):
     clj_version = repository_ctx.attr.clj_version
 
@@ -65,6 +68,7 @@ def aliases_str(aliases):
     return str("[" + " ".join([ (":%s" % (a)) for a in aliases]) + "]")
 
 def _install_scripts(repository_ctx):
+    deps_repo_tag = get_deps_repo_tag(repository_ctx)
     repository_ctx.file(repository_ctx.path("scripts/BUILD.bazel"),
                         executable = True,
                         content = """
@@ -81,7 +85,7 @@ java_binary(name="gen_srcs",
           ":aliases", "\\"{aliases}\\""],
     data=["{deps_edn_label}"])
 
- """.format(deps_repo_tag = "@" + repository_ctx.attr.name,
+ """.format(deps_repo_tag = "@" + deps_repo_tag,
             deps_edn_label = repository_ctx.attr.deps_edn,
             deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
             repository_dir = repository_ctx.path("repository"),
@@ -92,11 +96,13 @@ def _symlink_repository(repository_ctx):
     repository_ctx.symlink(repository_ctx.os.environ["HOME"] + "/.m2/repository", repository_ctx.path("repository"))
 
 def _run_gen_build(repository_ctx):
+    deps_repo_tag = get_deps_repo_tag(repository_ctx)
     args = [repository_ctx.path("tools.deps/bin/clojure"),
             "-Srepro",
-            "-Sdeps", """{:paths ["%s"]
+            "-Sdeps", """{:paths ["%s", "%s"]
             :deps {org.clojure/tools.namespace {:mvn/version "1.1.0"}
-            org.clojure/tools.deps.alpha {:mvn/version "0.14.1178"}}}""" % repository_ctx.path("../rules_clojure/src"),
+            org.clojure/tools.deps.alpha {:mvn/version "0.14.1178"}}}""" % (repository_ctx.path("../rules_clojure+/src"),
+                                                                            repository_ctx.path("../rules_clojure/src")),
 
             "-J-Dclojure.main.report=stderr",
             "-M",
@@ -105,7 +111,7 @@ def _run_gen_build(repository_ctx):
             ":deps-edn-path", repository_ctx.path(repository_ctx.attr.deps_edn),
             ":repository-dir", repository_ctx.path("repository/"),
             ":deps-build-dir", repository_ctx.path(""),
-            ":deps-repo-tag", "@" + repository_ctx.attr.name,
+            ":deps-repo-tag", "@" + deps_repo_tag,
             ":workspace-root", repository_ctx.attr.deps_edn.workspace_root,
             ":aliases", aliases_str(repository_ctx.attr.aliases)]
     ret = repository_ctx.execute(args, quiet=False, environment=repository_ctx.attr.env)
@@ -125,9 +131,7 @@ clojure_tools_deps = repository_rule(
     attrs = {"deps_edn": attr.label(allow_single_file = True),
              "aliases": attr.string_list(default = [], doc = "extra aliases in deps.edn to merge in while resolving deps"),
              "clj_version": attr.string(default="1.11.1.1347"),
-             "env": attr.string_dict(default = {}),
-             "_rules_clj_deps": attr.label(default="@rules_clojure//:deps.edn"),
-             "_rules_clj_src": attr.label(default="@rules_clojure//:src")})
+             "env": attr.string_dict(default = {})})
 
 def clojure_gen_srcs(name):
     native.alias(name=name,
