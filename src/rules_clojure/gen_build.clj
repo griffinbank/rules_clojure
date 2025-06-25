@@ -868,10 +868,10 @@
                                                                                                        (cond-> m
                                                                                                          (seq (:deps m)) (update :deps (comp vec distinct))
                                                                                                          (:deps m) (update :deps (comp vec distinct))))))))))))))))))
-                          [(emit-bazel (list 'clojure_library (kwargs
+                          [(emit-bazel (list 'java_library (kwargs
                                                                {:name "__all"
-                                                                :deps (->> jar->lib
-                                                                           (mapv (comp library->label val)))})))]))
+                                                                :runtime_deps (->> jar->lib
+                                                                                   (mapv (comp library->label val)))})))]))
 
         :encoding "UTF-8"))
 
