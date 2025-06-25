@@ -35,7 +35,7 @@ rules_clojure_setup()
 
 Differs from [simuons/rules_clojure](https://github.com/simuons/rules_clojure) that it uses `java_library` and `java_binary` as much as possible.
 
-`clojure_binary`, `clojure_repl` and `clojure_test` are all macros that delegate to `java_binary`. `clojure_library` is new code.
+`clojure_binary`, and `clojure_test` are macros that delegate to `java_binary`. `clojure_library` is new code.
 
 For fast compilation, `clojure_library` is a Bazel persistent worker.
 
@@ -70,10 +70,14 @@ Note that AOT will determine whether a library should appear in `deps` or `runti
 ```
 clojure_repl(
   name = "foo_repl",
-  deps = [":foo"])
+  main_class = "clojure.main",
+  main_args = ["-e", "foo.main"],
+  runtime_deps = [":foo", "@deps//:__all"],
+  classpath_dirs = ["src", "dev", "test"],
+  data = [])
 ```
 
-Behaves as you'd expect. Delegates to `java_binary` with `main_class clojure.main`.
+Like `java_binary`, the repl process runs from the bazel-bin package directory. Unlike the built-in java rules, it supports `classpath_dirs`, which allows adding directories to the classpath, like a conventional clojure repl.
 
 ### clojure_test
 

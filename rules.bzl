@@ -1,4 +1,5 @@
 load("//rules:jar.bzl", _clojure_jar_impl = "clojure_jar_impl")
+load("//rules:repl.bzl", _clojure_repl_impl = "clojure_repl_impl")
 
 clojure_library = rule(
     doc = "Define a clojure library",
@@ -30,20 +31,19 @@ def clojure_binary(name, **kwargs):
                        runtime_deps = deps + runtime_deps,
                        **kwargs)
 
-def clojure_repl(name, deps=[], ns=None, **kwargs):
-    args = []
-
-    if ns:
-        args.extend(["-e", """\"(require '[{ns}]) (in-ns '{ns})\"""".format(ns = ns)])
-
-    args.extend(["-e", "(clojure.main/repl)"])
-
-    native.java_binary(name=name,
-                       runtime_deps=deps,
-                       jvm_flags=["-Dclojure.main.report=stderr"],
-                       main_class = "clojure.main",
-                       args = args,
-                       **kwargs)
+clojure_repl = rule(
+    doc = "Define a clojure repl",
+    attrs = {
+        "main_class": attr.string(),
+        "runtime_deps": attr.label_list(default = [], providers = [[JavaInfo]]),
+        "classpath_dirs": attr.label_list(default = [], allow_files = True),
+        "data": attr.label_list(default = [], allow_files = True),
+        "jvm_flags": attr.string_list(default=[], doc = "Optional jvm_flags to pass to the repl binary"),
+    },
+    executable = True,
+    provides = [],
+    toolchains = ["@bazel_tools//tools/jdk:toolchain_type"],
+    implementation = _clojure_repl_impl)
 
 def clojure_test(name, *, test_ns, deps=[], runtime_deps=[], **kwargs):
     # ideally the library name and the bin name would be the same. They can't be.
