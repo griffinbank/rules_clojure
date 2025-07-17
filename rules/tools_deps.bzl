@@ -70,9 +70,12 @@ def _install_scripts(repository_ctx):
                         content = """
 package(default_visibility = ["//visibility:public"])
 
+java_import(name="gen_build",
+    jars = ["@rules_clojure//:gen_build.jar"])
+
 java_binary(name="gen_srcs",
     main_class="rules_clojure.gen_build",
-    runtime_deps=["@rules_clojure//src/rules_clojure:libgen_build"],
+    runtime_deps=["gen_build"],
     args=["srcs",
           ":deps-edn-path", "{deps_edn_path}",
           ":repository-dir", "{repository_dir}",
