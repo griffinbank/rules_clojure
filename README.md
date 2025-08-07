@@ -63,7 +63,7 @@ Note that `clojure_library` AOT is _non-transitive_. By default `(clojure.core/c
 
 If you don't need to AOT, `clojure_library` isn't necessary, just use `java_library` with `resource_strip_prefix`.
 
-Note that AOT will determine whether a library should appear in `deps` or `runtime_deps`. If a library is being AOT'd, everything that it requires will need to appear in `deps`. If it is not being AOT'd, dependencies should be listed in `runtime_deps`.
+Note that AOT will determine whether a library should appear in `deps` or `runtime_deps`. If a library is being AOT'd, everything that it loads at compile time will need to appear in `deps`. If it is not being AOT'd, dependencies should be listed in `runtime_deps`.
 
 ### clojure_repl
 
@@ -177,19 +177,21 @@ Prefer namespace metadata for specifying extra dependencies in your code. Howeve
 
 put `:bazel {:deps {}}` at the top level of your deps.edn file. `:deps` will be merged in when running `gen_srcs`. Deps are a map of bazel labels to a map of extra fields to merge into the `clojure_library`.
 
+`examples/stress/deps.edn` contains known examples of libraries that require extra annotations to compile under rules clojure.
+
 ### no AOT
 
 ```clojure
 :bazel {:no-aot #{foo.bar}}
 ```
 
-Instructs gen-build to not AOT that namespace.
+Instructs gen-build to not AOT that namespace. Note that this doesn't affect 3rd party dependencies yet.
 
 ### Coarse dependencies
 
 Fine grained dependencies are ideal from an efficiency perspective, but it isn't always possible to make them work.
 
-`gen_srcs` also creates a few extra targets in every directory on the deps.edn search path. It will produce `clojure_library` targets named `__clj_lib`  containing all source files in the directory (non-AOT'd), and all subpackages. `//src:__clj_files` includes all src files under `src`. These targets are useful for static analysis tools.
+`gen_srcs` also creates a few extra targets in every directory on the deps.edn search path. It will produce `clojure_library` targets named `__clj_lib`  containing all source files in the directory (non-AOT'd), and all subpackages. `//src:__clj_files` includes all src files under `src`. These targets are useful for e.g. static analysis tools like clj-kondo.
 
 `__clj_lib` does not include dependencies. Use `@deps//:__all` to pull in all dependencies.
 
@@ -294,13 +296,28 @@ This makes things much nicer and more standard for users of the rules.
 - builds are non-reproducible for one reason:
   - there isn't a public API to reset the ID clojure uses for naming anonymous functions, which means anonymous AOT function names are non-deterministic
 - When using gen-deps, I haven't found a way to identify :provided dependencies. Those have to be added by hand for now
-- Do not use `user.clj`. If there is a user.clj at the root of your classpath, it will be loaded every time a new Clojure runtime is created, which can be many times during an AOT job. Additionally, dependencies in the user.clj are invisible to `gen-build`
 
 # Compatibility
 
-rules_clojure requires JDK 17 or higher. It is currently tested with Bazel 7.4.1 and JDK21
+rules_clojure requires JDK 21 or higher. It is currently tested with Bazel 7.4.1 and JDK21
 
 # Thanks
 
 - Forked from https://github.com/simuons/rules_clojure
 - Additional inspiration from https://github.com/markdingram/bazel-clojure
+- Contains vendored code from tools.namespace https://github.com/clojure/tools.namespace
+- Contains vendored code from tools.reader https://github.com/clojure/tools.reader
+- Contains vendored code from java.classpath https://github.com/clojure/java.classpath
+
+
+
+Copyright and License
+----------------------------------------
+
+Copyright © 2025 Griffin Bank. All rights reserved. The use and
+distribution terms for this software are covered by the
+[Eclipse Public License 1.0] which can be found in the file
+epl-v10.html at the root of this distribution. By using this software
+in any fashion, you are agreeing to be bound by the terms of this
+license. You must not remove this notice, or any other, from this
+software.

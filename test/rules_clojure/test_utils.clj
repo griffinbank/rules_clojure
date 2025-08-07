@@ -1,6 +1,5 @@
 (ns rules-clojure.test-utils
   (:require [clojure.string :as str]
-            [clojure.java.io :as io]
             [rules-clojure.fs :as fs])
   (:import [com.google.devtools.build.runfiles Runfiles]))
 

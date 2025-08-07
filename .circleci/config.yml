@@ -22,6 +22,10 @@ jobs:
       - run:
           name: example tests
           command: cd examples/simple && bazel test //...
+      - run:
+          name: stress tests
+          command: cd examples/stress && bazel test //...
+
 
 workflows:
   test-workflow:

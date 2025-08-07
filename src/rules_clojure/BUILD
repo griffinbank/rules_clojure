@@ -1,18 +1,33 @@
-package(default_visibility = ["//visibility:public"])
-
 load("//:rules.bzl", "clojure_library", "clojure_binary")
 
-exports_files(glob(["*.clj"]))
+package(default_visibility = ["//visibility:public"])
+exports_files(glob(["**/*.clj"]))
+
+filegroup(name="srcs",
+          srcs= glob(["*.clj"]) + ["//:deps.edn"])
 
 java_library(
     name="bootstrap",
     resources=["bootstrap_compiler.clj",
+               "bootstrap_gen_build.clj",
+               "bootstrap_libfs.clj",
                "bootstrap_worker.clj",
                "compile.clj",
                "fs.clj",
                "jar.clj",
                "worker.clj",
-               "parse.clj",
+               "gen_build.clj",
+               "namespace/parse.cljc",
+               "namespace/file.clj",
+               "namespace/find.clj",
+               "java/classpath.clj",
+               "tools/reader.clj",
+               "tools/reader/reader_types.clj",
+               "tools/reader/default_data_readers.clj",
+               "tools/reader/impl/commons.clj",
+               "tools/reader/impl/errors.clj",
+               "tools/reader/impl/inspect.clj",
+               "tools/reader/impl/utils.clj",
                "persistent_classloader.clj",
                "persistentClassLoader.clj",
                "util.clj"],
@@ -23,8 +38,7 @@ java_library(
                   "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
                   "@rules_clojure_maven_deps//:org_clojure_core_cache",
                   "@rules_clojure_maven_deps//:org_clojure_data_json",
-                  "@rules_clojure_maven_deps//:org_clojure_java_classpath",
-                  "@rules_clojure_maven_deps//:org_clojure_tools_namespace"])
+                  "@rules_clojure_maven_deps//:org_clojure_tools_deps_alpha"])
 
 java_binary(
     name="bootstrap-bin",
@@ -51,6 +65,24 @@ genrule(
     """,
     outs=["libcompile.jar"])
 
+genrule(
+    name="bootstrap-libfs",
+    tools=[":bootstrap-bin"],
+    cmd="""
+    mkdir -p fs-classes
+    $(location :bootstrap-bin) -m rules-clojure.bootstrap-libfs $(location :libfs.jar)
+    """,
+    outs=["libfs.jar"])
+
+genrule(
+    name="bootstrap-gen-build",
+    tools=[":bootstrap-bin"],
+    cmd="""
+    mkdir -p gen-build-classes
+    $(location :bootstrap-bin) -m rules-clojure.bootstrap-gen-build $(location :libgen_build.jar)
+    """,
+    outs=["libgen_build.jar"])
+
 java_import(name="libworker",
             jars=["libworker.jar"],
             runtime_deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
@@ -62,55 +94,25 @@ java_import(name="libcompile",
             jars=["libcompile.jar"],
             data=[":bootstrap-compiler"])
 
+java_import(name="libfs",
+            jars=["libfs.jar"],
+            data=[":bootstrap-libfs"])
+
+java_import(name="libgen_build",
+            jars=["libgen_build.jar"],
+            runtime_deps = ["@rules_clojure_maven_deps//:org_clojure_clojure",
+                            "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
+                            "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
+                            "@rules_clojure_maven_deps//:org_clojure_tools_deps_alpha",
+                            ":libfs"],
+            data=[":bootstrap-gen-build"])
+
 java_binary(name="worker",
-            main_class="clojure.main",
+            main_class="rules_clojure.worker",
             jvm_flags=["-Dclojure.main.report=stderr",
                        "-Xmx2g",
                        "-XX:MaxMetaspaceSize=4g"],
             runtime_deps=["libworker"])
-
-clojure_library(name="libfs",
-                srcs=["fs.clj"],
-                resource_strip_prefix="src",
-                resources=["fs.clj"],
-                aot=["rules-clojure.fs"],
-                deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
-                      "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
-                      "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha"])
-
-clojure_library(
-    name= "libgen_build",
-    srcs=["gen_build.clj", "parse.clj"],
-    resource_strip_prefix = "src",
-    deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
-          "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
-          "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
-          "@rules_clojure_maven_deps//:org_clojure_tools_namespace",
-          "@rules_clojure_maven_deps//:org_clojure_tools_deps_alpha",
-          "@rules_clojure_maven_deps//:org_clojure_data_json",
-          "libfs"],
-    aot=["clojure.java.classpath",
-         "clojure.tools.deps.alpha.extensions",
-         "clojure.tools.deps.alpha.util.session",
-         "clojure.tools.deps.alpha.util.io",
-         "clojure.tools.deps.alpha.util.dir",
-         "clojure.tools.deps.alpha.util.concurrent",
-         "clojure.tools.deps.alpha",
-         "clojure.tools.reader.default-data-readers",
-         "clojure.tools.reader.impl.commons",
-         "clojure.tools.reader.impl.inspect",
-         "clojure.tools.reader.impl.errors",
-         "clojure.tools.reader.impl.utils",
-         "clojure.tools.reader.reader-types",
-         "clojure.tools.reader",
-         "clojure.tools.namespace.parse",
-         "clojure.tools.namespace.dependency",
-         "clojure.tools.namespace.track",
-         "clojure.tools.namespace.file",
-         "clojure.tools.namespace.find",
-
-         "rules-clojure.gen-build",
-         "rules-clojure.parse"])
 
 java_binary(name="gen_build",
             main_class="rules_clojure.gen_build",

@@ -5,25 +5,19 @@
 (def nses-to-compile
   '[clojure.core.cache
     clojure.data.json
-    clojure.java.classpath
-    clojure.tools.namespace.file
-    clojure.tools.namespace.find
-    clojure.tools.namespace.parse
-    clojure.tools.reader.default-data-readers,
-    clojure.tools.reader.impl.commons,
-    clojure.tools.reader.impl.inspect,
-    clojure.tools.reader.impl.errors,
-    clojure.tools.reader.impl.utils,
-    clojure.tools.reader.reader-types,
-    clojure.tools.reader,
-    clojure.tools.namespace.parse,
-    clojure.tools.namespace.dependency,
-    clojure.tools.namespace.track,
-    clojure.tools.namespace.file,
-    clojure.tools.namespace.find
+    rules-clojure.java.classpath
+    rules-clojure.tools.reader.default-data-readers,
+    rules-clojure.tools.reader.impl.commons,
+    rules-clojure.tools.reader.impl.inspect,
+    rules-clojure.tools.reader.impl.errors,
+    rules-clojure.tools.reader.impl.utils,
+    rules-clojure.tools.reader.reader-types,
+    rules-clojure.tools.reader,
     rules-clojure.persistentClassLoader
     rules-clojure.util
-    rules-clojure.parse
+    rules-clojure.namespace.file
+    rules-clojure.namespace.find
+    rules-clojure.namespace.parse
     rules-clojure.persistent-classloader
     rules-clojure.jar
     rules-clojure.fs

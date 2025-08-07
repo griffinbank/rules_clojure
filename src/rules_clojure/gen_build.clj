@@ -9,9 +9,9 @@
             [clojure.string :as str]
             [clojure.tools.deps.alpha :as deps]
             [clojure.tools.deps.alpha.util.concurrent :as concurrent]
-            [clojure.tools.namespace.find :as find]
             [rules-clojure.fs :as fs]
-            [rules-clojure.parse :as parse])
+            [rules-clojure.namespace.find :as find]
+            [rules-clojure.namespace.parse :as parse])
   (:import (clojure.lang IPersistentList IPersistentMap IPersistentVector Keyword Var)
            (java.io File)
            (java.nio.file Path)
@@ -177,22 +177,6 @@
   {:post [(validate! ::deps-bazel %)]}
   (or (:bazel read-deps) {}))
 
-(defn find-nses [classpath]
-  (find/find-namespaces (map io/file (str/split classpath #":"))))
-
-(defn locate-file
-  "starting in path, traverse parent directories until finding a file named `name`. Return the path or nil"
-  [^File path name]
-  (let [orig (.getAbsoluteFile path)]
-    (loop [path orig]
-      (if (seq (str path))
-        (let [dir (fs/dirname path)
-              path (io/file dir name)]
-          (if (fs/exists? (io/file path))
-            path
-            (recur (fs/dirname (fs/dirname path)))))
-        (assert false (print-str "could not find " name " above" orig))))))
-
 (s/fdef ->jar->lib :args (s/cat :b ::basis) :ret ::jar->lib)
 (defn ->jar->lib
   "Return a map of jar path to library name ('org.clojure/clojure)"
@@ -334,37 +318,6 @@
                        (into {}))))))
        (filter identity)
        (apply merge)))
-
-(defn ->lib->jar
-  "Return a map of library name to jar"
-  [jar->lib]
-  (set/map-invert jar->lib))
-
-(defn jar-nses [path]
-  (-> path
-      str
-      (JarFile.)
-      (find/find-namespaces-in-jarfile)))
-
-(defn jar-compiled?
-  "true if the jar contains .class files"
-  [path]
-  (-> path
-      str
-      (JarFile.)
-      (.entries)
-      (enumeration-seq)
-      (->>
-       (some (fn [^JarEntry e]
-               (re-find #".class$" (.getName e)))))))
-
-(defn jar-ns-decls
-  "Given a path to a jar, return a seq of ns-decls"
-  [path]
-  (-> path
-      str
-      (JarFile.)
-      (find/find-ns-decls-in-jarfile find/clj)))
 
 (s/def ::class->jar (s/map-of symbol? fs/path?))
 (s/fdef ->class->jar :args (s/cat :b ::basis) :ret ::class->jar)
@@ -841,11 +794,11 @@
                                                                                                  extra-args))))]
                                              (->>
                                                ;; TODO: Update to tools.namespace 1.4.1 which has metadata of the source path on the ns-decl so this dance isn't needed.
-                                               (find/sources-in-jar jarfile)
+                                              (find/sources-in-jar jarfile find/clj)
                                                (keep
-                                                 (fn [path]
-                                                   (when-let [ns-decl (find/read-ns-decl-from-jarfile-entry jarfile path)]
-                                                     (when (ns-matches-path? (parse/name-from-ns-decl ns-decl) path)
+                                                 (fn [^JarEntry entry]
+                                                   (when-let [ns-decl (find/read-ns-decl-from-jarfile-entry jarfile entry find/clj)]
+                                                     (when (ns-matches-path? (parse/name-from-ns-decl ns-decl) (.getRealName entry))
                                                        ns-decl))))
                                                (filter
                                                  (fn [ns-decl]

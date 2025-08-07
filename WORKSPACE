@@ -27,7 +27,7 @@ maven_install(
         maven.artifact(
             group = "org.clojure",
             artifact = "clojure",
-            version = "1.11.1",
+            version = "1.12.1",
             exclusions = [
                 "org.clojure:spec.alpha",
                 "org.clojure:core.specs.alpha"
@@ -36,21 +36,19 @@ maven_install(
         maven.artifact(
             group = "org.clojure",
             artifact = "spec.alpha",
-            version = "0.3.218",
+            version = "0.5.238",
             exclusions = ["org.clojure:clojure"]
         ),
         maven.artifact(
             group = "org.clojure",
             artifact = "core.specs.alpha",
-            version = "0.2.62",
+            version = "0.4.74",
             exclusions = [
                 "org.clojure:clojure",
                 "org.clojure:spec.alpha"
             ]
         ),
         "org.clojure:data.json:2.4.0",
-        "org.clojure:java.classpath:1.0.0",
-        "org.clojure:tools.namespace:1.1.0",
         "org.clojure:tools.deps.alpha:0.14.1212"
     ],
     maven_install_json = "@//:frozen_deps_install.json",
@@ -75,9 +73,14 @@ rules_clojure_setup()
 maven_install(
     name = "clojure_old",
     artifacts = [
-        "org.clojure:clojure:1.8.0",],
+        "org.clojure:clojure:1.8.0"],
     fail_if_repin_required = True,
     repositories = [
         "https://repo1.maven.org/maven2",
         "https://repo.clojars.org/"
     ])
+
+local_repository(
+    name = "example-simple",
+    path = "examples/simple",
+)
