@@ -10,7 +10,7 @@ clojure_library = rule(
         "data": attr.label_list(default = [], allow_files = True),
         "resources": attr.label_list(default=[], allow_files=True),
         "aot": attr.string_list(default = [], doc = "namespaces to be compiled"),
-        "resource_strip_prefix": attr.string(default = ""),
+        "resource_strip_prefix": attr.string(),
         "compiledeps": attr.label_list(default = []),
         "javacopts": attr.string_list(default = [], allow_empty = True, doc = "Optional javac compiler options"),
         "jvm_flags": attr.string_list(default=[], doc = "Optional jvm_flags to pass to the worker binary"),

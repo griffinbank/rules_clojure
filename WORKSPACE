@@ -51,7 +51,8 @@ maven_install(
         "org.clojure:data.json:2.4.0",
         "org.clojure:java.classpath:1.0.0",
         "org.clojure:tools.namespace:1.1.0",
-        "org.clojure:tools.deps.alpha:0.14.1212"
+        "org.clojure:tools.deps.alpha:0.14.1212",
+        "org.clojure:tools.cli:1.2.245"
     ],
     maven_install_json = "@//:frozen_deps_install.json",
     fail_if_repin_required = True,

@@ -24,7 +24,8 @@ java_library(
                   "@rules_clojure_maven_deps//:org_clojure_core_cache",
                   "@rules_clojure_maven_deps//:org_clojure_data_json",
                   "@rules_clojure_maven_deps//:org_clojure_java_classpath",
-                  "@rules_clojure_maven_deps//:org_clojure_tools_namespace"])
+                  "@rules_clojure_maven_deps//:org_clojure_tools_namespace",
+                  "@rules_clojure_maven_deps//:org_clojure_tools_cli"])
 
 java_binary(
     name="bootstrap-bin",
@@ -62,6 +63,8 @@ java_import(name="libcompile",
             jars=["libcompile.jar"],
             data=[":bootstrap-compiler"])
 
+
+
 java_binary(name="worker",
             main_class="clojure.main",
             jvm_flags=["-Dclojure.main.report=stderr",
@@ -90,6 +93,7 @@ clojure_library(
           "@rules_clojure_maven_deps//:org_clojure_data_json",
           "libfs"],
     aot=["clojure.java.classpath",
+         "clojure.tools.namespace.parse",
          "clojure.tools.deps.alpha.extensions",
          "clojure.tools.deps.alpha.util.session",
          "clojure.tools.deps.alpha.util.io",
