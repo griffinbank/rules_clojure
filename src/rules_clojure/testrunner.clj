@@ -58,7 +58,6 @@
 (defn -main [& args]
   (assert (string? (first args)) (print-str "first argument must be a string, got" args))
   (let [the-ns (-> args first symbol)]
-    (println "testing" the-ns)
     (try
       (require the-ns)
       (binding [c.test/report pretty-report]
