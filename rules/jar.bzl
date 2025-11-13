@@ -85,7 +85,6 @@ def clojure_jar_impl(ctx):
         fail("srcs but no AOT")
 
     output_jar = ctx.actions.declare_file("%s.jar" % ctx.label.name)
-    classes_dir = ctx.actions.declare_directory("%s.classes" % (printable_label(ctx.label)))
 
     library_path = []
 
@@ -127,7 +126,7 @@ def clojure_jar_impl(ctx):
     else:
         src_dir = None
 
-    compile_classpath = compile_info.transitive_runtime_jars.to_list() + ctx.files.compiledeps + [classes_dir]
+    compile_classpath = compile_info.transitive_runtime_jars.to_list() + ctx.files.compiledeps
     compile_classpath = [f.path for f in compile_classpath]
     compile_classpath = compile_classpath + [p for p in [src_dir] if p]
 
@@ -141,8 +140,7 @@ def clojure_jar_impl(ctx):
 
     javaopts_str = " ".join(ctx.attr.javacopts)
 
-    compile_args = {"classes-dir": classes_dir.path,
-                    "output-jar": output_jar.path,
+    compile_args = {"output-jar": output_jar.path,
                     "src-dir": src_dir,
                     "srcs": [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.srcs],
                     "resources": [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.resources],
@@ -164,7 +162,7 @@ def clojure_jar_impl(ctx):
         ["--jvm_flags=" + f for f in ctx.attr.jvm_flags] +
         ["-m", "rules-clojure.worker",
          "@%s" % args_file.path],
-        outputs = [output_jar, classes_dir],
+        outputs = [output_jar],
         inputs = inputs,
         mnemonic = "ClojureCompile",
         progress_message = "Compiling %s" % ctx.label,

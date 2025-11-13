@@ -1,0 +1,8 @@
+load("@rules_clojure//rules:tools_deps.bzl", "clojure_gen_namespace_loader", "clojure_gen_srcs")
+
+clojure_gen_srcs(name = "gen_srcs")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "deps.edn"])

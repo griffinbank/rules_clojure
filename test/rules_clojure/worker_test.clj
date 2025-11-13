@@ -4,11 +4,10 @@
             [clojure.spec.alpha :as s]
             [clojure.test :refer :all]
             [rules-clojure.worker :as worker]
-            [rules-clojure.persistent-classloader :as pcl]
             [rules-clojure.fs :as fs]
             [rules-clojure.util :as util]
             [rules-clojure.test-utils :as test-utils])
-  (:import [java.io ByteArrayInputStream ByteArrayOutputStream InputStreamReader PipedOutputStream PipedInputStream OutputStreamWriter]
+  (:import [java.io InputStreamReader PipedOutputStream PipedInputStream OutputStreamWriter]
            [clojure.lang LineNumberingPushbackReader]))
 
 (doseq [p ["os.arch" "java.version" "java.home"]]
@@ -17,10 +16,9 @@
 (def basic-req
   {:classes-dir "classes"
    :output-jar "test.jar"
-   :srcs ["rules_clojure/compile.clj"]
-   :src-dir "src"
+   :srcs ["example/core.clj"]
    :classpath (test-utils/runfiles-jars "TEST_JARS")
-   :aot-nses ["rules-clojure.compile"]})
+   :aot-nses ["example.core"]})
 
 (defn with-temp-output [req]
   (assoc req :output-jar (str "/tmp/" "rules-clojure-test" (System/currentTimeMillis) ".jar")))
@@ -53,14 +51,15 @@
         out-reader (LineNumberingPushbackReader. (InputStreamReader. pipe-in))
         out-writer (OutputStreamWriter. pipe-out)
         resp-f (future (binding [*in* out-reader]
-                         (println "reading from" *in*)
-                         (read-line)))
+                         (let [line (read-line)]
+                           (println "read ["  line "]")
+                           line)))
         worker-ret (promise)]
     (binding [*in* in-reader
               *out* out-writer]
       (deliver worker-ret (worker/process-persistent)))
     (is (= :exit @worker-ret))
-    (let [resp (deref resp-f 2000 nil)
+    (let [resp (deref resp-f 10000 nil)
           _ (is resp)
           resp-json (json/read-str resp :key-fn keyword)]
       (when-not (s/valid? ::worker/work-response resp-json)

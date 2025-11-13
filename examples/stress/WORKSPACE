@@ -1,0 +1,24 @@
+workspace(name = "example-stress")
+
+local_repository(
+    name = "rules_clojure",
+    path = "../../",
+)
+
+load("@rules_clojure//:repositories.bzl", "rules_clojure_deps")
+rules_clojure_deps()
+
+load("@rules_clojure//:setup.bzl", "rules_clojure_setup")
+rules_clojure_setup()
+
+load("@rules_clojure//rules:tools_deps.bzl", "clojure_tools_deps")
+
+clojure_tools_deps(
+    name = "deps", # name of the bazel repo that will contain CLJ dependencies
+    aliases = [
+        # extra deps.edn aliases to include
+        "dev",
+        "test",
+    ],
+    deps_edn = "//:deps.edn",
+)

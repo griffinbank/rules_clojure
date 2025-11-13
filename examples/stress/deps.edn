@@ -1,0 +1,30 @@
+{:deps
+ {org.clojure/clojure {:mvn/version "1.12.1"}
+  techascent/tech.ml.dataset {:mvn/version "7.055"}
+  fipp/fipp {:mvn/version "0.6.27"}
+  org.clojure/tools.deps.alpha {:mvn/version "0.14.1222"}}
+ :paths ["src" "test"]
+ :mvn/repos {"maven" {:url "https://repo1.maven.org/maven2"}
+             "clojars" {:url "https://repo.clojars.org/"}}
+ :bazel {:deps {"@deps//:ns_com_cnuernber_ham_fisted_ham_fisted_alists" {:deps ["@deps//:ns_com_cnuernber_ham_fisted_ham_fisted_print"]}
+
+                "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_api" {:deps ["@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_argtypes"
+                                                                               "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_base"
+                                                                               "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_array_buffer"
+                                                                               "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_native_buffer"
+                                                                               "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_emap"
+                                                                               "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_io_indexed_buffer"
+                                                                               "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_const_reader"
+                                                                               "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_io_concat_buffer"
+                                                                               "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_copy_make_container"]}
+
+                "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_datetime_api" {:deps ["@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_datetime_constants"
+                                                                                        "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_datetime_base"
+                                                                                        "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_datetime_operations"]}
+                "@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_functional_api" {:deps ["@deps//:ns_cnuernber_dtype_next_tech_v3_datatype_statistics"]}
+                "@deps//:ns_techascent_tech_ml_dataset_tech_v3_dataset_api" {:deps ["@deps//:ns_techascent_tech_ml_dataset_tech_v3_dataset_base"
+                                                                                    "@deps//:ns_techascent_tech_ml_dataset_tech_v3_dataset_readers"
+                                                                                    "@deps//:ns_techascent_tech_ml_dataset_tech_v3_dataset_impl_dataset"
+                                                                                    "@deps//:ns_techascent_tech_ml_dataset_tech_v3_dataset_column"
+                                                                                    "@deps//:ns_techascent_tech_ml_dataset_tech_v3_dataset_io"
+                                                                                    "@deps//:ns_techascent_tech_ml_dataset_tech_v3_dataset_missing"]}}}}

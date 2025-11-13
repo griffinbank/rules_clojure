@@ -12,7 +12,9 @@
 
 (defn print-err [& args]
   (binding [*out* *err*]
-    (apply println args)))
+    (let [str (apply print-str args)]
+      (locking true
+        (println str)))))
 
 (defmacro with-context-classloader [cl & body]
   `(let [old-cl# (.getContextClassLoader (Thread/currentThread))]
@@ -55,8 +57,14 @@
 
 (defn shim-eval [^ClassLoader cl s]
   (with-context-classloader cl
-    (let [script (shim-invoke cl "clojure.core" "read-string" s)          ]
-      (shim-invoke cl "clojure.core" "eval" script))))
+    (let [script (try
+                   (shim-invoke cl "clojure.core" "read-string" (str s))
+                   (catch Exception e
+                     (throw (ex-info "while reading" {:script s} e))))]
+      (try
+        (shim-invoke cl "clojure.core" "eval" script)
+        (catch Exception e
+          (throw (ex-info "while evaling" {:script s} e)))))))
 
 (defn invoker-1
   "given a classloader and a function name, return a function that

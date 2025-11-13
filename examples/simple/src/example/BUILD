@@ -2,6 +2,10 @@ load("@rules_clojure//:rules.bzl", "clojure_library", "clojure_binary")
 
 package(default_visibility = ["//visibility:public"])
 
+java_library(name="src",
+             resources=glob(["*.clj"]),
+             resource_strip_prefix="src")
+
 clojure_library(name="core",
                 srcs=["core.clj"],
                 resource_strip_prefix="src",
