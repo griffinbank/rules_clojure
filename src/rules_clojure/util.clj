@@ -1,6 +1,7 @@
 (ns rules-clojure.util
   (:require [clojure.spec.alpha :as s])
-  (:import java.net.URLClassLoader))
+  (:import java.net.URLClassLoader
+           java.security.MessageDigest))
 
 (set! *warn-on-reflection* true)
 
@@ -102,3 +103,11 @@ invokes f in the classloader, efficiently"
                                                     (.getParent cl)) (clojure.lang.RT/baseLoader)))))
            (system-classpath))
        (map str)))
+
+(defn shasum [^bytes bs]
+  {:pre [(seq bs)]}
+  (let [digest (MessageDigest/getInstance "SHA-1")
+        hexer (java.util.HexFormat/of)]
+    (-> bs
+        (#(.digest digest %))
+        (#(.formatHex hexer %)))))
