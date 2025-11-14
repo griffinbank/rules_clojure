@@ -4,8 +4,7 @@
             [clojure.string :as str]
             [rules-clojure.java.classpath :as cp]
             [rules-clojure.namespace.parse :as parse]
-            [rules-clojure.fs :as fs]
-            [rules-clojure.util :refer [with-context-classloader]])
+            [rules-clojure.fs :as fs])
   (:import [java.util.concurrent CompletableFuture]
            [java.security MessageDigest]))
 
@@ -22,30 +21,30 @@
 (defn src-resource-name [ns]
   (.substring ^String (#'clojure.core/root-resource ns) 1))
 
-(defn get-class-loader-path
-  "returns a tuple of [classloader classpath]"
-  []
-  (let [thread-cl (-> (Thread/currentThread) (.getContextClassLoader))]
-    [thread-cl (cp/classpath thread-cl)]))
+(defn resource
+  "same as clojure.java.io/resource, but always use our classloader,
+rather than Thread.contextClassLoader"
+  [r]
+  (let [cl (.getClassLoader (class resource))]
+    (io/resource r cl)))
 
 (defn src-resource
   "given a namespace symbol, return a tuple of [filename URL] where the
   backing .clj is located, or nil if it couldn't be found"
   [ns]
   {:pre [(symbol? ns)]}
-  (let [[cl _] (get-class-loader-path)]
-    (->> [".clj" ".cljc"]
-         (map (fn [ext]
-                (let [src-path (str (src-resource-name ns) ext)
-                      src-resource (io/resource src-path cl)]
-                  (when src-resource
-                    [src-path src-resource]))))
-         (filter identity)
+  (->> [".clj" ".cljc"]
+       (map (fn [ext]
+              (let [src-path (str (src-resource-name ns) ext)
+                    src-resource (resource src-path)]
+                (when src-resource
+                  [src-path src-resource]))))
+       (filter identity)
          ;; ((fn [srcs]
          ;;    (when (> (count srcs) 1)
          ;;      (println "WARNING multiple copies of" ns "found:" srcs))
          ;;    srcs))
-         (first))))
+       (first)))
 
 (defn loaded? [ns]
   {:pre [(symbol? ns)]}
@@ -93,18 +92,10 @@ be found"
       (str/replace #"\." "/")
       (str "__init.class")))
 
-(defn ns->class-name
-  "given a namespace symbol, return the name of the class that will load it"
-  [ns]
-  (-> ns
-      (munge)
-      (str "__init")))
-
 (defn compiled?
   "truthy if the namespace has AOT .class files on the classpath"
   [ns]
-  (let [[cl _cp] (get-class-loader-path)]
-    (.getResource ^ClassLoader cl (ns->resource-name ns))))
+  (resource (ns->resource-name ns)))
 
 ;; root directory for all compiles. Each compile will be a subdir of
 ;; this
@@ -218,11 +209,6 @@ be found"
 
 (def ns-deps (memoize ns-deps-))
 
-(defn ensure-dir-classpath [dir]
-  (let [[cl classpath] (get-class-loader-path)]
-    (when (not (some (partial = dir) classpath))
-      (.addURL cl (.toURL (fs/path->file dir))))))
-
 (defn compile- [ns]
   (let [sha (ns-sha ns)
         classes-dir (->cache-dir sha)]
@@ -268,17 +254,15 @@ be found"
   [ns f]
   {:pre [(symbol? ns)]
    :post [(future? %)]}
-  (let [cl (.getContextClassLoader (Thread/currentThread))]
-    (-> ns-futures
-        (swap! update ns (fn [**f]
-                           (or **f
-                               (delay (future (with-context-classloader cl
-                                                (try
-                                                  (f)
-                                                  (catch Throwable t
-                                                    (throw (ex-info (print-str "in ns-send" ns :parallel? *parallel*) {} t))))))))))
-        (get ns)
-        (deref))))
+  (-> ns-futures
+      (swap! update ns (fn [**f]
+                         (or **f
+                             (delay (future (try
+                                              (f)
+                                              (catch Throwable t
+                                                (throw (ex-info (print-str "in ns-send" ns :parallel? *parallel*) {} t)))))))))
+      (get ns)
+      (deref)))
 
 (defn ns-send-sync
   [ns f]
@@ -337,12 +321,12 @@ be found"
                                   (let [cycle? (not (track-dep! ns d))
                                         *f (pcompile ns d)]
                                     (when (not cycle?)
-                                      ;; don't deref the compiles that cause cycles
-                                      [d *f]))))
+                                      ;; don't deref the compile that
+                                      ;; cause cycles, the other
+                                      ;; thread will take care of it
+                                      *f))))
                           (filter identity)
-                          (mapv (fn [[d *f]]
-                                  (when (= :timeout (deref *f 30000 :timeout))
-                                    (throw (ex-info (print-str "timeout in" ns "waiting for" d) {:dep d}))))))
+                          (mapv deref))
                      (if compile?
                        (compile- ns)
                        (require ns))
@@ -361,6 +345,7 @@ be found"
                                  :compiled? (compiled? ns)
                                  :dest dest-dir
                                  :actual-classpath (cp/classpath)))
+    (assert (seq (fs/ls-r cache-dir)))
     (copy-classes (fs/->path cache-dir) (fs/->path dest-dir))))
 
 (defn prequire
@@ -400,7 +385,7 @@ be found"
                 (debug "WARNING no ns found for" p)) true)]}
   (->> [".clj" ".cljc"]
        (keep (fn [ext]
-               (io/resource (load-path (str p ext)))))
+               (resource (load-path (str p ext)))))
        (keep (fn [r]
               (with-open [rdr (java.io.PushbackReader. (io/reader r))]
                 (let [ns (parse/name-from-ns-decl (parse/read-ns-decl rdr))]
