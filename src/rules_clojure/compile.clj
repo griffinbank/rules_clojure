@@ -6,8 +6,9 @@
             [rules-clojure.namespace.parse :as parse]
             [rules-clojure.fs :as fs]
             [rules-clojure.util :refer [with-context-classloader]])
-  (:import [java.util.concurrent CompletableFuture]
-           [java.security MessageDigest]))
+  (:import [java.net URLClassLoader]
+           [java.security MessageDigest]
+           [java.util.concurrent CompletableFuture]))
 
 (set! *warn-on-reflection* true)
 
@@ -221,7 +222,7 @@ be found"
 (defn ensure-dir-classpath [dir]
   (let [[cl classpath] (get-class-loader-path)]
     (when (not (some (partial = dir) classpath))
-      (.addURL cl (.toURL (fs/path->file dir))))))
+      (.addURL ^URLClassLoader cl (.toURL (fs/path->file dir))))))
 
 (defn compile- [ns]
   (let [sha (ns-sha ns)
