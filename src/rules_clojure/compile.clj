@@ -4,7 +4,8 @@
             [clojure.string :as str]
             [rules-clojure.java.classpath :as cp]
             [rules-clojure.namespace.parse :as parse]
-            [rules-clojure.fs :as fs])
+            [rules-clojure.fs :as fs]
+            [rules-clojure.util :refer [with-context-classloader]])
   (:import [java.util.concurrent CompletableFuture]
            [java.security MessageDigest]))
 
@@ -254,15 +255,17 @@ be found"
   [ns f]
   {:pre [(symbol? ns)]
    :post [(future? %)]}
-  (-> ns-futures
-      (swap! update ns (fn [**f]
-                         (or **f
-                             (delay (future (try
-                                              (f)
-                                              (catch Throwable t
-                                                (throw (ex-info (print-str "in ns-send" ns :parallel? *parallel*) {} t)))))))))
-      (get ns)
-      (deref)))
+  (let [cl (.getContextClassLoader (Thread/currentThread))]
+    (-> ns-futures
+        (swap! update ns (fn [**f]
+                           (or **f
+                               (delay (future (with-context-classloader cl
+                                                (try
+                                                  (f)
+                                                  (catch Throwable t
+                                                    (throw (ex-info (print-str "in ns-send" ns :parallel? *parallel*) {} t))))))))))
+        (get ns)
+        (deref))))
 
 (defn ns-send-sync
   [ns f]
