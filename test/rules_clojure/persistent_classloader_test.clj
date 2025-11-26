@@ -46,7 +46,9 @@
 (deftest jar-shas
   (let [shas (pcl/jar-shas (first (test-utils/runfiles-jars "CLOJURE_JARS")))]
     (is (seq shas))
-    (is (pcl/shas? shas))))
+    (is (pcl/shas? shas))
+    (is (some (fn [[k _hash]]
+                (re-find #".class$" (str k))) shas))))
 
 (deftest compatibility
   (let [cp-new (test-utils/runfiles-jars "CLOJURE_JARS")

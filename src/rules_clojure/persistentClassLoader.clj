@@ -6,9 +6,8 @@
                   ["[Ljava.net.URL;"] ["[Ljava.net.URL;"]}
    :extends java.net.URLClassLoader
    :exposes-methods {findClass parentFindClass
-                     getResource parentGetResource})
-  (:import [java.net URL URLClassLoader]
-           [java.lang ClassLoader]))
+                     findLoadedClass parentFindLoadedClass
+                     getResource parentGetResource}))
 
 
 ;; Context
@@ -57,7 +56,6 @@
 (set! *warn-on-reflection* true)
 
 (defn clojure-find-class [this name]
-  {:post [(do (util/print-err "found class in-mem" %) true)]}
   (when-let [rt-class ^Class (.parentFindClass this "clojure.lang.RT")]
     (let [baseloader-method (.getDeclaredMethod rt-class "baseLoader" (into-array Class []))
           loader (.invoke baseloader-method rt-class (into-array Object []))]
@@ -68,5 +66,8 @@
   [this name]
   (locking this
     (or
-    (.parentFindClass this name)
-    (clojure-find-class this name))))
+     (.parentFindClass this name)
+     (clojure-find-class this name))))
+
+(defn -findLoadedClass [this name]
+  (.parentFindLoadedClass this name))

@@ -258,7 +258,7 @@
         class-file (str (.substring ^String root-resource  1) "__init.class")]
     (some #(= class-file %) (classpath-files path))))
 
-(def special-namespaces '#{clojure.core.specs.alpha})
+(def special-namespaces '#{})
 
 (defn should-compile-namespace? [deps-bazel path ns]
   (and (not (contains? special-namespaces ns))
@@ -390,14 +390,18 @@
       {:deps [label]})))
 
 (defn get-ns-decl [^Path path platform]
-  (let [form (-> path
-                 (.toFile)
-                 (slurp)
-                 (#(read-string {:read-cond :allow
-                                 :features #{platform}} %)))]
-    ;; the first form might not be `ns`, in which case ignore the file
-    (when (and form (= 'ns (first form)))
-      form)))
+  (try
+    (let [form (-> path
+                  (.toFile)
+                  (slurp)
+                  (#(read-string {:read-cond :allow
+                                  :features #{platform}} %)))]
+     ;; the first form might not be `ns`, in which case ignore the file
+     (when (and form (= 'ns (first form)))
+       form))
+    (catch Exception e
+      (throw (ex-info (str "while reading" path) {:path path
+                                                  :platform platform} e)))))
 
 (defn get-ns-meta
   "return any metadata attached to the namespace, or nil"

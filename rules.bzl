@@ -58,7 +58,11 @@ def clojure_test(name, *, test_ns, deps=[], runtime_deps=[], **kwargs):
 
 def cljs_impl(ctx):
 
-    runfiles = ctx.runfiles(files=ctx.outputs.outs)
+    out_dirs = [ctx.actions.declare_directory(d) for d in ctx.attr.out_dirs]
+
+    # Include both regular files and tree artifacts in the outputs
+    all_outputs = ctx.outputs.outs + out_dirs
+    runfiles = ctx.runfiles(files=all_outputs)
 
     inputs = ctx.files.data + ctx.files.compile_opts_files
 
@@ -79,9 +83,9 @@ def cljs_impl(ctx):
                     inputs=inputs,
                     env=env,
                     tools=[ctx.executable.clj_binary],
-                    outputs=ctx.outputs.outs)
+                    outputs=all_outputs)
 
-    return DefaultInfo(runfiles=runfiles)
+    return DefaultInfo(files=depset(all_outputs), runfiles=runfiles)
 
 _cljs_library = rule(
     attrs = {"data": attr.label_list(default=[], allow_files=True),
@@ -89,7 +93,8 @@ _cljs_library = rule(
              "compile_opts_strs": attr.string_list(default=[]),
              "clj_binary": attr.label(executable=True, cfg="target"),
              "env": attr.string_dict(default={}),
-             "outs": attr.output_list()},
+             "outs": attr.output_list(),
+             "out_dirs": attr.string_list()},
     provides = [],
     implementation = cljs_impl)
 

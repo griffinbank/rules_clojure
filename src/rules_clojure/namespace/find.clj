@@ -99,9 +99,7 @@
   both defined in clojure.tools.namespace.find."
   {:added "0.3.0"}
   [^JarFile jar-file platform]
-  {:pre [(do (when-not (jarfile? jar-file)
-               (println "filenames-in-jar:" jar-file (class jar-file))) true)
-         (jarfile? jar-file) platform]}
+  {:pre [(jarfile? jar-file) platform]}
   (let [{:keys [extensions]} platform]
     (->> jar-file
          (.entries)

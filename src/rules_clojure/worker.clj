@@ -141,14 +141,14 @@
           (print-err "no request, exiting")
           (shutdown-agents)
           (when @*error
-            (println @*error))
+            (util/print-err @*error))
           :exit)))))
 
 (defn set-uncaught-exception-handler! []
   (Thread/setDefaultUncaughtExceptionHandler
    (reify Thread$UncaughtExceptionHandler
      (uncaughtException [_ _ ex]
-       (println ex "uncaught exception")))))
+       (util/print-err ex "uncaught exception")))))
 
 (defn -main [& args]
   (set-uncaught-exception-handler!)
