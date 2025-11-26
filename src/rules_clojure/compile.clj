@@ -5,9 +5,8 @@
             [rules-clojure.java.classpath :as cp]
             [rules-clojure.namespace.parse :as parse]
             [rules-clojure.fs :as fs]
-            [rules-clojure.util :refer [with-context-classloader]])
-  (:import [java.util.concurrent CompletableFuture]
-           [java.security MessageDigest]))
+            [rules-clojure.util :refer [shasum]])
+  (:import [java.util.concurrent CompletableFuture]))
 
 (set! *warn-on-reflection* true)
 
@@ -17,35 +16,37 @@
 ;; all users to upgrade so try to do that sparingly as well.
 
 (defn debug [& args]
-  #_(println (locking true (apply print-str args))))
+  #_ (println (locking true (apply print-str args))))
+
+(defn deref!
+  "throw `ex` if *f does not complete within timeout"
+  [*f timeout ex]
+  {:pre [(future? *f)
+         (integer? timeout)
+         (instance? Throwable ex)]}
+  (when (= ::timeout (deref *f timeout ::timeout))
+    (throw ex)))
 
 (defn src-resource-name [ns]
   (.substring ^String (#'clojure.core/root-resource ns) 1))
-
-(defn get-class-loader-path
-  "returns a tuple of [classloader classpath]"
-  []
-  (let [thread-cl (-> (Thread/currentThread) (.getContextClassLoader))]
-    [thread-cl (cp/classpath thread-cl)]))
 
 (defn src-resource
   "given a namespace symbol, return a tuple of [filename URL] where the
   backing .clj is located, or nil if it couldn't be found"
   [ns]
   {:pre [(symbol? ns)]}
-  (let [[cl _] (get-class-loader-path)]
-    (->> [".clj" ".cljc"]
-         (map (fn [ext]
-                (let [src-path (str (src-resource-name ns) ext)
-                      src-resource (io/resource src-path cl)]
-                  (when src-resource
-                    [src-path src-resource]))))
-         (filter identity)
+  (->> [".clj" ".cljc"]
+       (map (fn [ext]
+              (let [src-path (str (src-resource-name ns) ext)
+                    src-resource (io/resource src-path)]
+                (when src-resource
+                  [src-path src-resource]))))
+       (filter identity)
          ;; ((fn [srcs]
          ;;    (when (> (count srcs) 1)
          ;;      (println "WARNING multiple copies of" ns "found:" srcs))
          ;;    srcs))
-         (first))))
+       (first)))
 
 (defn loaded? [ns]
   {:pre [(symbol? ns)]}
@@ -54,9 +55,10 @@
 ;; block i.e. `(ns foo (:require bar))`. We use futures that require
 ;; namespaces, so the best way to know if a namespace is _done_
 ;; loading is to either deref the future, or check inside _your own_
-;; namespace future. if loaded? returns true anywhere else, it could
-;; be in the process of loading, which will lead to weird errors like
-;; `Unable to resolve symbol: foo`, when you know it should be there.
+;; namespace future. if loaded? returns true anywhere else, the
+;; namespace loading could be after the ns block, but before the end
+;; of the file, which will lead to weird errors like `Unable to
+;; resolve symbol: foo`, when you know it should be there.
 
   (contains? (loaded-libs) ns))
 
@@ -93,18 +95,10 @@ be found"
       (str/replace #"\." "/")
       (str "__init.class")))
 
-(defn ns->class-name
-  "given a namespace symbol, return the name of the class that will load it"
-  [ns]
-  (-> ns
-      (munge)
-      (str "__init")))
-
 (defn compiled?
   "truthy if the namespace has AOT .class files on the classpath"
   [ns]
-  (let [[cl _cp] (get-class-loader-path)]
-    (.getResource ^ClassLoader cl (ns->resource-name ns))))
+  (io/resource (ns->resource-name ns)))
 
 ;; root directory for all compiles. Each compile will be a subdir of
 ;; this
@@ -112,14 +106,6 @@ be found"
 
 (-> (Runtime/getRuntime) (.addShutdownHook (Thread. ^Runnable (fn []
                                                                 (fs/rm-rf temp-dir)))))
-
-(defn shasum [^bytes bs]
-  {:pre [(seq bs)]}
-  (let [digest (MessageDigest/getInstance "SHA-1")
-        hexer (java.util.HexFormat/of)]
-    (-> bs
-        (#(.digest digest %))
-        (#(.formatHex hexer %)))))
 
 (defn ns-sha
   "return the hash of the ns file contents"
@@ -208,34 +194,32 @@ be found"
 
 (defn ns-deps- [ns]
   (assert (src-resource ns) (print-str "couldn't find resource for" ns))
-
   (-> ns
       src-resource
       second
       reader
       parse/read-ns-decl
-      parse/deps-from-ns-decl))
+      parse/deps-from-ns-decl
+      (disj ns)))
 
 (def ns-deps (memoize ns-deps-))
-
-(defn ensure-dir-classpath [dir]
-  (let [[cl classpath] (get-class-loader-path)]
-    (when (not (some (partial = dir) classpath))
-      (.addURL cl (.toURL (fs/path->file dir))))))
 
 (defn compile- [ns]
   (let [sha (ns-sha ns)
         classes-dir (->cache-dir sha)]
-    (when-not (compiled? ns)
-      (when (loaded? ns)
-        (debug "WARNING:" ns "already loaded before compilation!"
-               :compiled? (compiled? ns)
-               :loaded? (loaded? ns)
-               :bound-require? (bound? #'clojure.core/require)
-               :sha sha))
-      (assert (not (loaded? ns)) (print-str ns :compiled? (compiled? ns) :loaded? (loaded? ns) :sha sha))
-      (binding [*compile-path* (str classes-dir)]
-        (compile ns)))))
+    (if (compiled? ns)
+      (require ns)
+      (do
+        (when (loaded? ns)
+          (debug "WARNING:" ns "already loaded before compilation!"
+                 :compiled? (compiled? ns)
+                 :loaded? (loaded? ns)
+                 :bound-require? (bound? #'clojure.core/require)
+                 :sha sha))
+        (assert (not (loaded? ns)) (print-str ns :compiled? (compiled? ns) :loaded? (loaded? ns) :sha sha))
+        (binding [*compile-path* (str classes-dir)]
+          (compile ns)
+          (assert (seq (fs/ls-r classes-dir)) (print-str "compile-: no .class files found in" classes-dir)))))))
 
 ;; map of ns symbol to future.
 (def ns-futures (atom {}))
@@ -264,19 +248,43 @@ be found"
 ;; once. Compilation will happen once, repeat sends to the same ns do
 ;; nothing
 
+(defn context-classloader-conveyor-fn [f]
+  ;; context classloaders are not conveyed by default in futures, but we set it in rules-clojure.jar/compile!
+  (let [cl (.getContextClassLoader (Thread/currentThread))]
+    (fn
+      ([]
+       (.setContextClassLoader (Thread/currentThread) cl)
+       (f)))))
+
+(defn binding-conveyor-fn [f]
+  ;; don't use clojure.core/binding-conveyor-fn, because that usees
+  ;; clone/reset ThreadBindings, rather than push/pop. We use push and
+  ;; pop because clone shares TBoxes, which store the threadId they
+  ;; came from, which breaks clojure.lang.Compiler when an in-progress
+  ;; compile attempts to Var/set! from a new thread
+  (let [bindings (clojure.lang.Var/getThreadBindings)]
+    (fn []
+      (try
+        (clojure.lang.Var/pushThreadBindings bindings)
+        (f)
+        (finally
+          (clojure.lang.Var/popThreadBindings))))))
+
 (defn ns-send
   [ns f]
   {:pre [(symbol? ns)]
    :post [(future? %)]}
-  (let [cl (.getContextClassLoader (Thread/currentThread))]
+
+  (let [f (context-classloader-conveyor-fn
+           (binding-conveyor-fn f))]
     (-> ns-futures
         (swap! update ns (fn [**f]
                            (or **f
-                               (delay (future (with-context-classloader cl
-                                                (try
-                                                  (f)
-                                                  (catch Throwable t
-                                                    (throw (ex-info (print-str "in ns-send" ns :parallel? *parallel*) {} t))))))))))
+                               (delay (future
+                                        (try
+                                          (f)
+                                          (catch Throwable t
+                                            (throw (ex-info (print-str "in ns-send" ns :parallel? *parallel*) {} t)))))))))
         (get ns)
         (deref))))
 
@@ -300,8 +308,9 @@ be found"
       (deref)))
 
 (defn track-dep!
-  "track that ns a depends on ns b. Returns truthy if there's no cycle,
-  falsey if there is"
+  "track that ns a depends on ns b. Updates the graph and returns truthy
+  if there's no cycle. Does not update the graph and returns false if
+  there is"
   [a b]
   {:pre [(symbol? a)
          (symbol? b)]}
@@ -315,15 +324,12 @@ be found"
         (debug "WARNING cycle:" a "->" b)
         false))))
 
-(def ^:dynamic *parallel* true)
-
 (defn pcompile
   "From namespace `parent`, compile `ns`, in parallel"
   [parent ns]
   {:pre [(or (symbol? parent) (nil? parent))
          (symbol? ns)]
    :post [(future? %)]}
-
   (let [parallel? (and *parallel* (not (contains? no-parallel ns)))
         send (if parallel? ns-send ns-send-sync)]
     (if (or (not parent) (track-dep! parent ns))
@@ -337,12 +343,12 @@ be found"
                                   (let [cycle? (not (track-dep! ns d))
                                         *f (pcompile ns d)]
                                     (when (not cycle?)
-                                      ;; don't deref the compiles that cause cycles
-                                      [d *f]))))
+                                      ;; don't deref the compile that
+                                      ;; cause cycles, the other
+                                      ;; thread will take care of it
+                                      *f))))
                           (filter identity)
-                          (mapv (fn [[d *f]]
-                                  (when (= :timeout (deref *f 30000 :timeout))
-                                    (throw (ex-info (print-str "timeout in" ns "waiting for" d) {:dep d}))))))
+                          (mapv deref))
                      (if compile?
                        (compile- ns)
                        (require ns))
@@ -352,7 +358,8 @@ be found"
         (CompletableFuture/completedFuture true)))))
 
 (defn pcopy [dest-dir ns]
-  @(pcompile nil ns)
+  (deref! (pcompile nil ns) 120000
+          (ex-info (print-str "pcopy timeout waiting for" ns) {:dest-dir dest-dir :ns ns}))
   (assert (loaded? ns) (print-str ns "not loaded"))
   (let [sha (ns-sha ns)
         cache-dir (get-cache-dir sha)]
@@ -361,6 +368,7 @@ be found"
                                  :compiled? (compiled? ns)
                                  :dest dest-dir
                                  :actual-classpath (cp/classpath)))
+    (assert (seq (fs/ls-r cache-dir)) (print-str "pcopy: no .class files found in" cache-dir))
     (copy-classes (fs/->path cache-dir) (fs/->path dest-dir))))
 
 (defn prequire
@@ -368,16 +376,20 @@ be found"
   [nses]
   {:pre [(every? symbol? nses)]}
   (let [ns-block? (not (contains? (loaded-libs) (symbol (str *ns*))))
-        ns-sym (symbol (str *ns*))]
+        ns-sym (symbol (str *ns*))
+        ;; don't hang on self-requires. Silly bug, but it happens in
+        ;; real life, and regular compiles don't explode
+        nses (disj (set nses) ns-sym)]
     (when-not ns-block?
       (debug ns-sym "loading" nses "at toplevel"))
-    (debug "spy-require" ns-sym nses)
     (->> nses
          (mapv (partial pcompile ns-sym))
-         ;; (mapv (fn [*f]
-         ;;         (when (= :timeout (deref *f 30000 :timeout))
-         ;;           (throw (ex-info (print-str "in" ns-sym "timeout waiting for" nses) {})))))
-         (mapv deref))))
+         (mapv (fn [*f]
+                 ;; if we hang using 1-arity deref here, bazel doesn't
+                 ;; return logging and it's very hard to debug. Set
+                 ;; this high enough that it never accidentally
+                 ;; triggers
+                 (deref! *f 120000 (ex-info (print-str "prequire timeout in" ns-sym "waiting for" nses) {})))))))
 
 ;; `require` calls load-libs->load-libs->load-one
 ;; `load` calls clojure.lang.RT/load, so there's no common place to hook into both

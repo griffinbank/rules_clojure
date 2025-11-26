@@ -2,6 +2,7 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [rules-clojure.fs :as fs]
             [rules-clojure.jar :as jar]
             [rules-clojure.util :as util :refer [print-err]]
@@ -39,6 +40,11 @@
 
 (def temp-dirs (atom #{}))
 
+(defn src-dir-munge [req]
+  ;; include the src-dir to avoid src1/foo/bar.clj conflicting with src2/foo/bar.clj
+  (when-let [dir (:src-dir req)]
+    (str/replace dir "/" ".")))
+
 (defn process-request
   [{:keys [classloader-strategy
            input-map] :as req}]
@@ -47,7 +53,7 @@
   (assert classloader-strategy)
   (try
     (assert (:classpath req))
-    (let [classes-dir (fs/new-temp-dir (apply str (interpose "+" (concat ["classes"] (:aot-nses req)))) )
+    (let [classes-dir (fs/new-temp-dir (apply str (interpose "+" (concat ["rules_clojure" (src-dir-munge req)] (:aot-nses req)))) )
           req (-> req
                   (update :classpath conj (str classes-dir))
                   (assoc :classes-dir (str classes-dir)))
