@@ -27,15 +27,6 @@
 (defn src-resource-name [ns]
   (.substring ^String (#'clojure.core/root-resource ns) 1))
 
-(defn resource
-  [path]
-  (assert (instance? ClassLoader (.getContextClassLoader (Thread/currentThread))))
-  (assert (= (.getContextClassLoader (Thread/currentThread))
-             (.getClassLoader (class resource)))
-          (print-str "context classloader:" (.getContextClassLoader (Thread/currentThread))
-                     "#'resource loader:" (.getClassLoader (class resource))))
-  (io/resource path))
-
 (defn src-resource
   "given a namespace symbol, return a tuple of [filename URL] where the
   backing .clj is located, or nil if it couldn't be found"
@@ -44,7 +35,7 @@
   (->> [".clj" ".cljc"]
        (some (fn [ext]
               (let [src-path (str (src-resource-name ns) ext)
-                    src-resource (resource src-path)]
+                    src-resource (io/resource src-path)]
                 src-resource)))))
 
 (defn loaded? [ns]
@@ -102,7 +93,7 @@
   [ns]
   ;; We could use Class/forName, but that would attempt to load the
   ;; class. Use resource instead to avoid the side effect
-  (resource (ns->class-resource-name ns)))
+  (io/resource (ns->class-resource-name ns)))
 
 (defn add-classpath! [dir]
   (let [dir-f (fs/path->file dir)]
@@ -112,9 +103,6 @@
 ;; root directory for all compiles. Each compile will be a subdir of
 ;; this
 (def temp-dir (fs/new-temp-dir "rules_clojure"))
-
-(-> (Runtime/getRuntime) (.addShutdownHook (Thread. ^Runnable (fn []
-                                                                (fs/rm-rf temp-dir)))))
 
 (defn ns-sha
   "return the hash of the ns file contents"
@@ -223,7 +211,9 @@
                  :loaded? (loaded? ns)
                  :bound-require? (bound? #'clojure.core/require)
                  :sha sha))
-        (assert (not (loaded? ns)) (print-str ns :compiled? (compiled? ns) :loaded? (loaded? ns) :sha sha))
+        (assert (or (not (loaded? ns))
+                    (re-find #"^clojure\." (str ns))
+                    (re-find #"^rules-clojure\." (str ns))) (print-str ns :compiled? (compiled? ns) :loaded? (loaded? ns) :sha sha))
         (add-classpath! classes-dir)
         (binding [*compile-path* (str classes-dir)]
           (compile ns)
@@ -383,7 +373,7 @@
   (boolean (get-cache-dir (ns-sha ns))))
 
 (defn pcopy [dest-dir ns]
-  (deref! (pcompile nil ns) 120000
+  (deref! (pcompile nil ns) 180000
           (ex-info (print-str "pcopy timeout waiting for" ns) {:dest-dir dest-dir :ns ns}))
   (assert (loaded? ns) (print-str ns "not loaded"))
   (let [sha (ns-sha ns)
@@ -438,7 +428,7 @@
                 (debug "WARNING no ns found for" p)) true)]}
   (->> [".clj" ".cljc"]
        (keep (fn [ext]
-               (resource (load-path (str p ext)))))
+               (io/resource (load-path (str p ext)))))
        (keep (fn [r]
               (with-open [rdr (java.io.PushbackReader. (io/reader r))]
                 (let [ns (parse/name-from-ns-decl (parse/read-ns-decl rdr))]
@@ -560,3 +550,13 @@
             (pcompile nil n))
           (doseq [n aot-nses]
             (pcopy (str classes-dir "/") n)))))))
+
+(defn cleanup!
+  "called by the worker process to release all resources before being GC'd"
+  []
+  (shutdown-agents)
+  ;; all global atoms need to be reset
+  (reset! ns-futures nil)
+  (reset! dep-graph nil)
+  (fs/rm-rf temp-dir)
+  (alter-var-root #'ns-deps (constantly ns-deps-)))

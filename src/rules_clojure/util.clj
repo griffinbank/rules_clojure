@@ -18,7 +18,7 @@
         (println str)))))
 
 (defn debug [& args]
-  (println (locking true (apply print-str args)))
+  ;; (println (locking true (apply print-str args)))
   true)
 
 (defmacro with-context-classloader [cl & body]

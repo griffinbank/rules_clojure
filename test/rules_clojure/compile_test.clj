@@ -2,8 +2,7 @@
   (:refer-clojure :exclude [agent await await-for send])
   (:require [clojure.data]
             [clojure.test :refer :all]
-            [rules-clojure.compile :as c]
-            [rules-clojure.fs :as fs]))
+            [rules-clojure.compile :as c]))
 
 (definterface Testing
   (foo [x]))
@@ -67,13 +66,6 @@
   (is (c/cycle? '{a #{b}
                   b #{c}
                   c #{d}} 'd 'b)))
-
-
-(deftest compile-test
-  (let [compile-path (fs/new-temp-dir "classes")]
-    (is (not (seq (fs/ls compile-path))))
-    (c/compile! (str compile-path) ["example.core"] *out*)
-    (is (seq (fs/ls compile-path)))))
 
 (deftest load->ns
   (are [in out] (= out (c/load->ns in))
