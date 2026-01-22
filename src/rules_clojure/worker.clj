@@ -53,7 +53,7 @@
   (assert classloader-strategy)
   (try
     (assert (:classpath req))
-    (let [classes-dir (fs/new-temp-dir (apply str (interpose "+" (concat ["rules_clojure" (src-dir-munge req)] (:aot-nses req)))) )
+    (let [classes-dir (fs/new-temp-dir (apply str (interpose "+" (concat ["rules_clojure" (src-dir-munge req)] (:aot-nses req)))))
           req (-> req
                   (update :classpath conj (str classes-dir))
                   (assoc :classes-dir (str classes-dir)))
@@ -94,12 +94,22 @@
                             :classloader-strategy (pcl/caching)
                             :input-map (classpath-input-map classpath)))))
 
+(defmacro with-java-out [print-stream & body]
+  `(let [old-out# System/out]
+     (try
+       (System/setOut ~print-stream)
+       ~@body
+       (finally
+         (System/setOut old-out#)))))
+
 (defn process-persistent-1 [{:keys [arguments requestId classloader-strategy inputs] :as _req}]
   (let [baos (java.io.ByteArrayOutputStream.)
         out-printer (java.io.PrintWriter. baos true StandardCharsets/UTF_8)
+        java-out (java.io.PrintStream. baos)
         real-out *out*
-        *err (atom nil)]
-    (let [exit (binding [*out* out-printer]
+        *err (atom nil)
+        exit (with-java-out java-out
+               (binding [*out* out-printer]
                  (try
                    (let [compile-req (json/read-str (first arguments) :key-fn keyword)]
                      (process-request (assoc compile-req
@@ -109,18 +119,18 @@
                    (catch Throwable t
                      (println t) ;; print to bazel str
                      (reset! *err t)
-                     1)))
-          _ (.flush out-printer)
-          resp (merge
-                {:exitCode exit
-                 :output (str baos)}
-                (when requestId
-                  {:requestId requestId})
-                (when @*err
-                  {:error (print-str @*err)}))]
-      (.write real-out (json/write-str resp))
-      (.write real-out "\n")
-      (.flush real-out))))
+                     1))))
+        _ (.flush out-printer)
+        resp (merge
+              {:exitCode exit
+               :output (str baos)}
+              (when requestId
+                {:requestId requestId})
+              (when @*err
+                {:error (print-str @*err)}))]
+    (.write real-out (json/write-str resp))
+    (.write real-out "\n")
+    (.flush real-out)))
 
 (defn process-persistent []
   (let [classloader-strategy (pcl/caching)
@@ -132,11 +142,11 @@
         (let [work-req (json/read-str line :key-fn keyword)
               _ (util/print-err "got req" work-req)
               f (future (try
-                           (process-persistent-1 (assoc work-req
-                                                        :classloader-strategy classloader-strategy))
-                           (catch Throwable t
-                             (reset! *error t)
-                             (reset! *continue false))))]
+                          (process-persistent-1 (assoc work-req
+                                                       :classloader-strategy classloader-strategy))
+                          (catch Throwable t
+                            (reset! *error t)
+                            (reset! *continue false))))]
           (swap! *fs conj f)
           (recur))
         (do
