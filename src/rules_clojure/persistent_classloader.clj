@@ -184,7 +184,7 @@ long as all jar sets are compatible with each other"
   {:pre [(do (when-not (string? path)
                (debug "pcl/shas:" path)) true)
          (string? path)]
-   :post [(shas? %)]}
+   :post [(or (shas? %) (nil? %))]}
   (if (.endsWith ^String path ".jar")
     (jar-shas path hash)
     (dir-shas path)))

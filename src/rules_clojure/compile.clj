@@ -1,14 +1,21 @@
 (ns rules-clojure.compile
   (:refer-clojure :exclude [future])
-  (:require [clojure.java.io :as io]
-            [clojure.string :as str]
-            [rules-clojure.java.classpath :as cp]
-            [rules-clojure.namespace.parse :as parse]
-            [rules-clojure.fs :as fs]
-            [rules-clojure.util :refer [shasum debug]])
-  (:import [java.util.concurrent CompletableFuture Executors]))
+  (:require
+   [clojure.spec.alpha :as s]
+   [clojure.java.io :as io]
+   [clojure.string :as str]
+   [rules-clojure.java.classpath :as cp]
+   [rules-clojure.namespace.parse :as parse]
+   [rules-clojure.fs :as fs]
+   [rules-clojure.util :refer [shasum debug]])
+  (:import [java.util.concurrent CompletableFuture ExecutorService Executors]))
 
 (set! *warn-on-reflection* true)
+
+(def real-require clojure.core/require)
+(def real-load clojure.core/load)
+
+(def root-resource @#'clojure.core/root-resource)
 
 ;; this code runs inside the classpath containing user code, so it
 ;; must not conflict with anything else. No third party
@@ -29,14 +36,15 @@
 
 (defn src-resource
   "given a namespace symbol, return a tuple of [filename URL] where the
-  backing .clj is located, or nil if it couldn't be found"
+  backing .clj is located"
   [ns]
-  {:pre [(symbol? ns)]}
+  {:pre [(symbol? ns)]
+   :post [%]}
   (->> [".clj" ".cljc"]
        (some (fn [ext]
-              (let [src-path (str (src-resource-name ns) ext)
-                    src-resource (io/resource src-path)]
-                src-resource)))))
+               (let [src-path (str (src-resource-name ns) ext)
+                     src-resource (io/resource src-path)]
+                 src-resource)))))
 
 (defn loaded? [ns]
   {:pre [(symbol? ns)]}
@@ -150,14 +158,12 @@
                      (symbol? arg) [(join prefix arg)]
                      (and (seq arg) (nil? (second arg))) [(join prefix (first arg))]
                      (and (seq arg) (keyword? (second arg))) (let [opts (apply hash-map (rest arg))]
-                                                                   (when-not (:as-alias opts)
-                                                                     [(join prefix (first arg))]))
+                                                               (when-not (:as-alias opts)
+                                                                 [(join prefix (first arg))]))
                      (seq arg) (let [[prefix' & args] arg
                                      prefix (join prefix prefix')]
                                  (mapcat (partial require->nses prefix) [args]))
                      :else (assert false (print-str "unhandled clause:" (str *ns*) prefix args))))))))
-
-(declare pcompile)
 
 ;; map of {ns-symbol #{ns-symbol}}
 (def dep-graph (atom {}))
@@ -190,14 +196,16 @@
       java.io.PushbackReader.))
 
 (defn ns-deps- [ns]
-  (some-> ns
-          src-resource
-          reader
-          parse/read-ns-decl
-          parse/deps-from-ns-decl
-          (disj ns)))
+  (-> ns
+      src-resource
+      reader
+      parse/read-ns-decl
+      parse/deps-from-ns-decl
+      (disj ns)))
 
 (def ns-deps (memoize ns-deps-))
+
+(declare prequire)
 
 (defn compile- [ns]
   (let [sha (ns-sha ns)
@@ -216,8 +224,12 @@
                     (re-find #"^rules-clojure\." (str ns))) (print-str ns :compiled? (compiled? ns) :loaded? (loaded? ns) :sha sha))
         (add-classpath! classes-dir)
         (binding [*compile-path* (str classes-dir)]
-          (compile ns)
-          (assert (seq (fs/ls-r classes-dir)) (print-str "compile-: no .class files found in" classes-dir)))))))
+          (try
+            (compile ns)
+            (catch Exception e
+              (println "while compiling" ns e)
+              (throw e)))
+          (assert (seq (fs/ls-r classes-dir)) (print-str "compile-: no .class files found in" classes-dir "for" ns)))))))
 
 ;; map of ns symbol to future.
 (def ns-futures (atom {}))
@@ -225,22 +237,23 @@
 (def ^:dynamic *parallel* true)
 
 (def no-compile (quote
-             #{ ;; specs are too big to AOT
-               com.cognitect.aws.ec2
-               com.cognitect.aws.rds
-               com.cognitect.aws.servicecatalog
-               com.cognitect.aws.s3
-               com.cognitect.aws.iam
-               cognitect.aws.iam.specs
-               cognitect.aws.s3.specs
+                 #{;; specs are too big to AOT
+                   com.cognitect.aws.ec2
+                   com.cognitect.aws.rds
+                   com.cognitect.aws.servicecatalog
+                   com.cognitect.aws.s3
+                   com.cognitect.aws.iam
+                   cognitect.aws.iam.specs
+                   cognitect.aws.s3.specs
 
-               cider-piggieback
+                   cider-piggieback
+                   clojure.core.specs.alpha
 
                ;; requires java.awt.headless=true to AOT, but we don't have a good way of passing that to the rules_clojure worker
-               rhizome.viz}))
+                   rhizome.viz}))
 
 ;;
-(def no-parallel (quote #{tech.v3.dataset}))
+(def no-parallel (quote #{tech.v3.dataset tech.v3.datatype}))
 
 ;; `ns-send` is responsible for making sure each ns is loaded/compiled
 ;; once. Compilation will happen once, repeat sends to the same ns do
@@ -271,14 +284,14 @@
 (def ^:dynamic *executor* nil)
 
 ;; The clojure RT won't be garbage collected if we use regular agents
-;; or futures, because the thread's context classloader points at
+;; or futures, because the new thread's context classloader points at
 ;; clojure. Use our own pool that is not cached across compile jobs to
 ;; reduce strong references.
 
-(defn future- [exec f]
+(defn future- [^ExecutorService exec f]
   {:pre [exec]}
-  (.submit exec (context-classloader-conveyor-fn
-                       (binding-conveyor-fn f))))
+  (.submit exec ^Runnable (context-classloader-conveyor-fn
+                           (binding-conveyor-fn f))))
 
 (defmacro future [& body]
   `(future- *executor* (fn []
@@ -295,7 +308,7 @@
                                       (try
                                         (f)
                                         (catch Throwable t
-                                          (throw (ex-info (print-str "in ns-send" ns :parallel? *parallel*) {} t)))))))))
+                                          (throw (Exception. (print-str "in ns-send" ns :parallel? *parallel*) t)))))))))
       (get ns)
       (deref)))
 
@@ -311,7 +324,7 @@
                                         (.complete cf (f))
                                         (catch Throwable t
                                           (.completeExceptionally cf t)
-                                          (throw (ex-info (print-str "in ns-send" ns :parallel? *parallel*) {} t))))
+                                          (throw (Exception. (print-str "in ns-send" ns :parallel? *parallel*) t))))
                                       cf)))))
 
       (get ns)
@@ -325,9 +338,9 @@
   {:pre [(symbol? a)
          (symbol? b)]}
   (let [new (swap! dep-graph (fn [graph]
-                                    (if-not (cycle? graph a b)
-                                      (update graph a (fnil conj #{}) b)
-                                      graph)))]
+                               (if-not (cycle? graph a b)
+                                 (update graph a (fnil conj #{}) b)
+                                 graph)))]
     (if (contains? (get new a) b)
       true
       (do
@@ -361,7 +374,14 @@
                           (mapv deref))
                      (if compile?
                        (compile- ns)
-                       (require ns))
+                       (do
+                         ;; we can't use clojure.core/require here,
+                         ;; because if we did, another thread could be
+                         ;; requiring, and normal require checks for
+                         ;; the end of the ns block, not the end of
+                         ;; the file being loaded.
+                         (real-load (root-resource ns))
+                         (dosync (commute @#'clojure.core/*loaded-libs* conj ns))))
                      true))))
       (do
         (debug "compile parent cycle" parent :-> ns)
@@ -407,12 +427,6 @@
                  ;; triggers
                  (deref! *f 120000 (ex-info (print-str "prequire timeout in" ns-sym "waiting for" nses) {})))))))
 
-;; `require` calls load-libs->load-libs->load-one
-;; `load` calls clojure.lang.RT/load, so there's no common place to hook into both
-
-(def real-require clojure.core/require)
-(def real-load clojure.core/load)
-
 (defn load-path
   "Given an argument to `load`, return the string we can pass to `io/resource`"
   [^String p]
@@ -430,9 +444,9 @@
        (keep (fn [ext]
                (io/resource (load-path (str p ext)))))
        (keep (fn [r]
-              (with-open [rdr (java.io.PushbackReader. (io/reader r))]
-                (let [ns (parse/name-from-ns-decl (parse/read-ns-decl rdr))]
-                  ns))))
+               (with-open [rdr (java.io.PushbackReader. (io/reader r))]
+                 (let [ns (parse/name-from-ns-decl (parse/read-ns-decl rdr))]
+                   ns))))
        first))
 
 (defn spy-load [& paths]
@@ -450,8 +464,6 @@
   (apply real-require args))
 
 (def throw-if @#'clojure.core/throw-if)
-
-(def root-resource @#'clojure.core/root-resource)
 
 (defn spy-load-one
   [lib need-ns require]
@@ -492,7 +504,7 @@
               (remove-ns lib))
             (throw e)))
         (throw-if (and need-ns (not (find-ns lib)))
-          "namespace '%s' not found" lib))
+                  "namespace '%s' not found" lib))
       (when (and need-ns @#'clojure.core/*loading-verbosely*)
         (printf "(clojure.core/in-ns '%s)\n" (ns-name *ns*)))
       (when as
@@ -522,6 +534,8 @@
     (throw (IllegalArgumentException. (str "Not a qualified symbol: " sym)))))
 
 (defmacro with-spy [& body]
+  ;; note that these only work reliably _during_ compilation. We will
+  ;; not hook into the loading of AOT'd code, due to static invocation
   `(do
      (.setDynamic #'clojure.core/load)
      ;; for dtype-next
@@ -535,14 +549,21 @@
                clojure.core/requiring-resolve spy-requiring-resolve]
        ~@body)))
 
+;; clojure.lang.Compiler calls `RT.load("clojure/core/specs/alpha")`
+;; during macro expansion, if it hasn't been loaded already. Force it
+;; to happen here before any user code
+(s/fdef force-spec-checking :args (s/cat :x any?) :ret nil?)
+(defmacro force-spec-checking [x] x)
+
+(force-spec-checking nil)
+
 (defn compile! [classes-dir aot-nses out]
   {:pre [(string? classes-dir)
          (every? string? aot-nses)]}
+
   (with-open [executor (Executors/newCachedThreadPool)]
     (binding [*out* out
               *executor* executor]
-      ;; make sure this is loaded before any compile so it doesn't end up in user jars
-      @(pcompile nil 'clojure.core.specs.alpha)
       (with-spy
         (let [aot-nses (map symbol aot-nses)]
           (doseq [n aot-nses]
@@ -550,13 +571,3 @@
             (pcompile nil n))
           (doseq [n aot-nses]
             (pcopy (str classes-dir "/") n)))))))
-
-(defn cleanup!
-  "called by the worker process to release all resources before being GC'd"
-  []
-  (shutdown-agents)
-  ;; all global atoms need to be reset
-  (reset! ns-futures nil)
-  (reset! dep-graph nil)
-  (fs/rm-rf temp-dir)
-  (alter-var-root #'ns-deps (constantly ns-deps-)))

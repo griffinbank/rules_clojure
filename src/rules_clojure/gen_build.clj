@@ -216,8 +216,6 @@
 
 (s/def ::dep-ns->label (s/map-of keyword? (s/map-of symbol? string?)))
 
-(def no-aot '#{clojure.core})
-
 (defn jar-files [path]
   (-> (JarFile. (str path))
       (.entries)
@@ -258,11 +256,11 @@
         class-file (str (.substring ^String root-resource  1) "__init.class")]
     (some #(= class-file %) (classpath-files path))))
 
-(def special-namespaces '#{})
+(def special-namespaces '#{clojure.core clojure.core.specs.alpha})
 
 (defn should-compile-namespace? [deps-bazel path ns]
   (and (not (contains? special-namespaces ns))
-       (not (contains? (set/union no-aot (get-in deps-bazel [:no-aot])) ns))
+       (not (contains? (get-in deps-bazel [:no-aot]) ns))
        (not (is-aoted? path ns))))
 
 (defn ns-matches-path?
