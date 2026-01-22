@@ -6,14 +6,13 @@
             [clojure.string :as str]
             [rules-clojure.persistentClassLoader]
             [rules-clojure.fs :as fs]
-            [rules-clojure.namespace.find :as find]
             [rules-clojure.namespace.parse :as parse]
-            [rules-clojure.util :as util])
+            [rules-clojure.util :as util :refer [debug]])
   (:import java.net.URL
            rules_clojure.persistentClassLoader
            [java.util.jar JarFile JarEntry]
            [java.io InputStream PushbackReader]
-           java.lang.ref.SoftReference))
+           [java.lang.ref SoftReference Reference]))
 
 ;; We want a clean, deterministic build. The naive way to do that is
 ;; to construct a new URLClassloader containing exactly what the user
@@ -29,32 +28,41 @@
 ;; builds to be self-contained and reproducible.
 
 ;; To avoid jarhell, a classpath should have at most one path (a jar
-;; or directory), containing any given namespace. Two classpaths are
-;; _compatible_ if for every namespace in A, it is either present in B
-;; with the same path and same shasum/bazelsum, or not present.
+;; or directory), containing any given namespace or .class. Two
+;; classpaths are _compatible_ if for every namespace/class in A, the
+;; file is either present in B with the same path and same
+;; shasum/bazelsum, or not present.
 
 ;; If we have a cached classloader `A` and a request arrives with
 ;; classpath B, aot-ns of `bar` and an input file of `src/bar.clj`. We
 ;; can reuse `A` to process `B` IIF:
 
-;; - every namespace in B is located at the same path in A with the
-;; - same bazelsum, or not present
+;; - the two classloaders are compatible
+;; - `bar` is not AOT'd in `A`
 
 ;; To keep the cache warm, we pick the largest compatible classpath
-;; (largest defined as the one with the most namespaces). We use
-;; SoftReferences to allow unused classloaders to GC
+;; (largest defined as the one containing the most
+;; namespaces/classes). We use SoftReferences to allow unused
+;; classloaders to GC
 
 ;; Also note that directories (and files within) are mutable over time
 ;; as requests arrive. To avoid mutation problems, only check for
 ;; compatibility when appending to a classpath.
 
 
+(defn soft-ref? [x]
+  (instance? Reference x))
+
+(defn classloader? [x]
+  (instance? ClassLoader x))
+
 (defn new-classloader-
   ([cp]
    (new-classloader- cp (.getParent (ClassLoader/getSystemClassLoader))))
   ([cp parent]
    {:pre [(every? string? cp)
-          (instance? ClassLoader parent)]}
+          (classloader? parent)]}
+   (debug "new classloader" cp)
    (persistentClassLoader.
     (into-array URL (map #(.toURL (io/file %)) cp))
     parent)))
@@ -95,33 +103,33 @@ long as all jar sets are compatible with each other"
 
 (s/def ::input-map (s/map-of string? string?))
 
+(defn shas? [m]
+  (and (map? m)
+       (every? (fn [[k v]]
+                 (and (or (string? k) (symbol? k))
+                      (string? v)
+                      (= 88 (count v)))) m)))
+
+(defn conflicting-keys
+  "given two maps, return a seq of conflicts (same key in both maps with different values)"
+  [m1 m2]
+  (let [[smaller larger] (if (< (count m1) (count m2))
+                           [m1 m2]
+                           [m2 m1])]
+    (->> smaller
+         (keep (fn [[k1 v1]]
+                 (when-let [[_k2 v2] (find larger k1)]
+                   (when (not= v1 v2)
+                     [k1 [v1 v2]])))))))
+
 (defn compatible-maps?
   "Do all intersecting keys have the same values in both m1 and m2?"
   [m1 m2]
-  (not-any?
-   (fn [[k v]] (and (contains? m1 k) (not= (m1 k) v))) m2))
-
-(defn incompatible-maps
-  "When `compatible-maps?` returns true, return the conflicting values"
-  [m1 m2]
-  (reduce (fn [conflicting [k v2]]
-            (let [v1 (get m1 k)]
-              (if (and v1 (not= v2 v1))
-                (assoc conflicting k [v1 v2])
-                conflicting))) {} m2))
-
-(s/def ::input-map (s/map-of string? string?))
+  (not (seq (conflicting-keys m1 m2))))
 
 (def bazelsum (memoize fs/bazelsum))
 
 (def clj-extensions #{"cljc" "clj"})
-
-(defn shas? [m]
-  (and (map? m)
-       (every? (fn [[k v]]
-                 (and (symbol? k)
-                      (string? v)
-                      (= 88 (count v)))) m)))
 
 (defn dir-shas- [dir]
   {:pre [(string? dir)]
@@ -141,142 +149,230 @@ long as all jar sets are compatible with each other"
 (def dir-shas (memoize dir-shas-))
 
 (defn jar-shas-
-  [jar]
-  {:pre [(string? jar)]
-   :post [(shas? %)]}
-  (let [jarfile (JarFile. jar)]
-    (-> jarfile
-        (find/sources-in-jar find/clj)
-        (->> (pmap (fn [^JarEntry entry]
-                     (when-let [name (parse/name-from-ns-decl (find/read-ns-decl-from-jarfile-entry jarfile entry find/clj))]
-                       [name
-                        (-> (.getInputStream jarfile entry)
-                            InputStream/.readAllBytes
-                            fs/bazel-hash)])))
-             (into {})))))
+  ;; take bazel-hash for cache-busting
+  [jar hash]
+  {:pre [(string? jar)
+         (or (string? hash) (nil? hash))]
+   :post [(or (and % (shas? %)) (nil? %))]}
+  (when (.exists (io/file jar))
+    (let [jarfile (JarFile. jar)]
+      (->> jarfile
+           (.entries)
+           (enumeration-seq)
+           (filter (fn [entry]
+                     (let [name (.getRealName entry)]
+                       (and (not (.isDirectory ^JarEntry entry))
+                          ;; many unrelated jars have conflicting META-INF
+                            (not (re-find #"^META-INF" name))
+                          ;; ignore single-segment files such as project.clj, deps.edn, data_readers.clj
+                            (re-find #"/" name)
+                          ;; ignore clj anonymous expressions
+                            (not (re-find #"\$" name))
+                            (re-find #"(.clj|.cljc|.class)$" name)))))
+           (pmap (fn [^JarEntry entry]
+                   [(.getRealName entry)
+                    (-> (.getInputStream jarfile entry)
+                        InputStream/.readAllBytes
+                        fs/bazel-hash)]))
+           (into {})))))
 
 (def jar-shas (memoize jar-shas-))
 
 (defn shas
   "Given a single classpath entry (jar or directory), return (map-of ns hash)"
-  [path]
+  [path hash]
   {:pre [(do (when-not (string? path)
-               (println "pcl/shas:" path)) true)
-         (string? path)]}
+               (debug "pcl/shas:" path)) true)
+         (string? path)]
+   :post [(shas? %)]}
   (if (.endsWith ^String path ".jar")
-    (jar-shas path)
+    (jar-shas path hash)
     (dir-shas path)))
-
-(defn classpath-shas
-  "Given a vector of classpath jars and dirs, return a map of `{container
-{file sha}}`, where container is a jar or directory, and file is a
-clojure source file in the container"
-  [classpath]
-  (doseq [p classpath]
-    (assert (string? p) p))
-  (->> classpath
-       (map shas)
-       (apply merge)))
 
 (s/def ::classpath (s/coll-of string? :kind sequential?))
 
-(defn ns->resource-name
-  "given a namespace symbol, return the name of the resource where it can
-be found"
+(defn ns->class-resource-name
+  "given a namespace symbol, return the name of classfile that will load it"
   [ns]
   (-> ns
       (munge)
       (str/replace #"\." "/")
       (str "__init.class")))
 
-(defn aot? [^ClassLoader cl ns]
-  {:pre [(string? ns)]}
-  (.getResource cl (ns->resource-name ns)))
+(defn compiled?
+  "Is ns compiled in classloader?"
+  [ns cl]
+  ;; We could use Class/forName, but that would attempt to load the
+  ;; class. Use resource instead to avoid the side effect
+  (io/resource (ns->class-resource-name ns) cl))
 
-(defn compatible-shas?
-  [a b]
-  (let [new-paths (set/difference (set b) (set a))
-        a-shas (classpath-shas a)]
-    (assert (seq a-shas))
-    (every? (fn [path]
-              (let [b-shas (shas path)
-                    compatible (compatible-maps? a-shas b-shas)]
-                compatible)) new-paths)))
+(defn in-jar?
+  "given a resource, return true if it loads from a jar"
+  [^URL r]
+  (= "jar" (.getProtocol r)))
+
+(defn compiled-in-jar?
+  "is the ns compiled, and the class is loaded from a jar"
+  [ns cl]
+  {:pre [(symbol? ns)]}
+  (if-let [r (compiled? ns cl)]
+    (in-jar? r)
+    false))
+
+(def println-memo (memoize (fn [& args]
+                             (apply println args))))
+
+(defn explode-inputs
+  "Given an input-map containing .clj files and .jar files, list the contents of jars and `merge` in .jar clj and class files"
+  [input-map]
+  {:post [(if (some (fn [[k v]]
+                      (.endsWith k ".jar")) input-map)
+            (> (count %) (count input-map))
+            (= % input-map))]}
+  (->> input-map
+       (mapcat (fn [[path hash]]
+                 (if (.endsWith ^String path ".jar")
+                   (concat [[path hash]] (jar-shas path hash))
+                   [[path hash]])))
+       (into {})))
 
 (s/def ::classpaths (s/coll-of ::classpath :kind sequential?))
 
+(defn ns-loaded? [cl ns]
+  (util/shim-require cl 'rules-clojure.compile)
+  (util/shim-invoke cl "rules-clojure.compile" "loaded?-str" (str ns)))
+
 (defn get-best-classpath
   "Given a seq of existing cached classloaders, return the best match, or nil if none are compatible"
-  [cached desired aot-nses]
-  (->> cached
-       (filter (fn [[cp _cl]]
-                 (compatible-shas? cp desired)))
-       (filter (fn [[_cp cl]]
-                 (every? (fn [ns]
-                           (not (aot? cl ns))) aot-nses)))
-       ((fn [cps]
-          (sort-by (fn [[cp _cl]]
-                     (count (classpath-shas cp))) cps)))
-       (last)))
+  [cached input-map aot-nses]
+  (let [desired-in (explode-inputs input-map)
+        cache (some->> cached
+                       (filter (fn [[in cache]]
+                             ;; TODO conflicting source files are
+                             ;; acceptable, conflicting classfiles are
+                             ;; not.
+                                 (compatible-maps? in desired-in)))
+                       (remove (fn [[in cache]]
+                             ;; compiled in a directory is a temp dir
+                             ;; that the rules-clojure.compile/cache
+                             ;; can reuse. Compiled in a jar is an
+                             ;; artifact that is incompatible or bazel
+                             ;; wouldn't have asked us to compile
+                                 (some (fn [ns]
+                                         {:post [(do (when %
+                                                       (println-memo "not reusing classloader because" ns "already compiled")) true)]}
+                                         (compiled-in-jar? (symbol ns) (:classloader cache))) aot-nses)))
+                       seq
+                       (apply max-key (comp count key)))]
+    (when (not cache)
+      (->> cached
+           (mapv (fn [[in cl]]
+                   (assert (:classpath cl))
+                   (assert (coll? (:classpath cl)))
+                   (assert (seq (:classpath cl)))
+                   (assert (every? string? (:classpath cl)))
+                   (let [already-compiled? (keep (fn [ns]
+                                                   (when (compiled-in-jar? (symbol ns) (:classloader cl))
+                                                     ns)) aot-nses)
+                         [klass in-sha desired-sha :as k] (first (conflicting-keys in desired-in))
+                         k-src-cached (first (filter (fn [path]
+                                                       (contains? (shas path "") klass)) (keys in)))
+                         k-src-desired (first (filter (fn [path]
+                                                        (contains? (shas path "") klass)) (keys input-map)))]
+                     (assert (or already-compiled? klass))
+                     (println-memo "conflict" k k-src-cached k-src-desired))))))
+    cache))
 
 (defn deref-cache [caches]
   {:pre [(map? caches)
-         (every? (fn [[k v]]
-                   (instance? SoftReference v)) caches)]
+         (every? (fn [[_k v]]
+                   (soft-ref? (:classloader v))) caches)]
    :post [(map? %)
-          (every? (fn [[k v]]
-                    (instance? ClassLoader v)) %)
+          (every? (fn [[_k v]]
+                    (classloader? (:classloader v))) %)
           (do (when (< (count %) (count caches))
-                (util/print-err "pcl:deref-cache GC'd" (- (count caches) (count %)))) true)]}
+                (debug "pcl:deref-cache GC'd" (- (count caches) (count %)))) true)]}
   (->> caches
-       (map (fn [[cp ref]]
-              [cp (.get ref)]))
+       (map (fn [[cp cache]]
+              [cp (update cache :classloader SoftReference/.get)]))
        (filter (fn [[_cp cl]]
-                 cl))
+                 (:classloader cl)))
        (into {})))
 
 (defn soft-ref-cache [caches]
   {:pre [(map? caches)
-         (every? (fn [[k v]]
-                   (instance? ClassLoader v)) caches)]
+         (every? (fn [[_k v]]
+                   (classloader? (:classloader v))) caches)]
    :post [(map? %)
-          (every? (fn [[k v]]
-                    (instance? SoftReference v)) %)]}
+          (every? (fn [[_k v]]
+                    (soft-ref? (:classloader v))) %)]}
   (->> caches
-       (map (fn [[cp cl]]
-              [cp (SoftReference. cl)]))
+       (map (fn [[cp cache]]
+              [cp (update cache :classloader SoftReference/new)]))
        (into {})))
 
+(defn keep-n
+  "Keep at most N caches"
+  [caches n]
+  (let [caches (sort-by (fn [[k _]] (count k)) caches)
+        [expire keep] (split-at (- (count caches) n) caches)]
+    (doseq [[_cp cache] expire]
+      (util/shim-invoke (:classloader cache) "rules-clojure.compile" "cleanup!"))
+    (into {} keep)))
 
-(defn ensure-classloader [*caches desired-cp aot-nses]
+(defn ensure-classloader [*caches desired-cp input-map aot-nses]
   (let [*cl (promise)]
     (locking *caches
       (swap! *caches (fn [caches]
                        ;; sanity check to prevent unbounded caching
                        ;; {:post [(< (count %) 5)]}
                        (let [caches (deref-cache caches)
-                             _ (assert (map? caches))
-                             [best-cp best-cl] (get-best-classpath caches desired-cp aot-nses)]
+                             [in cache] (get-best-classpath caches input-map aot-nses)]
                          (soft-ref-cache
-                          (if best-cl
-                            (let [new-paths (set/difference (set desired-cp) (set best-cp))
-                                  new-cp (concat best-cp new-paths)]
+                          (if cache
+                            (let [cache-cp (:classpath cache)
+                                  desired-cp (set desired-cp)
+                                  new-paths (set/difference desired-cp cache-cp)
+                                  _ (assert (seq new-paths))
+                                  new-in (merge in (explode-inputs input-map))
+                                  cl (:classloader cache)]
                               (doseq [p new-paths]
-                                (add-url best-cl p))
-                              (deliver *cl best-cl)
-                              (-> caches
-                                  (dissoc best-cp)
-                                  (assoc new-cp best-cl)))
-                            (let [cl (new-classloader- desired-cp)]
+                                (add-url cl p))
                               (deliver *cl cl)
-                              (assoc caches desired-cp cl))))))))
+                              (-> caches
+                                  (dissoc in)
+                                  (assoc new-in (update cache :classpath set/union new-paths))
+                                  (keep-n 3)))
+                            (let [cl (new-classloader- desired-cp)
+                                  in (explode-inputs input-map)]
+                              (debug "new cl" (inc (count caches)))
+                                ;; imagine
+                              ;; (shim-require 'rules-clojure.compile)
+                              ;; (shim-eval 'compile/compile!)
+
+                              ;; require loads forms sequentially, but updates
+                              ;; clojure.core/*loaded-libs* at the end of the ns block (not the end of the file!).
+
+                              ;; If two compile requests in two
+                              ;; threads come in at the same time, one
+                              ;; starts the require and evaluating,
+                              ;; the second one will see *loaded-libs*
+                              ;; does contain rules-clojure.compile,
+                              ;; but the
+                              ;; `rules-clojure.compile/compile!` var
+                              ;; hasn't been loaded yet. Load it here
+                              ;; so we don't have to lock later.
+                              (util/shim-require cl 'rules-clojure.compile)
+                              (deliver *cl cl)
+                              (assoc caches in {:classpath (set desired-cp)
+                                                :classloader cl}))))))))
     @*cl))
 
 (defn caching
   "Cache and reuse the classloader, IIF if the inputs are compatible"
   []
-  ;; (atom-of (map-of classpath (soft-ref classloader))).
+  ;; (atom-of (map-of input-map (soft-ref classloader))).
   (let [*caches (atom {})]
     (reify ClassLoaderFactory
-      (build [_ {:keys [classpath aot-nses]}]
-        (ensure-classloader *caches classpath aot-nses)))))
+      (build [_ {:keys [classpath input-map aot-nses]}]
+        (ensure-classloader *caches classpath input-map aot-nses)))))

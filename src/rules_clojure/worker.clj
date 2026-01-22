@@ -125,7 +125,8 @@
 (defn process-persistent []
   (let [classloader-strategy (pcl/caching)
         *error (atom nil)
-        *continue (atom true)]
+        *continue (atom true)
+        *fs (atom [])]
     (loop []
       (if-let [line (and @*continue (read-line))]
         (let [work-req (json/read-str line :key-fn keyword)
@@ -136,19 +137,23 @@
                            (catch Throwable t
                              (reset! *error t)
                              (reset! *continue false))))]
+          (swap! *fs conj f)
           (recur))
         (do
-          (print-err "no request, exiting")
+          (print-err "awaiting")
+          (doseq [f @*fs]
+            @f)
+          (print-err "all requests done")
           (shutdown-agents)
           (when @*error
-            (println @*error))
+            (util/print-err @*error))
           :exit)))))
 
 (defn set-uncaught-exception-handler! []
   (Thread/setDefaultUncaughtExceptionHandler
    (reify Thread$UncaughtExceptionHandler
      (uncaughtException [_ _ ex]
-       (println ex "uncaught exception")))))
+       (util/print-err ex "uncaught exception")))))
 
 (defn -main [& args]
   (set-uncaught-exception-handler!)

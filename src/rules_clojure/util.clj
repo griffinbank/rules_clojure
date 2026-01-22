@@ -17,6 +17,10 @@
       (locking true
         (println str)))))
 
+(defn debug [& args]
+  ;; (println (locking true (apply print-str args)))
+  true)
+
 (defmacro with-context-classloader [cl & body]
   `(let [old-cl# (.getContextClassLoader (Thread/currentThread))]
      (try
@@ -53,9 +57,6 @@
           v (shim-var cl ns name)]
       (.invoke m v (into-array Object [])))))
 
-(defn shim-require [cl ns]
-  (shim-invoke cl "clojure.core" "require" ns))
-
 (defn shim-eval [^ClassLoader cl s]
   (with-context-classloader cl
     (let [script (try
@@ -67,26 +68,8 @@
         (catch Exception e
           (throw (ex-info "while evaling" {:script s} e)))))))
 
-(defn invoker-1
-  "given a classloader and a function name, return a function that
-invokes f in the classloader, efficiently"
-  [^ClassLoader classloader ns name]
-  (shim-eval classloader (str `(require (symbol ~ns))))
-  (let [loaded-var (shim-var classloader ns name)
-        ifn (.loadClass classloader "clojure.lang.IFn")
-        invoke-method (.getDeclaredMethod ifn "invoke" (into-array Class [Object]))]
-    (assert invoke-method)
-    (fn [arg]
-      (.invoke invoke-method loaded-var (into-array Object [arg])))))
-
-(defn bind-compiler-loader [^ClassLoader cl]
-  (with-context-classloader cl
-    (let [compiler (.loadClass cl "clojure.lang.Compiler")
-          var (.loadClass cl "clojure.lang.Var")
-          loader-f (.getDeclaredField compiler "LOADER")
-          loader (.get loader-f compiler)
-          bind-root-m (.getDeclaredMethod var "bindRoot" (into-array Class [Object]))]
-      (.invoke bind-root-m loader (into-array Object [cl])))))
+(defn shim-require [cl ns]
+  (shim-eval cl `(require (quote ~ns))))
 
 (defn system-classpath
   "Returns a sequence of File paths from the 'java.class.path' system

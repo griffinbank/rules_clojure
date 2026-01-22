@@ -25,7 +25,8 @@ clojure_library(name="test-deps",
                 deps=["//src/rules_clojure:libworker",
                       "//src/rules_clojure:libcompile",
                       "//src/rules_clojure:srcjar",
-                      ":test-utils"])
+                      ":test-utils",
+                      "@example-simple//src/example:src"])
 
 filegroup(name="clojure-old",
           srcs=["@clojure_old//:org_clojure_clojure"])
@@ -49,11 +50,12 @@ clojure_test(name="persistent-classloader-test",
                    ":test-deps",
                    "clojure",
                    ":clojure-old",
+                   "@example-simple//src/example:src",
                    "@bazel_tools//tools/java/runfiles",
                    "//src/rules_clojure:bootstrap"],
              env={"CLOJURE_JARS": "$(rlocationpaths :clojure)",
                   "CLOJURE_OLD": "$(rlocationpaths :clojure-old)",
-                  "COMPILE_CLASSPATH": "$(rlocationpaths :clojure) $(rlocationpaths //src/rules_clojure:bootstrap) $(rlocationpaths :test-deps) $(rlocationpaths @bazel_tools//tools/java/runfiles)"},
+                  "COMPILE_CLASSPATH": "$(rlocationpaths :clojure) $(rlocationpaths //src/rules_clojure:bootstrap) $(rlocationpaths :test-deps) $(rlocationpaths @example-simple//src/example:src) $(rlocationpaths @bazel_tools//tools/java/runfiles)"},
              test_ns = "rules-clojure.persistent-classloader-test")
 
 clojure_test(name="compile-test",

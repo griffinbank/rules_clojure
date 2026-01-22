@@ -1,12 +1,12 @@
 (ns rules-clojure.compile
-  (:refer-clojure :exclude [agent send await])
+  (:refer-clojure :exclude [future])
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [rules-clojure.java.classpath :as cp]
             [rules-clojure.namespace.parse :as parse]
             [rules-clojure.fs :as fs]
-            [rules-clojure.util :refer [shasum]])
-  (:import [java.util.concurrent CompletableFuture]))
+            [rules-clojure.util :refer [shasum debug]])
+  (:import [java.util.concurrent CompletableFuture Executors]))
 
 (set! *warn-on-reflection* true)
 
@@ -14,9 +14,6 @@
 ;; must not conflict with anything else. No third party
 ;; dependencies. If we require a new clojure version, that requires
 ;; all users to upgrade so try to do that sparingly as well.
-
-(defn debug [& args]
-  #_ (println (locking true (apply print-str args))))
 
 (defn deref!
   "throw `ex` if *f does not complete within timeout"
@@ -36,17 +33,10 @@
   [ns]
   {:pre [(symbol? ns)]}
   (->> [".clj" ".cljc"]
-       (map (fn [ext]
+       (some (fn [ext]
               (let [src-path (str (src-resource-name ns) ext)
                     src-resource (io/resource src-path)]
-                (when src-resource
-                  [src-path src-resource]))))
-       (filter identity)
-         ;; ((fn [srcs]
-         ;;    (when (> (count srcs) 1)
-         ;;      (println "WARNING multiple copies of" ns "found:" srcs))
-         ;;    srcs))
-       (first)))
+                src-resource)))))
 
 (defn loaded? [ns]
   {:pre [(symbol? ns)]}
@@ -61,6 +51,13 @@
 ;; resolve symbol: foo`, when you know it should be there.
 
   (contains? (loaded-libs) ns))
+
+(defn loaded?-str [ns]
+  {:pre [(string? ns)]
+   :post [(boolean? %)]}
+  ;; called from the worker's class loader, so we can't pass a
+  ;; `symbol` through
+  (loaded? (symbol ns)))
 
 ;; we can be asked to AOT a namespace after it is already loaded. If
 ;; the namespace contains protocols AND it's already loaded, that
@@ -84,11 +81,8 @@
 ;; the class files from temp directory. We fingerprint namespaces
 ;; using the SHA of the file contents
 
-
-
-(defn ns->resource-name
-  "given a namespace symbol, return the name of the resource where it can
-be found"
+(defn ns->class-resource-name
+  "given a namespace symbol, return the name of classfile that will load it"
   [ns]
   (-> ns
       (munge)
@@ -96,25 +90,28 @@ be found"
       (str "__init.class")))
 
 (defn compiled?
-  "truthy if the namespace has AOT .class files on the classpath"
   [ns]
-  (io/resource (ns->resource-name ns)))
+  ;; We could use Class/forName, but that would attempt to load the
+  ;; class. Use resource instead to avoid the side effect
+  (io/resource (ns->class-resource-name ns)))
+
+(defn add-classpath! [dir]
+  (let [dir-f (fs/path->file dir)]
+    (assert (.exists dir-f) (print-str dir-f "not found"))
+    (.addURL (.getClassLoader (class add-classpath!)) (.toURL dir-f))))
 
 ;; root directory for all compiles. Each compile will be a subdir of
 ;; this
 (def temp-dir (fs/new-temp-dir "rules_clojure"))
 
-(-> (Runtime/getRuntime) (.addShutdownHook (Thread. ^Runnable (fn []
-                                                                (fs/rm-rf temp-dir)))))
-
 (defn ns-sha
   "return the hash of the ns file contents"
   [ns]
   {:pre [(symbol? ns)]}
-  (assert (src-resource ns) (print-str "couldn't find src resource for" ns))
+  (let [cl (.getContextClassLoader (Thread/currentThread))]
+    (assert (src-resource ns) (print-str "couldn't find src resource" (src-resource ns) " for" ns "with context classloader" cl (cp/classpath cl))))
   (-> ns
       (src-resource)
-      second
       (io/input-stream)
       (.readAllBytes)
       (shasum)))
@@ -193,14 +190,12 @@ be found"
       java.io.PushbackReader.))
 
 (defn ns-deps- [ns]
-  (assert (src-resource ns) (print-str "couldn't find resource for" ns))
-  (-> ns
-      src-resource
-      second
-      reader
-      parse/read-ns-decl
-      parse/deps-from-ns-decl
-      (disj ns)))
+  (some-> ns
+          src-resource
+          reader
+          parse/read-ns-decl
+          parse/deps-from-ns-decl
+          (disj ns)))
 
 (def ns-deps (memoize ns-deps-))
 
@@ -216,7 +211,10 @@ be found"
                  :loaded? (loaded? ns)
                  :bound-require? (bound? #'clojure.core/require)
                  :sha sha))
-        (assert (not (loaded? ns)) (print-str ns :compiled? (compiled? ns) :loaded? (loaded? ns) :sha sha))
+        (assert (or (not (loaded? ns))
+                    (re-find #"^clojure\." (str ns))
+                    (re-find #"^rules-clojure\." (str ns))) (print-str ns :compiled? (compiled? ns) :loaded? (loaded? ns) :sha sha))
+        (add-classpath! classes-dir)
         (binding [*compile-path* (str classes-dir)]
           (compile ns)
           (assert (seq (fs/ls-r classes-dir)) (print-str "compile-: no .class files found in" classes-dir)))))))
@@ -251,17 +249,17 @@ be found"
 (defn context-classloader-conveyor-fn [f]
   ;; context classloaders are not conveyed by default in futures, but we set it in rules-clojure.jar/compile!
   (let [cl (.getContextClassLoader (Thread/currentThread))]
-    (fn
-      ([]
-       (.setContextClassLoader (Thread/currentThread) cl)
-       (f)))))
+    (fn []
+      (.setContextClassLoader (Thread/currentThread) cl)
+      (f))))
 
 (defn binding-conveyor-fn [f]
-  ;; don't use clojure.core/binding-conveyor-fn, because that usees
-  ;; clone/reset ThreadBindings, rather than push/pop. We use push and
-  ;; pop because clone shares TBoxes, which store the threadId they
-  ;; came from, which breaks clojure.lang.Compiler when an in-progress
-  ;; compile attempts to Var/set! from a new thread
+  ;; don't use clojure.core/binding-conveyor-fn, because that uses
+  ;; clone/reset ThreadBindings; It allows the conveyed thread to read
+  ;; bindings, but not set! them (because it clones TBoxes and the
+  ;; cloned tbox stores the thread.id), which breaks
+  ;; clojure.lang.Compiler.  Instead, use push/pop ThreadBindings
+  ;; which creates new tboxes and allows set! to work.
   (let [bindings (clojure.lang.Var/getThreadBindings)]
     (fn []
       (try
@@ -270,29 +268,41 @@ be found"
         (finally
           (clojure.lang.Var/popThreadBindings))))))
 
+(def ^:dynamic *executor* nil)
+
+;; The clojure RT won't be garbage collected if we use regular agents
+;; or futures, because the thread's context classloader points at
+;; clojure. Use our own pool that is not cached across compile jobs to
+;; reduce strong references.
+
+(defn future- [exec f]
+  {:pre [exec]}
+  (.submit exec (context-classloader-conveyor-fn
+                       (binding-conveyor-fn f))))
+
+(defmacro future [& body]
+  `(future- *executor* (fn []
+                         ~@body)))
+
 (defn ns-send
   [ns f]
   {:pre [(symbol? ns)]
    :post [(future? %)]}
-
-  (let [f (context-classloader-conveyor-fn
-           (binding-conveyor-fn f))]
-    (-> ns-futures
-        (swap! update ns (fn [**f]
-                           (or **f
-                               (delay (future
-                                        (try
-                                          (f)
-                                          (catch Throwable t
-                                            (throw (ex-info (print-str "in ns-send" ns :parallel? *parallel*) {} t)))))))))
-        (get ns)
-        (deref))))
+  (-> ns-futures
+      (swap! update ns (fn [**f]
+                         (or **f
+                             (delay (future
+                                      (try
+                                        (f)
+                                        (catch Throwable t
+                                          (throw (ex-info (print-str "in ns-send" ns :parallel? *parallel*) {} t)))))))))
+      (get ns)
+      (deref)))
 
 (defn ns-send-sync
   [ns f]
   {:pre [(symbol? ns)]
    :post [(future? %)]}
-  (debug "ns-send-sync" ns)
   (-> ns-futures
       (swap! update ns (fn [**f]
                          (or **f
@@ -357,15 +367,21 @@ be found"
         (debug "compile parent cycle" parent :-> ns)
         (CompletableFuture/completedFuture true)))))
 
+(defn cached?
+  "True if this namespace has been compiled by this process, and the class files are cached"
+  [ns]
+  (boolean (get-cache-dir (ns-sha ns))))
+
 (defn pcopy [dest-dir ns]
-  (deref! (pcompile nil ns) 120000
+  (deref! (pcompile nil ns) 180000
           (ex-info (print-str "pcopy timeout waiting for" ns) {:dest-dir dest-dir :ns ns}))
   (assert (loaded? ns) (print-str ns "not loaded"))
   (let [sha (ns-sha ns)
         cache-dir (get-cache-dir sha)]
     (assert cache-dir (print-str ns "no cache dir"
-                                 :loaded? (loaded? ns)
                                  :compiled? (compiled? ns)
+                                 :loaded? (loaded? ns)
+                                 :cached? (cached? ns)
                                  :dest dest-dir
                                  :actual-classpath (cp/classpath)))
     (assert (seq (fs/ls-r cache-dir)) (print-str "pcopy: no .class files found in" cache-dir))
@@ -421,13 +437,11 @@ be found"
 
 (defn spy-load [& paths]
   (let [ns-sym (symbol (str *ns*))]
-    (debug "spy-load"  paths)
     (->> paths
          (mapv (fn [p]
                  (if-let [dep-ns (load->ns p)]
                    @(pcompile ns-sym dep-ns)
-                   (real-load p)))))
-    (debug "spy-load" ns-sym paths "done")))
+                   (real-load p)))))))
 
 (defn spy-require [& args]
   ;; the ns block will add `ns` to clojure.core/*loaded-libs*, so it won't be eval'd twice.
@@ -441,7 +455,6 @@ be found"
 
 (defn spy-load-one
   [lib need-ns require]
-  (debug "spy-load-one" lib)
   (spy-load (root-resource lib))
   (throw-if (and need-ns (not (find-ns lib)))
             "namespace '%s' not found after loading '%s'"
@@ -453,7 +466,6 @@ be found"
 ;; we need this because dtype-next calls load-lib directly rather than `load` or `require` ಠ_ಠ
 (defn spy-load-lib
   [prefix lib & options]
-  (debug "spy-load-lib" lib)
   (throw-if (and prefix (pos? (.indexOf (name lib) (int \.))))
             "Found lib name '%s' containing period with prefix '%s'.  lib names inside prefix lists must not contain periods"
             (name lib) prefix)
@@ -474,10 +486,8 @@ be found"
     (binding [clojure.core/*loading-verbosely* (or @#'clojure.core/*loading-verbosely* verbose)]
       (if load
         (try
-          (debug "spy-load-lib actually loading" load lib)
           (load lib need-ns require)
           (catch Exception e
-            (debug "spy-load-lib while loading" lib e)
             (when undefined-on-entry
               (remove-ns lib))
             (throw e)))
@@ -528,13 +538,25 @@ be found"
 (defn compile! [classes-dir aot-nses out]
   {:pre [(string? classes-dir)
          (every? string? aot-nses)]}
-  (binding [*out* out]
-    (when (seq aot-nses)
-      (debug "compile!" (seq aot-nses)))
-    (with-spy
-      (let [aot-nses (map symbol aot-nses)]
-        (doseq [n aot-nses]
-          (add-ns n)
-          (pcompile nil n))
-        (doseq [n aot-nses]
-          (pcopy (str classes-dir "/") n))))))
+  (with-open [executor (Executors/newCachedThreadPool)]
+    (binding [*out* out
+              *executor* executor]
+      ;; make sure this is loaded before any compile so it doesn't end up in user jars
+      @(pcompile nil 'clojure.core.specs.alpha)
+      (with-spy
+        (let [aot-nses (map symbol aot-nses)]
+          (doseq [n aot-nses]
+            (add-ns n)
+            (pcompile nil n))
+          (doseq [n aot-nses]
+            (pcopy (str classes-dir "/") n)))))))
+
+(defn cleanup!
+  "called by the worker process to release all resources before being GC'd"
+  []
+  (shutdown-agents)
+  ;; all global atoms need to be reset
+  (reset! ns-futures nil)
+  (reset! dep-graph nil)
+  (fs/rm-rf temp-dir)
+  (alter-var-root #'ns-deps (constantly ns-deps-)))

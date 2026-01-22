@@ -62,12 +62,14 @@
 (s/def ::compile (s/keys :req-un [::aot-nses ::classes-dir ::output-jar] :opt-un [::resources ::src-dir]))
 
 (defn compile! [cl {:keys [aot-nses classes-dir] :as args}]
-  (util/shim-eval cl `(require 'rules-clojure.compile))
+  (util/shim-require cl 'rules-clojure.compile)
+
   (let [aot-arr (into-array String (map str aot-nses))]
     (try
       (util/shim-invoke cl "rules-clojure.compile" "compile!" classes-dir aot-arr *out*)
       (catch Throwable t
-        (throw (ex-info "while compiling" {:args args} t))))))
+        (throw (ex-info "while compiling" {:args args
+                                           :classloader cl} t))))))
 
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses] :as args}]
   (s/assert ::compile args)
