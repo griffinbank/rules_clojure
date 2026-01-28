@@ -3,11 +3,17 @@
 ### future, possibly running from the source tree rather than `bazel-bin`), both in support of
 ### `clj` live reloading semantics
 
+def get_classpath_path(f):
+    if f.is_source:
+        return "$BUILD_WORKSPACE_DIRECTORY/%s" % f.short_path
+    else:
+        return "$BUILD_WORKSPACE_DIRECTORY/%s" % f.path
+
 def clojure_repl_impl(ctx):
 
     java_deps = depset(transitive = [d[JavaInfo].transitive_runtime_jars for d in ctx.attr.runtime_deps])
 
-    classpath_files = ["$BUILD_WORKSPACE_DIRECTORY/%s" % d.short_path for d in ctx.files.classpath_dirs]
+    classpath_files = [get_classpath_path(d) for d in ctx.files.classpath_dirs]
 
     jars = [d.short_path for d in java_deps.to_list()]
 
