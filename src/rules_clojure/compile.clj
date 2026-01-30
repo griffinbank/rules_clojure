@@ -38,7 +38,9 @@
   "given a namespace symbol, return a tuple of [filename URL] where the
   backing .clj is located"
   [ns]
-  {:pre [(symbol? ns)]
+  {:pre [(symbol? ns)
+         (= (.getContextClassLoader (Thread/currentThread))
+            (.getClassLoader (class src-resource)))]
    :post [%]}
   (->> [".clj" ".cljc"]
        (some (fn [ext]
@@ -211,7 +213,7 @@
   (let [sha (ns-sha ns)
         classes-dir (->cache-dir sha)]
     (if (compiled? ns)
-      (require ns)
+      (real-require ns)
       (do
         (when (loaded? ns)
           (debug "WARNING:" ns "already loaded before compilation!"
@@ -225,9 +227,11 @@
         (add-classpath! classes-dir)
         (binding [*compile-path* (str classes-dir)]
           (try
-            (compile ns)
+            (binding [*compile-path* (str classes-dir)
+                      *compile-files* true]
+              (real-load (root-resource ns)))
             (catch Exception e
-              (println "while compiling" ns e)
+              (println "compile/compile-:" ns e)
               (throw e)))
           (assert (seq (fs/ls-r classes-dir)) (print-str "compile-: no .class files found in" classes-dir "for" ns)))))))
 
@@ -375,13 +379,7 @@
                      (if compile?
                        (compile- ns)
                        (do
-                         ;; we can't use clojure.core/require here,
-                         ;; because if we did, another thread could be
-                         ;; requiring, and normal require checks for
-                         ;; the end of the ns block, not the end of
-                         ;; the file being loaded.
-                         (real-load (root-resource ns))
-                         (dosync (commute @#'clojure.core/*loaded-libs* conj ns))))
+                         (real-require ns)))
                      true))))
       (do
         (debug "compile parent cycle" parent :-> ns)
