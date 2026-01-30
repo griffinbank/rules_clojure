@@ -14,8 +14,7 @@
 (defn print-err [& args]
   (binding [*out* *err*]
     (let [str (apply print-str args)]
-      (locking true
-        (println str)))))
+      (println str))))
 
 (defn debug [& args]
   ;; (println (locking true (apply print-str args)))
