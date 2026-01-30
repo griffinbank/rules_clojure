@@ -211,7 +211,7 @@
   (let [sha (ns-sha ns)
         classes-dir (->cache-dir sha)]
     (if (compiled? ns)
-      (require ns)
+      (real-require ns)
       (do
         (when (loaded? ns)
           (debug "WARNING:" ns "already loaded before compilation!"
@@ -225,7 +225,9 @@
         (add-classpath! classes-dir)
         (binding [*compile-path* (str classes-dir)]
           (try
-            (compile ns)
+            (binding [*compile-path* (str classes-dir)
+                      *compile-files* true]
+              (real-load (root-resource ns)))
             (catch Exception e
               (println "while compiling" ns e)
               (throw e)))
