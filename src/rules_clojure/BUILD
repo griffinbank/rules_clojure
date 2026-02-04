@@ -12,6 +12,7 @@ java_library(
                "bootstrap_gen_build.clj",
                "bootstrap_libfs.clj",
                "bootstrap_worker.clj",
+               "bootstrap_testrunner.clj",
                "compile.clj",
                "fs.clj",
                "jar.clj",
@@ -21,6 +22,7 @@ java_library(
                "namespace/file.clj",
                "namespace/find.clj",
                "java/classpath.clj",
+               "testrunner.clj",
                "tools/reader.clj",
                "tools/reader/reader_types.clj",
                "tools/reader/default_data_readers.clj",
@@ -83,6 +85,15 @@ genrule(
     """,
     outs=["libgen_build.jar"])
 
+genrule(
+    name="bootstrap-testrunner",
+    tools=[":bootstrap-bin"],
+    cmd="""
+    mkdir -p gen-testrunner
+    $(location :bootstrap-bin) -m rules-clojure.bootstrap-testrunner $(location :libtestrunner.jar)
+    """,
+    outs=["libtestrunner.jar"])
+
 java_import(name="libworker",
             jars=["libworker.jar"],
             runtime_deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
@@ -107,6 +118,9 @@ java_import(name="libgen_build",
                             ":libfs"],
             data=[":bootstrap-gen-build"])
 
+java_import(name="testrunner",
+            jars=["libtestrunner.jar"])
+
 java_binary(name="worker",
             main_class="rules_clojure.worker",
             jvm_flags=["-Dclojure.main.report=stderr",
@@ -118,14 +132,6 @@ java_binary(name="gen_build",
             main_class="rules_clojure.gen_build",
             runtime_deps=[":libgen_build"],
             jvm_flags = ["-Xmx500m", "-XX:MaxMetaspaceSize=500m"])
-
-clojure_library(name= "testrunner",
-                srcs=["testrunner.clj"],
-                resource_strip_prefix="src",
-                aot=["rules-clojure.testrunner"],
-                deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
-                      "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
-                      "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha"])
 
 java_library(name="srcjar",
              resources=glob(["*.clj"]),
