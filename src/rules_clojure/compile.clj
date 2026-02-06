@@ -38,9 +38,7 @@
   "given a namespace symbol, return a tuple of [filename URL] where the
   backing .clj is located"
   [ns]
-  {:pre [(symbol? ns)
-         (= (.getContextClassLoader (Thread/currentThread))
-            (.getClassLoader (class src-resource)))]
+  {:pre [(symbol? ns)]
    :post [%]}
   (->> [".clj" ".cljc"]
        (some (fn [ext]
@@ -225,11 +223,10 @@
                     (re-find #"^clojure\." (str ns))
                     (re-find #"^rules-clojure\." (str ns))) (print-str ns :compiled? (compiled? ns) :loaded? (loaded? ns) :sha sha))
         (add-classpath! classes-dir)
-        (binding [*compile-path* (str classes-dir)]
+        (binding [*compile-path* (str classes-dir)
+                  *compile-files* true]
           (try
-            (binding [*compile-path* (str classes-dir)
-                      *compile-files* true]
-              (real-load (root-resource ns)))
+            (real-load (root-resource ns))
             (catch Exception e
               (println "compile/compile-:" ns e)
               (throw e)))
@@ -378,8 +375,7 @@
                           (mapv deref))
                      (if compile?
                        (compile- ns)
-                       (do
-                         (real-require ns)))
+                       (real-require ns))
                      true))))
       (do
         (debug "compile parent cycle" parent :-> ns)
@@ -563,6 +559,8 @@
     (binding [*out* out
               *executor* executor]
       (with-spy
+        ;; compile here so it doesn't accidentally end up in any user jars
+        @(pcompile nil 'clojure.core.specs.alpha)
         (let [aot-nses (map symbol aot-nses)]
           (doseq [n aot-nses]
             (add-ns n)
