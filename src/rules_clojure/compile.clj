@@ -211,7 +211,7 @@
   (let [sha (ns-sha ns)
         classes-dir (->cache-dir sha)]
     (if (compiled? ns)
-      (require ns)
+      (real-require ns)
       (do
         (when (loaded? ns)
           (debug "WARNING:" ns "already loaded before compilation!"
@@ -223,11 +223,12 @@
                     (re-find #"^clojure\." (str ns))
                     (re-find #"^rules-clojure\." (str ns))) (print-str ns :compiled? (compiled? ns) :loaded? (loaded? ns) :sha sha))
         (add-classpath! classes-dir)
-        (binding [*compile-path* (str classes-dir)]
+        (binding [*compile-path* (str classes-dir)
+                  *compile-files* true]
           (try
-            (compile ns)
+            (real-load (root-resource ns))
             (catch Exception e
-              (println "while compiling" ns e)
+              (println "compile/compile-:" ns e)
               (throw e)))
           (assert (seq (fs/ls-r classes-dir)) (print-str "compile-: no .class files found in" classes-dir "for" ns)))))))
 
@@ -374,14 +375,7 @@
                           (mapv deref))
                      (if compile?
                        (compile- ns)
-                       (do
-                         ;; we can't use clojure.core/require here,
-                         ;; because if we did, another thread could be
-                         ;; requiring, and normal require checks for
-                         ;; the end of the ns block, not the end of
-                         ;; the file being loaded.
-                         (real-load (root-resource ns))
-                         (dosync (commute @#'clojure.core/*loaded-libs* conj ns))))
+                       (real-require ns))
                      true))))
       (do
         (debug "compile parent cycle" parent :-> ns)
@@ -565,6 +559,8 @@
     (binding [*out* out
               *executor* executor]
       (with-spy
+        ;; compile here so it doesn't accidentally end up in any user jars
+        @(pcompile nil 'clojure.core.specs.alpha)
         (let [aot-nses (map symbol aot-nses)]
           (doseq [n aot-nses]
             (add-ns n)

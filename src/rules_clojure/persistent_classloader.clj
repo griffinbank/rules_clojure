@@ -314,14 +314,12 @@ long as all jar sets are compatible with each other"
 (defn keep-n
   "Keep at most N caches"
   [caches n]
-  (let [caches (sort-by (fn [[k _]] (count k)) caches)
-        [expire keep] (split-at (- (count caches) n) caches)]
-    (doseq [[_cp cache] expire]
-      (util/shim-invoke (:classloader cache) "rules-clojure.compile" "cleanup!"))
-    (into {} keep)))
+  (let [caches (sort-by (fn [[k _]] (count k)) caches)]
+    (into {} (drop (- (count caches) n) caches))))
 
 (defn ensure-classloader [*caches desired-cp input-map aot-nses]
-  (let [*cl (promise)]
+  (let [*cl (promise)
+        keep-limit 3]
     (locking *caches
       (swap! *caches (fn [caches]
                        ;; sanity check to prevent unbounded caching
@@ -342,7 +340,7 @@ long as all jar sets are compatible with each other"
                               (-> caches
                                   (dissoc in)
                                   (assoc new-in (update cache :classpath set/union new-paths))
-                                  (keep-n 3)))
+                                  (keep-n keep-limit)))
                             (let [cl (new-classloader- desired-cp)
                                   in (explode-inputs input-map)]
                               (debug "new cl" (inc (count caches)))
@@ -364,8 +362,10 @@ long as all jar sets are compatible with each other"
                               ;; so we don't have to lock later.
                               (util/shim-require cl 'rules-clojure.compile)
                               (deliver *cl cl)
-                              (assoc caches in {:classpath (set desired-cp)
-                                                :classloader cl}))))))))
+                              (-> caches
+                                  (keep-n (dec keep-limit))
+                                  (assoc in {:classpath (set desired-cp)
+                                             :classloader cl})))))))))
     @*cl))
 
 (defn caching
