@@ -36,9 +36,8 @@ java_library(
     runtime_deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
                   "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
                   "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
-                  "@rules_clojure_maven_deps//:org_clojure_core_cache",
                   "@rules_clojure_maven_deps//:org_clojure_data_json",
-                  "@rules_clojure_maven_deps//:org_clojure_tools_deps_alpha"])
+                  "@rules_clojure_maven_deps//:org_clojure_tools_deps"])
 
 java_binary(
     name="bootstrap-bin",
@@ -103,7 +102,7 @@ java_import(name="libgen_build",
             runtime_deps = ["@rules_clojure_maven_deps//:org_clojure_clojure",
                             "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
                             "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
-                            "@rules_clojure_maven_deps//:org_clojure_tools_deps_alpha",
+                            "@rules_clojure_maven_deps//:org_clojure_tools_deps",
                             ":libfs"],
             data=[":bootstrap-gen-build"])
 

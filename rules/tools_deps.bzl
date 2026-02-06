@@ -95,10 +95,13 @@ def _run_gen_build(repository_ctx):
     args = [repository_ctx.path("tools.deps/bin/clojure"),
             "-Srepro",
             "-Sdeps", """{:paths ["%s"]
-            :deps {org.clojure/tools.namespace {:mvn/version "1.1.0"}
-            org.clojure/tools.deps.alpha {:mvn/version "0.14.1178"}}}""" % repository_ctx.path("../rules_clojure/src"),
+                          :deps {org.clojure/clojure {:mvn/version "1.12.1"}
+                                 org.clojure/tools.namespace {:mvn/version "1.1.0"}
+                                 org.clojure/tools.deps {:mvn/version "0.28.1578"}}}
+                       """ % repository_ctx.path("../rules_clojure/src"),
 
             "-J-Dclojure.main.report=stderr",
+            "-J-Dorg.slf4j.simpleLogger.log.org.apache.http=warn",
             "-M",
             "-m", "rules-clojure.gen-build",
             "deps",
@@ -114,10 +117,11 @@ def _run_gen_build(repository_ctx):
 
 def _tools_deps_impl(repository_ctx):
     _install_tools_deps(repository_ctx)
-    _add_deps_edn(repository_ctx)
     _symlink_repository(repository_ctx)
-    _install_scripts(repository_ctx)
     _run_gen_build(repository_ctx)
+    _add_deps_edn(repository_ctx)
+    _install_scripts(repository_ctx)
+
     return None
 
 clojure_tools_deps = repository_rule(

@@ -38,15 +38,17 @@
   "given a namespace symbol, return a tuple of [filename URL] where the
   backing .clj is located"
   [ns]
-  {:pre [(symbol? ns)
-         (= (.getContextClassLoader (Thread/currentThread))
-            (.getClassLoader (class src-resource)))]
+  {:pre [(symbol? ns)]
    :post [%]}
-  (->> [".clj" ".cljc"]
-       (some (fn [ext]
-               (let [src-path (str (src-resource-name ns) ext)
-                     src-resource (io/resource src-path)]
-                 src-resource)))))
+  (let [result (->> [".clj" ".cljc"]
+                    (some (fn [ext]
+                            (let [src-path (str (src-resource-name ns) ext)
+                                  src-resource (io/resource src-path)]
+                              src-resource))))]
+    (assert result (print-str "src-resource: could not find source for" ns
+                              "classloader:" (.getContextClassLoader (Thread/currentThread))
+                              "urls:" (vec (.getURLs (.getContextClassLoader (Thread/currentThread))))))
+    result))
 
 (defn loaded? [ns]
   {:pre [(symbol? ns)]}
@@ -225,11 +227,10 @@
                     (re-find #"^clojure\." (str ns))
                     (re-find #"^rules-clojure\." (str ns))) (print-str ns :compiled? (compiled? ns) :loaded? (loaded? ns) :sha sha))
         (add-classpath! classes-dir)
-        (binding [*compile-path* (str classes-dir)]
+        (binding [*compile-path* (str classes-dir)
+                  *compile-files* true]
           (try
-            (binding [*compile-path* (str classes-dir)
-                      *compile-files* true]
-              (real-load (root-resource ns)))
+            (real-load (root-resource ns))
             (catch Exception e
               (println "compile/compile-:" ns e)
               (throw e)))
@@ -257,7 +258,10 @@
                    rhizome.viz}))
 
 ;;
-(def no-parallel (quote #{tech.v3.dataset tech.v3.datatype}))
+(def no-parallel (quote #{tech.v3.dataset
+                          tech.v3.datatype
+                          tech.v3.dataset.join
+                          tech.v3.dataset.reductions}))
 
 ;; `ns-send` is responsible for making sure each ns is loaded/compiled
 ;; once. Compilation will happen once, repeat sends to the same ns do
@@ -378,8 +382,7 @@
                           (mapv deref))
                      (if compile?
                        (compile- ns)
-                       (do
-                         (real-require ns)))
+                       (real-require ns))
                      true))))
       (do
         (debug "compile parent cycle" parent :-> ns)
@@ -402,7 +405,7 @@
                                  :cached? (cached? ns)
                                  :dest dest-dir
                                  :actual-classpath (cp/classpath)))
-    (assert (seq (fs/ls-r cache-dir)) (print-str "pcopy: no .class files found in" cache-dir))
+    (assert (seq (fs/ls-r cache-dir)) (print-str "pcopy" ns " no .class files found in" cache-dir))
     (copy-classes (fs/->path cache-dir) (fs/->path dest-dir))))
 
 (defn prequire
@@ -563,6 +566,8 @@
     (binding [*out* out
               *executor* executor]
       (with-spy
+        ;; compile here so it doesn't accidentally end up in any user jars
+        @(pcompile nil 'clojure.core.specs.alpha)
         (let [aot-nses (map symbol aot-nses)]
           (doseq [n aot-nses]
             (add-ns n)

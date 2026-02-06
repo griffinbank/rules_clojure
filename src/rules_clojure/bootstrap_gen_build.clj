@@ -3,12 +3,12 @@
             [rules-clojure.fs :as fs]))
 
 (def nses-to-compile
-  '[clojure.tools.deps.alpha.extensions,
-    clojure.tools.deps.alpha.util.session,
-    clojure.tools.deps.alpha.util.io,
-    clojure.tools.deps.alpha.util.dir,
-    clojure.tools.deps.alpha.util.concurrent,
-    clojure.tools.deps.alpha,
+  '[clojure.tools.deps.extensions,
+    clojure.tools.deps.util.session,
+    clojure.tools.deps.util.io,
+    clojure.tools.deps.util.dir,
+    clojure.tools.deps.util.concurrent,
+    clojure.tools.deps,
     rules-clojure.tools.reader.default-data-readers,
 
     rules-clojure.tools.reader.impl.inspect,

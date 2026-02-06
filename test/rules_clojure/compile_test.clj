@@ -69,4 +69,4 @@
 
 (deftest load->ns
   (are [in out] (= out (c/load->ns in))
-    "/clojure/tools/deps/alpha/extensions/maven" 'clojure.tools.deps.alpha.extensions.maven))
+    "/clojure/tools/deps/extensions/maven" 'clojure.tools.deps.extensions.maven))
