@@ -3,8 +3,7 @@
             [rules-clojure.fs :as fs]))
 
 (def nses-to-compile
-  '[clojure.core.cache
-    clojure.data.json
+  '[clojure.data.json
     rules-clojure.java.classpath
     rules-clojure.tools.reader.default-data-readers,
     rules-clojure.tools.reader.impl.commons,

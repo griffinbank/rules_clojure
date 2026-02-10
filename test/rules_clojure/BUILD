@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 ClojureJars=["@rules_clojure_maven_deps//:org_clojure_clojure",
              "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
              "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
-             "@rules_clojure_maven_deps//:org_clojure_tools_deps_alpha"]
+             "@rules_clojure_maven_deps//:org_clojure_tools_deps"]
 
 clojure_library(name="test-utils",
                 aot=["rules-clojure.test-utils"],

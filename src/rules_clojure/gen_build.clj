@@ -7,8 +7,8 @@
             [clojure.spec.alpha :as s]
             [clojure.spec.test.alpha :as stest]
             [clojure.string :as str]
-            [clojure.tools.deps.alpha :as deps]
-            [clojure.tools.deps.alpha.util.concurrent :as concurrent]
+            [clojure.tools.deps :as deps]
+            [clojure.tools.deps.util.concurrent :as concurrent]
             [rules-clojure.fs :as fs]
             [rules-clojure.namespace.find :as find]
             [rules-clojure.namespace.parse :as parse])

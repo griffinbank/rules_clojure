@@ -63,6 +63,8 @@
    {:pre [(every? string? cp)
           (classloader? parent)]}
    (debug "new classloader" cp)
+   (doseq [p cp]
+     (assert (.exists (io/file p)) (str "classpath path" p "not found")))
    (persistentClassLoader.
     (into-array URL (map #(.toURL (io/file %)) cp))
     parent)))
@@ -105,7 +107,7 @@ long as all jar sets are compatible with each other"
 
 (defn shas? [m]
   (and (map? m)
-       (every? (fn [[k v]]
+       (every? (fn [[k [v]]]
                  (and (or (string? k) (symbol? k))
                       (string? v)
                       (= 88 (count v)))) m)))
@@ -143,7 +145,8 @@ long as all jar sets are compatible with each other"
                                 (io/reader
                                  (fs/path->file path)))]
                  (when-let [name (parse/name-from-ns-decl (parse/read-ns-decl rdr))]
-                   [name (bazelsum path)]))))
+                   [name (with-meta [(bazelsum path)]
+                           {:src dir})]))))
        (into {})))
 
 (def dir-shas (memoize dir-shas-))
@@ -171,9 +174,11 @@ long as all jar sets are compatible with each other"
                             (re-find #"(.clj|.cljc|.class)$" name)))))
            (pmap (fn [^JarEntry entry]
                    [(.getRealName entry)
-                    (-> (.getInputStream jarfile entry)
-                        InputStream/.readAllBytes
-                        fs/bazel-hash)]))
+                    (with-meta
+                      [(-> (.getInputStream jarfile entry)
+                          InputStream/.readAllBytes
+                          fs/bazel-hash)]
+                      {:src jar})]))
            (into {})))))
 
 (def jar-shas (memoize jar-shas-))
@@ -232,7 +237,8 @@ long as all jar sets are compatible with each other"
   (->> input-map
        (mapcat (fn [[path hash]]
                  (if (.endsWith ^String path ".jar")
-                   (concat [[path hash]] (jar-shas path hash))
+                   (concat [[path hash]]
+                           (jar-shas path hash))
                    [[path hash]])))
        (into {})))
 
@@ -271,16 +277,10 @@ long as all jar sets are compatible with each other"
                    (assert (coll? (:classpath cl)))
                    (assert (seq (:classpath cl)))
                    (assert (every? string? (:classpath cl)))
-                   (let [already-compiled? (keep (fn [ns]
-                                                   (when (compiled-in-jar? (symbol ns) (:classloader cl))
-                                                     ns)) aot-nses)
-                         [klass in-sha desired-sha :as k] (first (conflicting-keys in desired-in))
-                         k-src-cached (first (filter (fn [path]
-                                                       (contains? (shas path "") klass)) (keys in)))
-                         k-src-desired (first (filter (fn [path]
-                                                        (contains? (shas path "") klass)) (keys input-map)))]
-                     (assert (or already-compiled? klass))
-                     (println-memo "conflict" k k-src-cached k-src-desired))))))
+                   (->> (conflicting-keys in desired-in)
+                        (mapv (fn [k]
+                                (let [[klass [in-sha desired-sha]] k]
+                                  (println-memo "conflict" klass (meta in-sha) (meta desired-sha))))))))))
     cache))
 
 (defn deref-cache [caches]
@@ -314,11 +314,8 @@ long as all jar sets are compatible with each other"
 (defn keep-n
   "Keep at most N caches"
   [caches n]
-  (let [caches (sort-by (fn [[k _]] (count k)) caches)
-        [expire keep] (split-at (- (count caches) n) caches)]
-    (doseq [[_cp cache] expire]
-      (util/shim-invoke (:classloader cache) "rules-clojure.compile" "cleanup!"))
-    (into {} keep)))
+  (let [caches (sort-by (fn [[k _]] (count k)) caches)]
+    (into {} (drop (- (count caches) n) caches))))
 
 (defn ensure-classloader [*caches desired-cp input-map aot-nses]
   (let [*cl (promise)]
@@ -341,8 +338,7 @@ long as all jar sets are compatible with each other"
                               (deliver *cl cl)
                               (-> caches
                                   (dissoc in)
-                                  (assoc new-in (update cache :classpath set/union new-paths))
-                                  (keep-n 3)))
+                                  (assoc new-in (update cache :classpath set/union new-paths))))
                             (let [cl (new-classloader- desired-cp)
                                   in (explode-inputs input-map)]
                               (debug "new cl" (inc (count caches)))
@@ -364,8 +360,9 @@ long as all jar sets are compatible with each other"
                               ;; so we don't have to lock later.
                               (util/shim-require cl 'rules-clojure.compile)
                               (deliver *cl cl)
-                              (assoc caches in {:classpath (set desired-cp)
-                                                :classloader cl}))))))))
+                              (-> caches
+                                  (assoc in {:classpath (set desired-cp)
+                                             :classloader cl})))))))))
     @*cl))
 
 (defn caching

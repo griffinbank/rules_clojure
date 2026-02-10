@@ -72,8 +72,8 @@
       (try
         (util/shim-invoke cl "rules-clojure.compile" "compile!" classes-dir aot-arr *out*)
         (catch Throwable t
-          (throw (ex-info "while compiling" {:args args
-                                             :classloader cl} t)))))))
+          (throw (ex-info "jar/compile:" {:args args
+                                          :classloader cl} t)))))))
 
 (defn create-jar [{:keys [src-dir classes-dir output-jar resources aot-nses] :as args}]
   (s/assert ::compile args)
