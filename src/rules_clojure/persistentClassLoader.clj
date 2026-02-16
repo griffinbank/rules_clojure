@@ -1,5 +1,7 @@
 (ns rules-clojure.persistentClassLoader
   (:require [rules-clojure.util :as util])
+  (:import [java.lang.reflect Method]
+           [clojure.lang DynamicClassLoader])
   (:gen-class
    :state state
    :constructors {["[Ljava.net.URL;" "java.lang.ClassLoader"] ["[Ljava.net.URL;" "java.lang.ClassLoader"]
@@ -56,9 +58,9 @@
 (set! *warn-on-reflection* true)
 
 (defn clojure-find-class [this name]
-  (when-let [rt-class ^Class (.parentFindClass this "clojure.lang.RT")]
-    (let [baseloader-method (.getDeclaredMethod rt-class "baseLoader" (into-array Class []))
-          loader (.invoke baseloader-method rt-class (into-array Object []))]
+  (when-let [^Class rt-class (.parentFindClass this "clojure.lang.RT")]
+    (let [^Method baseloader-method (.getDeclaredMethod rt-class "baseLoader" (into-array Class []))
+          ^DynamicClassLoader loader (.invoke baseloader-method rt-class (into-array Object []))]
 
       (.findInMemoryClass loader name))))
 

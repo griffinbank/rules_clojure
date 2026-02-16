@@ -111,10 +111,19 @@
         exit (with-java-out java-out
                (binding [*out* out-printer]
                  (try
-                   (let [compile-req (json/read-str (first arguments) :key-fn keyword)]
+                   (let [compile-req (json/read-str (first arguments) :key-fn keyword)
+                         cp-set (set (:classpath compile-req))
+                         ;; don't pass inputs that won't go on the
+                         ;; classpath, because they could interfere
+                         ;; with the compatibility test, like
+                         ;; libworker.jar
+                         im (->> (input-map inputs)
+                                 (filter (fn [[path _]]
+                                           (contains? cp-set path)))
+                                 (into {}))]
                      (process-request (assoc compile-req
                                              :classloader-strategy classloader-strategy
-                                             :input-map (input-map inputs))))
+                                             :input-map im)))
                    0
                    (catch Throwable t
                      (println t) ;; print to bazel str
