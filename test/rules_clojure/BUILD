@@ -3,16 +3,17 @@ load("//:rules.bzl", "clojure_library", "clojure_test")
 package(default_visibility = ["//visibility:public"])
 
 ##
-ClojureJars=["@rules_clojure_maven_deps//:org_clojure_clojure",
-             "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
-             "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
-             "@rules_clojure_maven_deps//:org_clojure_tools_deps"]
+ClojureJars=["@maven_deps//:org_clojure_clojure",
+             "@maven_deps//:org_clojure_spec_alpha",
+             "@maven_deps//:org_clojure_core_specs_alpha",
+             "@maven_deps//:org_clojure_tools_deps"]
 
 clojure_library(name="test-utils",
                 aot=["rules-clojure.test-utils"],
                 srcs=["test_utils.clj"],
                 resource_strip_prefix="test",
                 deps=["//src/rules_clojure:libfs",
+                      "//src/rules_clojure:srcjar",
                       "@bazel_tools//tools/java/runfiles"] + ClojureJars)
 
 ## java_library is special when it comes to runfiles. Without the filegroup, the jars won't appear as runfiles, despite us placing them in `data`.

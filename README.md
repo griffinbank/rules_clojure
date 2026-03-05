@@ -272,25 +272,6 @@ cljs_library(
 
 `clojure_gen_namespace_loader` generates a file with the specified filename and namespace. It `:requires` all namespaces found under `in_dirs`. The generated namespace defines a function `all-namespaces`. Your test runner can require that namespace.
 
-# Updating `rules_clojure` dependencies
-
-- Update the `artifacts` within `maven_install(name = "frozen_deps")` in `WORKSPACE`.
-- Run `REPIN=1 bazel run @unpinned_frozen_deps//:pin` to fetch the new dependency tree and write it out to `frozen_deps_install.json`.
-- Run `bazel sync` to ensure the latest deps have actually been pulled and are referenced as `http_file` entries in `external/frozen_deps/defs.bzl`.
-- Run `./tools/freeze-deps.py --zip deps/rules_clojure_maven_deps.zip`.
-- Check everything into the repository.
-
-## Why `rules_clojure_maven_deps.zip`?
-
-This is following a pattern used by the Bazel team to handle dependencies via `rules_jvm_external`, in `contrib/rules_jvm` and multiple others. The idea is as follows:
-- Pin dependencies with explicit checksum shas, so that if a package is compromised and a malicious version of an existing release is uploaded (or a new release that our Maven coordinates allow), we can detect and error on that.
-- Use standard Bazel tooling to fetch those dependencies:
-  - Has automatic checksum validation.
-  - Allows standard Bazel options to add URL mirrors, set authentication for hosts, etc.
-- Reference the pinned dependencies elsewhere in the package, so that the unpinned, non-Bazel-downloaded, versions are only used by the team maintaining the rules, when bumping the dependencies.
-
-This makes things much nicer and more standard for users of the rules.
-
 # Known Issues
 
 - builds are non-reproducible for one reason:
@@ -299,7 +280,7 @@ This makes things much nicer and more standard for users of the rules.
 
 # Compatibility
 
-rules_clojure requires JDK 21 or higher. It is currently tested with Bazel 7.4.1 and JDK21
+rules_clojure requires JDK 21 or higher. It is currently tested with Bazel 8.6 and JDK21
 
 # Thanks
 
@@ -314,7 +295,7 @@ rules_clojure requires JDK 21 or higher. It is currently tested with Bazel 7.4.1
 Copyright and License
 ----------------------------------------
 
-Copyright © 2025 Griffin Bank. All rights reserved. The use and
+Copyright © 2026 Griffin Bank. All rights reserved. The use and
 distribution terms for this software are covered by the
 [Eclipse Public License 1.0] which can be found in the file
 epl-v10.html at the root of this distribution. By using this software
