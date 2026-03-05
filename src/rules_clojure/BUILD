@@ -35,11 +35,11 @@ java_library(
                "util.clj"],
 
     resource_strip_prefix="src",
-    runtime_deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
-                  "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
-                  "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
-                  "@rules_clojure_maven_deps//:org_clojure_data_json",
-                  "@rules_clojure_maven_deps//:org_clojure_tools_deps"])
+    runtime_deps=["@maven_deps//:org_clojure_clojure",
+                  "@maven_deps//:org_clojure_spec_alpha",
+                  "@maven_deps//:org_clojure_core_specs_alpha",
+                  "@maven_deps//:org_clojure_data_json",
+                  "@maven_deps//:org_clojure_tools_deps"])
 
 java_binary(
     name="bootstrap-bin",
@@ -95,9 +95,9 @@ genrule(
 
 java_import(name="libworker",
             jars=["libworker.jar"],
-            runtime_deps=["@rules_clojure_maven_deps//:org_clojure_clojure",
-                          "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
-                          "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha"],
+            runtime_deps=["@maven_deps//:org_clojure_clojure",
+                          "@maven_deps//:org_clojure_spec_alpha",
+                          "@maven_deps//:org_clojure_core_specs_alpha"],
             data=[":bootstrap-worker"])
 
 java_import(name="libcompile",
@@ -110,10 +110,10 @@ java_import(name="libfs",
 
 java_import(name="libgen_build",
             jars=["libgen_build.jar"],
-            runtime_deps = ["@rules_clojure_maven_deps//:org_clojure_clojure",
-                            "@rules_clojure_maven_deps//:org_clojure_spec_alpha",
-                            "@rules_clojure_maven_deps//:org_clojure_core_specs_alpha",
-                            "@rules_clojure_maven_deps//:org_clojure_tools_deps",
+            runtime_deps = ["@maven_deps//:org_clojure_clojure",
+                            "@maven_deps//:org_clojure_spec_alpha",
+                            "@maven_deps//:org_clojure_core_specs_alpha",
+                            "@maven_deps//:org_clojure_tools_deps",
                             ":libfs"],
             data=[":bootstrap-gen-build"])
 

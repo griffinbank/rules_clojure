@@ -1,0 +1,19 @@
+module(name = "example-simple")
+
+bazel_dep(name = "rules_clojure", version = "0.5")
+
+local_path_override(module_name = "rules_clojure",
+                    path = "../..")
+
+deps = use_extension("@rules_clojure//:extensions.bzl", "deps")
+
+deps.install(
+    repo_name = "deps",
+    aliases = [
+        "dev",
+        "test",
+    ],
+    deps_edn = "//:deps.edn",
+)
+
+use_repo(deps, "deps")
