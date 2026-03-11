@@ -1,7 +1,6 @@
 (ns rules-clojure.gen-build
   "Tools for generating BUILD.bazel files for clojure deps"
-  (:require [clojure.core.specs.alpha :as cs]
-            [clojure.edn :as edn]
+  (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.set :as set]
             [clojure.spec.alpha :as s]
@@ -13,7 +12,6 @@
             [rules-clojure.namespace.find :as find]
             [rules-clojure.namespace.parse :as parse])
   (:import (clojure.lang IPersistentList IPersistentMap IPersistentVector Keyword Var)
-           (java.io File)
            (java.nio.file Path)
            (java.util.jar JarEntry JarFile))
   (:gen-class))
@@ -389,24 +387,28 @@
 
 (defn get-ns-decl [^Path path platform]
   (try
-    (let [form (-> path
-                  (.toFile)
-                  (slurp)
-                  (#(read-string {:read-cond :allow
-                                  :features #{platform}} %)))]
-     ;; the first form might not be `ns`, in which case ignore the file
-     (when (and form (= 'ns (first form)))
-       form))
+    (with-open [rdr (java.io.PushbackReader. (io/reader (.toFile path)))]
+      (loop []
+        (let [form (clojure.core/read {:read-cond :allow
+                                       :features #{platform}
+                                       :eof ::eof}
+                                      rdr)]
+          (cond
+            (= ::eof form) nil
+            (and (sequential? form) (= 'ns (first form))) form
+            :else (recur)))))
     (catch Exception e
-      (throw (ex-info (str "while reading" path) {:path path
-                                                  :platform platform} e)))))
+      (throw (ex-info (str "while reading " path) {:path path
+                                                   :platform platform} e)))))
 
 (defn get-ns-meta
   "return any metadata attached to the namespace, or nil"
   [ns-decl]
   (assert (= 'ns (first ns-decl)))
-  (-> (s/conform ::cs/ns-form (rest ns-decl))
-      :attr-map))
+  (let [decl (nnext ns-decl)
+        decl (if (string? (first decl)) (next decl) decl)]
+    (when (map? (first decl))
+      (first decl))))
 
 (s/fdef ns-deps :args (s/cat :a (s/keys :req-un [::jar->lib ::deps-repo-tag]) :d ::ns-decl))
 (defn ns-deps
