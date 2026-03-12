@@ -375,7 +375,7 @@
     (if (or (not parent) (track-dep! parent ns))
       (binding [*parallel* parallel?]
         (send ns (fn []
-                   (if (and (compiled? ns) (not (src-available? ns)))
+                   (if (not (src-available? ns))
                      ;; pre-built AOT jar: source not on classpath, class
                      ;; files exist. Can't resolve deps via ns-deps (no
                      ;; source to parse), so just require.
