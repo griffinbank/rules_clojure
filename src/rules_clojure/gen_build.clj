@@ -546,7 +546,7 @@
     (cljs-path? path) #{:cljs}))
 
 (defn prun [f coll]
-  (run! deref (mapv #(future (f %)) coll)))
+  (mapv deref (mapv #(future (f %)) coll)))
 
 (s/fdef ns-rules :args (s/cat :a (s/keys :req-un [::basis ::deps-edn-dir ::jar->lib ::deps-repo-tag ::deps-bazel]) :p (s/coll-of fs/path?)))
 (defn ns-rules
@@ -602,10 +602,6 @@
                 [])
           ns-library-meta (dissoc ns-library-meta :aot)]
 
-      (when ns-library-meta
-        (println ns-name "extra:" ns-library-meta))
-      (when ns-test-meta
-        (println ns-name "test extra:" ns-test-meta))
       (->>
        [(when (seq ns-decls)
           (emit-bazel (list 'clojure_library (kwargs (-> (merge-with into
@@ -690,25 +686,29 @@
                                                                :srcs (mapv fs/filename paths)
                                                                :data (mapv (fn [p]
                                                                              (str "//" (fs/path-relative-to deps-edn-dir p) ":__clj_files")) clj-subdirs)})))))))]
-    (-> dir
-        (fs/->path "BUILD.bazel")
-        fs/path->file
-        (spit content :encoding "UTF-8"))))
+    (let [build-file (-> dir (fs/->path "BUILD.bazel") fs/path->file)
+          changed? (not= content (when (.exists build-file) (slurp build-file :encoding "UTF-8")))]
+      (when changed?
+        (spit build-file content :encoding "UTF-8"))
+      {:files (count paths) :wrote (if changed? 1 0)})))
 
 (s/fdef gen-source-paths- :args (s/cat :a (s/keys :req-un [::deps-edn-dir ::src-ns->label ::dep-ns->label ::jar->lib ::deps-repo-tag ::deps-bazel]) :paths (s/coll-of fs/path?)))
 (defn gen-source-paths-
   "gen-dir for every directory on the classpath."
   [args paths]
   (assert (map? (:src-ns->label args)))
-  (->> paths
-       (mapcat (fn [path]
-                 (fs/ls-r path)))
-       (map fs/dirname)
-       (distinct)
-       (sort-by (comp count str))
-       (reverse)
-       (prun (fn [dir]
-               (gen-dir args dir)))))
+  (let [results (->> paths
+                     (mapcat (fn [path]
+                               (fs/ls-r path)))
+                     (map fs/dirname)
+                     (distinct)
+                     (sort-by (comp count str))
+                     (reverse)
+                     (prun (fn [dir]
+                             (gen-dir args dir))))]
+    (reduce (fn [acc m] (merge-with + acc m))
+            {:files 0 :wrote 0 :dirs (count results)}
+            results)))
 
 (defn path->absolute
   [path deps-edn-path]
@@ -770,7 +770,6 @@
 (defn gen-deps-build
   "generates the BUILD file for @deps//: with a single target containing all deps.edn-resolved dependencies"
   [{:keys [repository-dir deps-build-dir dep-ns->label jar->lib lib->jar lib->deps deps-repo-tag deps-bazel] :as args}]
-  (println "writing to" (-> (fs/->path deps-build-dir "BUILD.bazel") fs/path->file))
   (spit (-> (fs/->path deps-build-dir "BUILD.bazel") fs/path->file)
         (str/join "\n\n" (concat
                           [(emit-bazel (list 'package (kwargs {:default_visibility ["//visibility:public"]})))
@@ -987,5 +986,8 @@
             :deps deps
             :srcs srcs
             :ns-loader gen-namespace-loader)]
-    (f opts)
-    (shutdown-agents)))
+    (let [result (f opts)]
+      (when (map? result)
+        (println (format "gen_srcs: checked %d files across %d dirs, wrote %d BUILD files"
+                         (:files result) (:dirs result) (:wrote result))))
+      (shutdown-agents))))
