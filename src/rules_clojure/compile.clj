@@ -366,27 +366,24 @@
     (if (or (not parent) (track-dep! parent ns))
       (binding [*parallel* parallel?]
         (send ns (fn []
-                   (if (compiled? ns)
-                     ;; already AOT-compiled (e.g. from a pre-built jar),
-                     ;; just require it — source may not be on the classpath
-                     (do (real-require ns) true)
-                     (let [compile? (not (contains? no-compile ns))
-                           deps (ns-deps ns)]
-                       (->> deps
-                            (mapv (fn [d]
-                                    (let [cycle? (not (track-dep! ns d))
-                                          *f (pcompile ns d)]
-                                      (when (not cycle?)
-                                        ;; don't deref the compile that
-                                        ;; cause cycles, the other
-                                        ;; thread will take care of it
-                                        *f))))
-                            (filter identity)
-                            (mapv deref))
-                       (if compile?
-                         (compile- ns)
-                         (real-require ns))
-                       true)))))
+                   (let [compile? (and (not (contains? no-compile ns))
+                                       (not (compiled? ns)))
+                         deps (ns-deps ns)]
+                     (->> deps
+                          (mapv (fn [d]
+                                  (let [cycle? (not (track-dep! ns d))
+                                        *f (pcompile ns d)]
+                                    (when (not cycle?)
+                                      ;; don't deref the compile that
+                                      ;; cause cycles, the other
+                                      ;; thread will take care of it
+                                      *f))))
+                          (filter identity)
+                          (mapv deref))
+                     (if compile?
+                       (compile- ns)
+                       (real-require ns))
+                     true))))
       (do
         (debug "compile parent cycle" parent :-> ns)
         (CompletableFuture/completedFuture true)))))
