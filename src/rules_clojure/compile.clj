@@ -34,6 +34,15 @@
 (defn src-resource-name [ns]
   (.substring ^String (#'clojure.core/root-resource ns) 1))
 
+(defn src-available?
+  "Returns true if source (.clj or .cljc) is on the classpath for this namespace.
+  Unlike src-resource, does not assert."
+  [ns]
+  (boolean
+   (->> [".clj" ".cljc"]
+        (some (fn [ext]
+                (io/resource (str (src-resource-name ns) ext)))))))
+
 (defn src-resource
   "given a namespace symbol, return a tuple of [filename URL] where the
   backing .clj is located"
@@ -366,11 +375,13 @@
     (if (or (not parent) (track-dep! parent ns))
       (binding [*parallel* parallel?]
         (send ns (fn []
-                   (if (compiled? ns)
-                     ;; already AOT-compiled (e.g. from a pre-built jar),
-                     ;; just require it — source may not be on the classpath
+                   (if (not (src-available? ns))
+                     ;; pre-built AOT jar: source not on classpath, class
+                     ;; files exist. Can't resolve deps via ns-deps (no
+                     ;; source to parse), so just require.
                      (do (real-require ns) true)
-                     (let [compile? (not (contains? no-compile ns))
+                     (let [compile? (and (not (contains? no-compile ns))
+                                         (not (compiled? ns)))
                            deps (ns-deps ns)]
                        (->> deps
                             (mapv (fn [d]
