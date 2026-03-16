@@ -70,3 +70,13 @@
 (deftest load->ns
   (are [in out] (= out (c/load->ns in))
     "/clojure/tools/deps/extensions/maven" 'clojure.tools.deps.extensions.maven))
+
+(deftest src-available?-test
+  (testing "returns true for namespaces with source on the classpath"
+    (is (true? (c/src-available? 'clojure.string)))
+    (is (true? (c/src-available? 'clojure.set))))
+  (testing "returns false for AOT-compiled namespace with no source on classpath"
+    (is (c/compiled? 'rules-clojure.aot-only-fixture))
+    (is (false? (c/src-available? 'rules-clojure.aot-only-fixture))))
+  (testing "returns false for namespaces without source"
+    (is (false? (c/src-available? 'no.such.namespace.exists)))))
