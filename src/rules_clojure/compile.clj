@@ -38,10 +38,10 @@
   "Returns true if source (.clj or .cljc) is on the classpath for this namespace.
   Unlike src-resource, does not assert."
   [ns]
-  (boolean
-   (->> [".clj" ".cljc"]
-        (some (fn [ext]
-                (io/resource (str (src-resource-name ns) ext)))))))
+  (->> [".clj" ".cljc"]
+       (some (fn [ext]
+               (io/resource (str (src-resource-name ns) ext))))
+       boolean))
 
 (defn src-resource
   "given a namespace symbol, return a tuple of [filename URL] where the

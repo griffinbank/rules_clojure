@@ -19,8 +19,14 @@ clojure_library(name="test-utils",
 filegroup(name="clojure",
           srcs=ClojureJars)
 
+clojure_library(name="aot-only-fixture",
+                aot=["rules-clojure.aot-only-fixture"],
+                srcs=["aot_only_fixture.clj"],
+                resource_strip_prefix="test",
+                deps=ClojureJars)
+
 clojure_library(name="test-deps",
-                resources=glob(["*.clj"]),
+                resources=glob(["*.clj"], exclude=["aot_only_fixture.clj"]),
                 resource_strip_prefix="test/",
                 deps=["//src/rules_clojure:libworker",
                       "//src/rules_clojure:libcompile",
@@ -60,6 +66,7 @@ clojure_test(name="persistent-classloader-test",
 
 clojure_test(name="compile-test",
              deps=[":test-deps",
+                   ":aot-only-fixture",
                    "@example-simple//src/example:src"],
              test_ns = "rules-clojure.compile-test",
              data=["//src/rules_clojure:bootstrap"],
