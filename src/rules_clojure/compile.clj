@@ -376,9 +376,10 @@
       (binding [*parallel* parallel?]
         (send ns (fn []
                    (if (not (src-available? ns))
-                     ;; pre-built AOT jar: source not on classpath, class
-                     ;; files exist. Can't resolve deps via ns-deps (no
-                     ;; source to parse), so just require.
+                     ;; No source on classpath (e.g. pre-built AOT jar).
+                     ;; Can't resolve deps via ns-deps, so just require
+                     ;; directly. If class files are also missing, this
+                     ;; will fail with a clear classpath error.
                      (do (real-require ns) true)
                      (let [compile? (and (not (contains? no-compile ns))
                                          (not (compiled? ns)))
