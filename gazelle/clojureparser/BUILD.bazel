@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "clojureparser",
+    srcs = ["parser.go"],
+    importpath = "github.com/griffinbank/rules_clojure/gazelle/clojureparser",
+    visibility = ["//gazelle:__subpackages__"],
+)
+
+go_test(
+    name = "clojureparser_test",
+    srcs = [
+        "contract_test.go",
+        "parser_test.go",
+    ],
+    embed = [":clojureparser"],
+)
