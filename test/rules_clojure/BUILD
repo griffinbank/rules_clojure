@@ -64,6 +64,10 @@ clojure_test(name="persistent-classloader-test",
                   "COMPILE_CLASSPATH": "$(rlocationpaths :clojure) $(rlocationpaths //src/rules_clojure:bootstrap) $(rlocationpaths :test-deps) $(rlocationpaths @example-simple//src/example:src) $(rlocationpaths @bazel_tools//tools/java/runfiles)"},
              test_ns = "rules-clojure.persistent-classloader-test")
 
+clojure_test(name="gen-build-test",
+             deps=[":test-deps"],
+             test_ns = "rules-clojure.gen-build-test")
+
 clojure_test(name="compile-test",
              deps=[":test-deps",
                    ":aot-only-fixture",
