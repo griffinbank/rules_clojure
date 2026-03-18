@@ -97,6 +97,10 @@ func (l *clojureLang) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.
 	// 5. Extra deps from ns_meta.
 	mergeNsMetaDeps(depSet, ns)
 
+	// Exclude self-deps (e.g. .cljc files with :require-macros of themselves).
+	selfLabel := label.New("", from.Pkg, from.Name).String()
+	delete(depSet, selfLabel)
+
 	// Build sorted, deduplicated deps list.
 	deps := make([]string, 0, len(depSet))
 	for dep := range depSet {

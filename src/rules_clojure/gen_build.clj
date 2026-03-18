@@ -564,9 +564,13 @@
           ns-decl-platforms (->>
                              (filter clj*-path? paths)
                              (mapcat (fn [path]
-                                       (->> platforms
-                                            (map (fn [platform]
-                                                   [(get-ns-decl path platform) platform]))))))
+                                       (let [file-platforms (cond
+                                                              (clj-path? path) #{:clj}
+                                                              (cljs-path? path) #{:cljs}
+                                                              (cljc-path? path) #{:clj :cljs})]
+                                         (->> (set/intersection platforms file-platforms)
+                                              (map (fn [platform]
+                                                     [(get-ns-decl path platform) platform])))))))
           ns-decls (map first ns-decl-platforms)
           ns-name (-> ns-decls first second)
           path (first paths)
