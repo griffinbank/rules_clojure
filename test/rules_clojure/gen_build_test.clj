@@ -7,9 +7,7 @@
 (defn- make-temp-dir
   "Create a temp directory with a src/ subdirectory (matching basis :paths)."
   []
-  (let [dir (java.io.File/createTempFile "gen-build-test" "")]
-    (.delete dir)
-    (.mkdirs dir)
+  (let [dir (.toFile (fs/new-temp-dir "gen-build-test"))]
     (.mkdirs (io/file dir "src" "example"))
     dir))
 
@@ -47,13 +45,13 @@
     (let [dir (make-temp-dir)
           ;; Create .clj and .cljs files sharing a basename
           clj-path (write-file dir "api_test.clj"
-                     "(ns example.api-test\n  (:require [reitit.core :as r]\n            [clojure.test :refer [deftest]]))")
+                               "(ns example.api-test\n  (:require [reitit.core :as r]\n            [clojure.test :refer [deftest]]))")
           cljs-path (write-file dir "api_test.cljs"
-                      "(ns example.api-test\n  (:require [reagent.core :as reagent]))")
+                                "(ns example.api-test\n  (:require [reagent.core :as reagent]))")
           ;; dep-ns->label with different labels per platform
           dep-ns->label {:clj  {'reitit.core      "ns_metosin_reitit_core_reitit_core"
-                                 'clojure.test     "org_clojure_clojure"
-                                 'reagent.core     "ns_reagent_reagent_reagent_core"}
+                                'clojure.test     "org_clojure_clojure"
+                                'reagent.core     "ns_reagent_reagent_reagent_core"}
                          :cljs {'reitit.core      "metosin_reitit_core"
                                 'reagent.core     "reagent_reagent"}}
           args (minimal-args dir dep-ns->label)
@@ -74,17 +72,13 @@
         (is (not (some #(= "@deps//:ns_reagent_reagent_reagent_core" %) deps))
             "CLJS require must NOT be resolved via CLJ dep map")
         (finally
-          (.delete (io/file dir "src" "example" "api_test.clj"))
-          (.delete (io/file dir "src" "example" "api_test.cljs"))
-          (.delete (io/file dir "src" "example"))
-          (.delete (io/file dir "src"))
-          (.delete dir))))))
+          (fs/rm-rf (.toPath dir)))))))
 
 (deftest ns-rules-cljc-resolves-both-platforms
   (testing "a .cljc file's requires should be resolved via both CLJ and CLJS dep maps"
     (let [dir (make-temp-dir)
           cljc-path (write-file dir "shared.cljc"
-                      "(ns example.shared\n  (:require [clojure.string :as str]))")
+                                "(ns example.shared\n  (:require [clojure.string :as str]))")
           dep-ns->label {:clj  {'clojure.string "ns_org_clojure_clojure_clojure_string"}
                          :cljs {'clojure.string "org_clojure_clojurescript"}}
           args (minimal-args dir dep-ns->label)
@@ -97,7 +91,4 @@
         (is (some #(= "@deps//:org_clojure_clojurescript" %) deps)
             "cljc require should resolve via CLJS dep map")
         (finally
-          (.delete (io/file dir "src" "example" "shared.cljc"))
-          (.delete (io/file dir "src" "example"))
-          (.delete (io/file dir "src"))
-          (.delete dir))))))
+          (fs/rm-rf (.toPath dir)))))))
