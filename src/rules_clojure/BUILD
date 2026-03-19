@@ -13,6 +13,8 @@ java_library(
                "bootstrap_libfs.clj",
                "bootstrap_worker.clj",
                "bootstrap_testrunner.clj",
+               "bootstrap_gazelle_server.clj",
+               "gazelle_server.clj",
                "compile.clj",
                "fs.clj",
                "jar.clj",
@@ -131,6 +133,26 @@ java_binary(name="gen_build",
             main_class="rules_clojure.gen_build",
             runtime_deps=[":libgen_build"],
             jvm_flags = ["-Xmx500m", "-XX:MaxMetaspaceSize=500m"])
+
+genrule(
+    name="bootstrap-gazelle-server",
+    tools=[":bootstrap-bin"],
+    cmd="""
+    mkdir -p gazelle-server-classes
+    $(location :bootstrap-bin) -m rules-clojure.bootstrap-gazelle-server $(location :libgazelle_server.jar)
+    """,
+    outs=["libgazelle_server.jar"])
+
+java_import(name="libgazelle_server",
+            jars=["libgazelle_server.jar"],
+            runtime_deps=[":libgen_build"],
+            data=[":bootstrap-gazelle-server"])
+
+java_binary(name="gazelle_server",
+            main_class="rules_clojure.gazelle_server",
+            runtime_deps=[":libgazelle_server"],
+            jvm_flags=["-Xmx500m", "-XX:MaxMetaspaceSize=500m"],
+            visibility=["//visibility:public"])
 
 java_library(name="srcjar",
              resources=glob(["*.clj"]),

@@ -349,3 +349,55 @@
           "should emit __clj_lib aggregating subdirs")
       (is (re-find #"\"//src/example/child:__clj_lib\"" content)
           "__clj_lib deps should reference the clj subdir"))))
+
+(deftest test-path?-recognizes-clj-and-cljc-only
+  (testing "anchored .clj/.cljc test suffix"
+    (is (gb/test-path? "core_test.clj"))
+    (is (gb/test-path? "core_test.cljc"))
+    (is (gb/test-path? "/abs/path/foo_test.clj"))
+    (is (gb/test-path? (fs/->path "core_test.clj"))))
+  (testing ".cljs tests are intentionally excluded"
+    (is (not (gb/test-path? "core_test.cljs"))))
+  (testing "anchored — substring matches do not count"
+    (is (not (gb/test-path? "core_test.clj.bak")))
+    (is (not (gb/test-path? "_test.clj.swp"))))
+  (testing "non-test files"
+    (is (not (gb/test-path? "core.clj")))
+    (is (not (gb/test-path? "test.clj")))
+    (is (not (gb/test-path? "test_core.clj")))))
+
+(deftest rollup-rules-empty-inputs
+  (testing "no libs, no files, no subdirs → no rules"
+    (is (empty? (gb/rollup-rules {})))
+    (is (empty? (gb/rollup-rules {:lib-deps [] :src-files [] :clojure-subdir-paths []})))))
+
+(deftest rollup-rules-libs-only
+  (let [out (gb/rollup-rules {:lib-deps ["core" "util"]
+                              :src-files ["core.clj" "util.cljs"]
+                              :clojure-subdir-paths []})
+        kinds (mapv :type out)]
+    (is (= [:clojure_library :filegroup] kinds))
+    (is (= [":core" ":util"] (get-in (first out) [:attrs :deps])))
+    (is (= ["core.clj" "util.cljs"] (get-in (second out) [:attrs :srcs])))
+    (is (nil? (get-in (second out) [:attrs :data])))))
+
+(deftest rollup-rules-subdirs-only
+  (let [out (gb/rollup-rules {:lib-deps []
+                              :src-files []
+                              :clojure-subdir-paths ["src/example/child"]})]
+    (is (= [:clojure_library :filegroup] (mapv :type out)))
+    (is (= ["//src/example/child:__clj_lib"] (get-in (first out) [:attrs :deps])))
+    (is (= ["//src/example/child:__clj_files"] (get-in (second out) [:attrs :data])))
+    (is (nil? (get-in (second out) [:attrs :srcs])))))
+
+(deftest rollup-rules-mixed
+  (let [out (gb/rollup-rules {:lib-deps ["webauthn"]
+                              :src-files ["webauthn.clj" "webauthn.cljs"]
+                              :clojure-subdir-paths ["src/example/api" "src/example/db"]})
+        clj-lib (first out)
+        clj-files (second out)]
+    (is (= [":webauthn" "//src/example/api:__clj_lib" "//src/example/db:__clj_lib"]
+           (get-in clj-lib [:attrs :deps])))
+    (is (= ["webauthn.clj" "webauthn.cljs"] (get-in clj-files [:attrs :srcs])))
+    (is (= ["//src/example/api:__clj_files" "//src/example/db:__clj_files"]
+           (get-in clj-files [:attrs :data])))))
