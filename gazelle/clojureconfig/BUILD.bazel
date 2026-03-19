@@ -1,0 +1,8 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "clojureconfig",
+    srcs = ["config.go"],
+    importpath = "github.com/griffinbank/rules_clojure/gazelle/clojureconfig",
+    visibility = ["//gazelle:__subpackages__"],
+)
