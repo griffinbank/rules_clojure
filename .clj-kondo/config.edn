@@ -1,0 +1,2 @@
+{:linters {:unused-binding {:exclude-destructured-keys-in-fn-args true
+                            :exclude-destructured-as true}}}
