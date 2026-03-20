@@ -1,8 +1,12 @@
 (ns rules-clojure.gen-build-test
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.java.io :as io]
-            [rules-clojure.gen-build :as gb]
+            [clojure.string :as str]
+            [clojure.java.shell :as shell]
+            [rules-clojure.gen-build :as gen-build]
             [rules-clojure.fs :as fs]))
+
+;; ---- platform-resolution tests (ns-rules) ----
 
 (defn- make-temp-dir
   "Create a temp directory with a src/ subdirectory (matching basis :paths)."
@@ -55,7 +59,7 @@
                          :cljs {'reitit.core      "metosin_reitit_core"
                                 'reagent.core     "reagent_reagent"}}
           args (minimal-args dir dep-ns->label)
-          result (gb/ns-rules args [clj-path cljs-path])
+          result (gen-build/ns-rules args [clj-path cljs-path])
           deps (extract-deps result)]
       (try
         ;; Should include CLJ resolution of reitit.core (AOT label)
@@ -82,7 +86,7 @@
           dep-ns->label {:clj  {'clojure.string "ns_org_clojure_clojure_clojure_string"}
                          :cljs {'clojure.string "org_clojure_clojurescript"}}
           args (minimal-args dir dep-ns->label)
-          result (gb/ns-rules args [cljc-path])
+          result (gen-build/ns-rules args [cljc-path])
           deps (extract-deps result)]
       (try
         ;; .cljc should get deps from BOTH platforms
@@ -92,3 +96,87 @@
             "cljc require should resolve via CLJS dep map")
         (finally
           (fs/rm-rf (.toPath dir)))))))
+
+;; ---- formatting tests (emit-bazel) ----
+
+(deftest test-emit-bazel-vector-inline
+  (testing "empty vector"
+    (is (= "[]" (gen-build/emit-bazel []))))
+  (testing "single element"
+    (is (= "[\"a\"]" (gen-build/emit-bazel ["a"]))))
+  (testing "single element stays inline"
+    (is (= "[\"long-element-name\"]" (gen-build/emit-bazel ["long-element-name"])))))
+
+(deftest test-emit-bazel-function-call-inline
+  (testing "positional args only"
+    (is (= "load(\"@rules_clojure//:rules.bzl\", \"clojure_library\")"
+           (gen-build/emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library")))))
+  (testing "single kwarg stays inline"
+    (is (= "package(default_visibility = [\"//visibility:public\"])"
+           (gen-build/emit-bazel (list 'package (gen-build/kwargs {:default_visibility ["//visibility:public"]})))))))
+
+(deftest test-emit-bazel-function-call-multiline
+  (testing "multiple kwargs go multiline with sorted attrs"
+    (let [result (gen-build/emit-bazel
+                   (list 'clojure_library
+                         (gen-build/kwargs {:name "build"
+                                           :deps ["//resources:data_readers"
+                                                  "@deps//:org_clojure_clojure"]
+                                           :srcs ["build.clj"]
+                                           :aot ["build"]})))]
+      (is (= (str "clojure_library(\n"
+                   "    name = \"build\",\n"
+                   "    srcs = [\"build.clj\"],\n"
+                   "    aot = [\"build\"],\n"
+                   "    deps = [\n"
+                   "        \"//resources:data_readers\",\n"
+                   "        \"@deps//:org_clojure_clojure\",\n"
+                   "    ],\n"
+                   ")")
+             result)))))
+
+(deftest test-attr-sorting
+  (testing "name first, then by priority, then alphabetical"
+    (let [result (gen-build/emit-bazel
+                   (list 'clojure_library
+                         (gen-build/kwargs {:deps ["a"] :name "x" :aot ["b"] :srcs ["c"] :runtime_deps ["d"]})))]
+      (is (str/starts-with? result "clojure_library(\n    name = \"x\",\n    srcs = [\"c\"],"))
+      (is (str/includes? result "    aot = [\"b\"],"))
+      (is (str/includes? result "    runtime_deps = [\"d\"],\n    deps = [\"a\"],")))))
+
+(deftest test-list-sorting
+  (testing "deps are sorted"
+    (let [result (gen-build/emit-bazel
+                   (list 'clojure_library
+                         (gen-build/kwargs {:name "x"
+                                           :deps ["@deps//:zzz" ":aaa" "//pkg:lib"]})))]
+      (is (str/includes? result "        \":aaa\",\n        \"//pkg:lib\",\n        \"@deps//:zzz\","))))
+  (testing "aot is NOT sorted (not in sortable set)"
+    (let [result (gen-build/emit-bazel
+                   (list 'clojure_library
+                         (gen-build/kwargs {:name "x"
+                                           :aot ["z-ns" "a-ns"]})))]
+      (is (str/includes? result "        \"z-ns\",\n        \"a-ns\",")))))
+
+(deftest test-buildifier-round-trip
+  (testing "generated output is buildifier-stable"
+    (let [buildifier-path (some-> (shell/sh "which" "buildifier") :out str/trim)]
+      (is (not (str/blank? buildifier-path)) "buildifier must be on PATH for this test")
+      (when-not (str/blank? buildifier-path)
+        (let [content (str "\"\"\"\nTest file.\n\"\"\"\n\n"
+                           (gen-build/emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library"))
+                           "\n\n"
+                           (gen-build/emit-bazel (list 'package (gen-build/kwargs {:default_visibility ["//visibility:public"]})))
+                           "\n\n"
+                           (gen-build/emit-bazel
+                             (list 'clojure_library
+                                   (gen-build/kwargs {:name "test"
+                                                      :deps ["@deps//:zzz" ":aaa"]
+                                                      :srcs ["z.clj" "a.clj"]
+                                                      :aot ["z-ns" "a-ns"]
+                                                      :runtime_deps ["@deps//:bbb"]})))
+                           "\n")
+              result (shell/sh buildifier-path "--type=build" :in content)]
+          (is (zero? (:exit result)) (str "buildifier failed: " (:err result)))
+          (is (= content (:out result))
+              (str "buildifier produced diff. Expected:\n" content "\nGot:\n" (:out result))))))))
