@@ -540,33 +540,30 @@
                  (.startsWith ^Path path ^Path (fs/->path deps-edn-dir p))))
        first))
 
-(defn reader-features [path]
-  (cond
-    (clj-path? path) #{:clj}
-    (cljs-path? path) #{:cljs}))
-
 (defn prun [f coll]
   (mapv deref (mapv #(future (f %)) coll)))
 
 (s/fdef ns-rules :args (s/cat :a (s/keys :req-un [::basis ::deps-edn-dir ::jar->lib ::deps-repo-tag ::deps-bazel]) :p (s/coll-of fs/path?)))
 (defn ns-rules
-  "given a .clj path, return all rules for the file "
-  [{:keys [basis deps-bazel deps-repo-tag deps-edn-dir] :as args} paths]
+  "given a group of paths (sharing a basename), return the Bazel rules for the namespace"
+  [{:keys [deps-bazel deps-repo-tag] :as args} paths]
   (assert (map? (:src-ns->label args)))
   (assert (s/valid? (s/coll-of fs/path?) paths))
   (try
     (let [clj? (some clj-path? paths)
-          cljs? (some cljs-path? paths)
           cljc? (some cljc-path? paths)
           js? (some js-path? paths)
-          platforms (set/union (when clj? #{:clj}) (when cljs? #{:cljs}) (when cljc? #{:clj :cljs}))
 
           ns-decl-platforms (->>
                              (filter clj*-path? paths)
                              (mapcat (fn [path]
-                                       (->> platforms
-                                            (map (fn [platform]
-                                                   [(get-ns-decl path platform) platform]))))))
+                                       (let [file-platforms (cond
+                                                              (clj-path? path) #{:clj}
+                                                              (cljs-path? path) #{:cljs}
+                                                              (cljc-path? path) #{:clj :cljs})]
+                                         (->> file-platforms
+                                              (map (fn [platform]
+                                                     [(get-ns-decl path platform) platform])))))))
           ns-decls (map first ns-decl-platforms)
           ns-name (-> ns-decls first second)
           path (first paths)
