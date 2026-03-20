@@ -56,7 +56,7 @@
                               src-resource))))]
     (assert result (print-str "src-resource: could not find source for" ns
                               "classloader:" (.getContextClassLoader (Thread/currentThread))
-                              "urls:" (vec (.getURLs (.getContextClassLoader (Thread/currentThread))))))
+                              "urls:" (vec (.getURLs ^java.net.URLClassLoader (.getContextClassLoader (Thread/currentThread))))))
     result))
 
 (defn loaded? [ns]
@@ -116,10 +116,17 @@
   ;; class. Use resource instead to avoid the side effect
   (io/resource (ns->class-resource-name ns)))
 
+;; addURL is protected on URLClassLoader. The classloader is a
+;; DynamicClassLoader (public addURL) at bootstrap but a
+;; persistentClassLoader at worker time, so we can't type-hint to a
+;; single class. setAccessible is blocked by the module system during
+;; bootstrap, so we let Clojure's reflector handle it.
+(set! *warn-on-reflection* false)
 (defn add-classpath! [dir]
   (let [dir-f (fs/path->file dir)]
     (assert (.exists dir-f) (print-str dir-f "not found"))
     (.addURL (.getClassLoader (class add-classpath!)) (.toURL dir-f))))
+(set! *warn-on-reflection* true)
 
 ;; root directory for all compiles. Each compile will be a subdir of
 ;; this

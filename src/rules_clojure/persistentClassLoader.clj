@@ -55,21 +55,23 @@
 ;; findClass("Foo"), determine if there is a clojure.jar on the
 ;; classpath. If there is, ask it to participate in findClass
 
-(set! *warn-on-reflection* true)
-
-(defn clojure-find-class [this name]
+;; findInMemoryClass is package-private on DynamicClassLoader, so the
+;; compiler can't resolve it. Suppress rather than use setAccessible,
+;; which is blocked by the module system during bootstrap.
+(set! *warn-on-reflection* false)
+(defn clojure-find-class [^rules_clojure.persistentClassLoader this name]
   (when-let [^Class rt-class (.parentFindClass this "clojure.lang.RT")]
     (let [^Method baseloader-method (.getDeclaredMethod rt-class "baseLoader" (into-array Class []))
           ^DynamicClassLoader loader (.invoke baseloader-method rt-class (into-array Object []))]
-
       (.findInMemoryClass loader name))))
+(set! *warn-on-reflection* true)
 
 (defn -findClass
-  [this name]
+  [^rules_clojure.persistentClassLoader this ^String name]
   (locking this
     (or
      (.parentFindClass this name)
      (clojure-find-class this name))))
 
-(defn -findLoadedClass [this name]
+(defn -findLoadedClass [^rules_clojure.persistentClassLoader this ^String name]
   (.parentFindLoadedClass this name))
