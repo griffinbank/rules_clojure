@@ -581,14 +581,20 @@
           clojure-library-args (get-in deps-bazel [:clojure_library])
           clojure-test-args (get-in deps-bazel [:clojure_test])
           ns-library-meta (some-> (get ns-meta :bazel/clojure_library)
-                                  (update :deps #(mapv name %))
-                                  (update :runtime_deps #(mapv name %)))
+                                  (as-> m
+                                        (cond-> m
+                                          (:deps m) (update :deps #(mapv name %))
+                                          (:runtime_deps m) (update :runtime_deps #(mapv name %)))))
           ns-test-meta (some-> (get ns-meta :bazel/clojure_test)
-                               (update :tags #(mapv name %))
-                               (update :size #(some-> % name))
-                               (update :timeout #(some-> % name)))
+                               (as-> m
+                                     (cond-> m
+                                       (:tags m) (update :tags #(mapv name %))
+                                       (:size m) (update :size name)
+                                       (:timeout m) (update :timeout name))))
           ns-binary-meta (some-> (get ns-meta :bazel/clojure_binary)
-                                 (update :jvm_flags #(mapv name %)))
+                                 (as-> m
+                                       (cond-> m
+                                         (:jvm_flags m) (update :jvm_flags #(mapv name %)))))
 
           aot (if (and (or clj? cljc?) (not test?) (get ns-library-meta :aot true))
                 [(str ns-name)]
