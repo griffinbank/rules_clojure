@@ -141,3 +141,33 @@
         (is (= "example.server" (:main_class attrs)) "should use overridden main_class")
         (finally
           (fs/rm-rf (.toPath dir)))))))
+
+(deftest ns-rules-partial-test-meta-no-nil-keys
+  (testing "test metadata with only :timeout should not produce nil :size or :tags"
+    (let [dir (make-temp-dir)
+          clj-path (write-file dir "post_test.clj"
+                               "(ns example.post-test\n  {:bazel/clojure_test {:timeout :long}}\n  (:require [clojure.test :refer [deftest]]))")
+          args (minimal-args dir {:clj {'clojure.test "org_clojure_clojure"} :cljs {}})
+          result (gb/ns-rules args [clj-path])
+          attrs (find-rule result :clojure_test)]
+      (try
+        (is (some? attrs) "should emit a clojure_test target")
+        (is (= "long" (:timeout attrs)) "timeout should be converted to string")
+        (is (not (contains? attrs :size)) "absent :size should not appear in attrs")
+        (is (not (contains? attrs :tags)) "absent :tags should not appear in attrs")
+        (finally
+          (fs/rm-rf (.toPath dir))))))
+
+  (testing "test metadata with only :size should not produce nil :timeout or :tags"
+    (let [dir (make-temp-dir)
+          clj-path (write-file dir "large_test.clj"
+                               "(ns example.large-test\n  {:bazel/clojure_test {:size :large}}\n  (:require [clojure.test :refer [deftest]]))")
+          args (minimal-args dir {:clj {'clojure.test "org_clojure_clojure"} :cljs {}})
+          result (gb/ns-rules args [clj-path])
+          attrs (find-rule result :clojure_test)]
+      (try
+        (is (= "large" (:size attrs)) "size should be converted to string")
+        (is (not (contains? attrs :timeout)) "absent :timeout should not appear in attrs")
+        (is (not (contains? attrs :tags)) "absent :tags should not appear in attrs")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
