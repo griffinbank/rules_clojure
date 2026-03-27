@@ -251,7 +251,7 @@
 (defn is-aoted?
   [path ns]
   (let [root-resource (#'clojure.core/root-resource ns)
-        class-file (str (.substring ^String root-resource  1) "__init.class")]
+        class-file (str (.substring ^String root-resource 1) "__init.class")]
     (some #(= class-file %) (classpath-files path))))
 
 (def special-namespaces '#{clojure.core clojure.core.specs.alpha})
@@ -264,8 +264,8 @@
 (defn ns-matches-path?
   [ns path]
   (str/starts-with?
-    path
-    (str/escape (str ns) {\. "/" \- "_"})))
+   path
+   (str/escape (str ns) {\. "/" \- "_"})))
 
 (defn ->dep-ns->label [{:keys [basis deps-bazel deps-repo-tag] :as args}]
   {:pre [(map? basis)
@@ -323,13 +323,13 @@
   {:post [(s/valid? ::class->jar %)]}
   (into {}
         (mapcat
-          (fn [path]
-            (let [{:keys [lib-name]} (get-in basis [:classpath path])]
-              (when lib-name
-                (->> (jar-classes path)
-                     (map (fn [c]
-                            [c (fs/->path path)]))))))
-          (:classpath-roots basis))))
+         (fn [path]
+           (let [{:keys [lib-name]} (get-in basis [:classpath path])]
+             (when lib-name
+               (->> (jar-classes path)
+                    (map (fn [c]
+                           [c (fs/->path path)]))))))
+         (:classpath-roots basis))))
 
 (defn expand-deps- [basis]
   (let [ex-svc (concurrent/new-executor 2)]
@@ -354,8 +354,7 @@
                 (assert (symbol? child))
                 (update dep-map parent (fnil conj #{}) child))
               ;; empty parent means this is a toplevel dep, already covered elsewhere
-              dep-map)
-            )) {})))
+              dep-map))) {})))
 
 (s/fdef src->label :args (s/cat :a (s/keys :req-un [::deps-edn-dir]) :p fs/path?) :ret string?)
 (defn src->label [{:keys [deps-edn-dir]} path]
@@ -427,7 +426,7 @@
 
 (s/def ::ns-decl any?)
 
-(s/fdef ns-import-deps :args (s/cat :a (s/keys :req-un [::deps-repo-tag ::class->jar ::jar->lib]) :n ::ns-decl) )
+(s/fdef ns-import-deps :args (s/cat :a (s/keys :req-un [::deps-repo-tag ::class->jar ::jar->lib]) :n ::ns-decl))
 (defn ns-import-deps
   "Given the ns declaration for a .clj file, return a map of {:srcs [labels], :data [labels]} for all :import statements"
   [{:keys [deps-repo-tag class->jar jar->lib] :as args} ns-decl]
@@ -436,7 +435,7 @@
     (->> refs
          (filter (fn [r]
                    (= :import (first r))))
-         (mapcat  rest)
+         (mapcat rest)
          (mapcat (fn [form]
                    (cond
                      (symbol? form) [form]
@@ -545,7 +544,8 @@
 
 (s/fdef ns-rules :args (s/cat :a (s/keys :req-un [::basis ::deps-edn-dir ::jar->lib ::deps-repo-tag ::deps-bazel]) :p (s/coll-of fs/path?)))
 (defn ns-rules
-  "given a group of paths (sharing a basename), return the Bazel rules for the namespace"
+  "given a group of paths (sharing a basename), return the Bazel rules for the namespace.
+  Returns a vector of {:type keyword :attrs map} — pure data, no serialization."
   [{:keys [deps-bazel deps-repo-tag] :as args} paths]
   (assert (map? (:src-ns->label args)))
   (assert (s/valid? (s/coll-of fs/path?) paths))
@@ -580,19 +580,15 @@
           test-label (str (fs/basename path) ".test")
           clojure-library-args (get-in deps-bazel [:clojure_library])
           clojure-test-args (get-in deps-bazel [:clojure_test])
-          ns-library-meta (-> ns-meta
-                              (get :bazel/clojure_library)
-                              (as-> $
-                                  (cond-> $
-                                    (:deps $) (update :deps (partial mapv name))
-                                    (:runtime_deps $) (update :runtime_deps (partial mapv name)))))
-          ns-test-meta (-> ns-meta
-                           (get :bazel/clojure_test)
-                           (as-> $
-                               (cond-> $
-                                 (:tags $) (update :tags (partial mapv name))
-                                 (:size $) (update :size name)
-                                 (:timeout $) (update :timeout name))))
+          ns-library-meta (some-> (get ns-meta :bazel/clojure_library)
+                                  (update :deps #(mapv name %))
+                                  (update :runtime_deps #(mapv name %)))
+          ns-test-meta (some-> (get ns-meta :bazel/clojure_test)
+                               (update :tags #(mapv name %))
+                               (update :size #(some-> % name))
+                               (update :timeout #(some-> % name)))
+          ns-binary-meta (some-> (get ns-meta :bazel/clojure_binary)
+                                 (update :jvm_flags #(mapv name %)))
 
           aot (if (and (or clj? cljc?) (not test?) (get ns-library-meta :aot true))
                 [(str ns-name)]
@@ -601,38 +597,56 @@
 
       (->>
        [(when (seq ns-decls)
-          (emit-bazel (list 'clojure_library (kwargs (-> (merge-with into
-                                                                     {:name ns-label
-                                                                      :deps [(str deps-repo-tag "//:org_clojure_clojure")]
-                                                                      :resources (mapv fs/filename paths)
-                                                                      :resource_strip_prefix (strip-path (select-keys args [:basis :deps-edn-dir]) path)}
-                                                                     (when (seq aot)
-                                                                       {:srcs (mapv fs/filename paths)
-                                                                        :aot aot})
-                                                                     deps
-                                                                     clojure-library-args
-                                                                     ns-library-meta)
-                                                         (as-> m
-                                                             (cond-> m
-                                                               (seq (:deps m)) (update :deps (comp vec dedupe sort))
-                                                               (:deps m) (update :deps (comp vec dedupe sort)))))))))
+          {:type :clojure_library
+           :attrs (-> (merge-with into
+                                  {:name ns-label
+                                   :deps [(str deps-repo-tag "//:org_clojure_clojure")]
+                                   :resources (mapv fs/filename paths)
+                                   :resource_strip_prefix (strip-path (select-keys args [:basis :deps-edn-dir]) path)}
+                                  (when (seq aot)
+                                    {:srcs (mapv fs/filename paths)
+                                     :aot aot})
+                                  deps
+                                  clojure-library-args
+                                  ns-library-meta)
+                      (as-> m
+                            (cond-> m
+                              (seq (:deps m)) (update :deps (comp vec dedupe sort)))))})
         (when (and (or clj?
                        cljc?) test?)
-          (emit-bazel (list 'clojure_test (kwargs (merge-with into
-                                                              {:name test-label
-                                                               :test_ns (str ns-name)
-                                                               :deps [(str ":" ns-label)]}
-                                                              clojure-test-args
-                                                              ns-test-meta)))))
+          {:type :clojure_test
+           :attrs (merge-with into
+                              {:name test-label
+                               :test_ns (str ns-name)
+                               :deps [(str ":" ns-label)]}
+                              clojure-test-args
+                              ns-test-meta)})
+        (when ns-binary-meta
+          (let [binary-name (or (:name ns-binary-meta) (str ns-label ".bin"))
+                base-jvm-flags (vec (:jvm_flags clojure-library-args))]
+            {:type :clojure_binary
+             :attrs (-> (merge
+                         {:main_class "clojure.main"
+                          :args ["-m" (str ns-name)]}
+                         (dissoc ns-binary-meta :name))
+                        (assoc :name binary-name)
+                        (update :jvm_flags #(into base-jvm-flags %))
+                        (update :runtime_deps (fnil conj []) (str ":" ns-label)))}))
         (when js?
-          (emit-bazel (list 'java_library (kwargs {:name ns-label
-                                                   :resources (->> paths (filter js-path?) (mapv fs/filename))
-                                                   :resource_strip_prefix (strip-path (select-keys args [:basis :deps-edn-dir]) path)}))))]
+          {:type :java_library
+           :attrs {:name ns-label
+                   :resources (->> paths (filter js-path?) (mapv fs/filename))
+                   :resource_strip_prefix (strip-path (select-keys args [:basis :deps-edn-dir]) path)}})]
 
        (filterv identity)))
     (catch Throwable t
       (println "while processing" paths)
       (throw t))))
+
+(defn emit-rule
+  "Serialize a {:type :attrs} rule map to a Bazel string."
+  [{:keys [type attrs]}]
+  (emit-bazel (list (symbol (name type)) (kwargs attrs))))
 
 (s/fdef gen-dir :args (s/cat :a (s/keys :req-un [::deps-edn-dir ::basis ::jar->lib ::deps-repo-tag]) :f fs/path?))
 (defn gen-dir
@@ -653,16 +667,21 @@
                      subdirs
                      (filter (fn [p]
                                (some clj*-path? (seq (fs/ls-r p))))))
-        rules (->> paths
-                   (group-by fs/basename)
-                   (mapcat (fn [[_base paths]]
-                             (ns-rules args paths)))
-                   doall)
+        [has-binary? rules] (reduce (fn [[hb? acc] rule]
+                                      [(or hb? (= :clojure_binary (:type rule)))
+                                       (conj acc (emit-rule rule))])
+                                    [false []]
+                                    (->> paths
+                                         (group-by fs/basename)
+                                         (mapcat (fn [[_base paths]]
+                                                   (ns-rules args paths)))))
 
         content (str "#autogenerated, do not edit\n"
                      (emit-bazel (list 'package (kwargs {:default_visibility ["//visibility:public"]})))
                      "\n"
-                     (emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library" "clojure_test"))
+                     (emit-bazel (apply list 'load "@rules_clojure//:rules.bzl"
+                                        (cond-> ["clojure_library" "clojure_test"]
+                                          has-binary? (conj "clojure_binary"))))
                      "\n"
                      "\n"
                      (str/join "\n\n" rules)
@@ -795,36 +814,36 @@
                                              (->>
                                                ;; TODO: Update to tools.namespace 1.4.1 which has metadata of the source path on the ns-decl so this dance isn't needed.
                                               (find/sources-in-jar jarfile find/clj)
-                                               (keep
-                                                 (fn [^JarEntry entry]
-                                                   (when-let [ns-decl (find/read-ns-decl-from-jarfile-entry jarfile entry find/clj)]
-                                                     (when (ns-matches-path? (parse/name-from-ns-decl ns-decl) (.getRealName entry))
-                                                       ns-decl))))
-                                               (filter
-                                                 (fn [ns-decl]
-                                                   (should-compile-namespace? deps-bazel jarpath (parse/name-from-ns-decl ns-decl))))
-                                               (group-by parse/name-from-ns-decl)
-                                               (map (fn [[ns ns-decls]]
-                                                      (let [extra-deps (-> deps-bazel (get-in [:deps (str deps-repo-tag "//:" (internal-dep-ns-aot-label lib ns))]))]
-                                                        (emit-bazel (list 'clojure_library (kwargs (->
-                                                                                                     (merge-with
-                                                                                                       into
-                                                                                                       {:name (internal-dep-ns-aot-label lib ns)
-                                                                                                        :aot [(str ns)]
-                                                                                                        :deps [(str deps-repo-tag "//:" label)
-                                                                                                               (str deps-repo-tag "//:org_clojure_clojure")]
+                                              (keep
+                                               (fn [^JarEntry entry]
+                                                 (when-let [ns-decl (find/read-ns-decl-from-jarfile-entry jarfile entry find/clj)]
+                                                   (when (ns-matches-path? (parse/name-from-ns-decl ns-decl) (.getRealName entry))
+                                                     ns-decl))))
+                                              (filter
+                                               (fn [ns-decl]
+                                                 (should-compile-namespace? deps-bazel jarpath (parse/name-from-ns-decl ns-decl))))
+                                              (group-by parse/name-from-ns-decl)
+                                              (map (fn [[ns ns-decls]]
+                                                     (let [extra-deps (-> deps-bazel (get-in [:deps (str deps-repo-tag "//:" (internal-dep-ns-aot-label lib ns))]))]
+                                                       (emit-bazel (list 'clojure_library (kwargs (->
+                                                                                                   (merge-with
+                                                                                                    into
+                                                                                                    {:name (internal-dep-ns-aot-label lib ns)
+                                                                                                     :aot [(str ns)]
+                                                                                                     :deps [(str deps-repo-tag "//:" label)
+                                                                                                            (str deps-repo-tag "//:org_clojure_clojure")]
                                                                                                         ;; TODO the source jar doesn't need to be in runtime_deps
-                                                                                                        :runtime_deps []}
-                                                                                                       (apply merge-with into (map #(ns-deps (select-keys args [:dep-ns->label :jar->lib :deps-repo-tag]) % :clj) ns-decls))
-                                                                                                       extra-deps)
-                                                                                                     (as-> m
-                                                                                                       (cond-> m
-                                                                                                         (seq (:deps m)) (update :deps (comp vec distinct))
-                                                                                                         (:deps m) (update :deps (comp vec distinct))))))))))))))))))
+                                                                                                     :runtime_deps []}
+                                                                                                    (apply merge-with into (map #(ns-deps (select-keys args [:dep-ns->label :jar->lib :deps-repo-tag]) % :clj) ns-decls))
+                                                                                                    extra-deps)
+                                                                                                   (as-> m
+                                                                                                         (cond-> m
+                                                                                                           (seq (:deps m)) (update :deps (comp vec distinct))
+                                                                                                           (:deps m) (update :deps (comp vec distinct))))))))))))))))))
                           [(emit-bazel (list 'java_library (kwargs
-                                                               {:name "__all"
-                                                                :runtime_deps (->> jar->lib
-                                                                                   (mapv (comp library->label val)))})))]))
+                                                            {:name "__all"
+                                                             :runtime_deps (->> jar->lib
+                                                                                (mapv (comp library->label val)))})))]))
 
         :encoding "UTF-8"))
 
@@ -962,7 +981,6 @@
                "(defn " (symbol output-fn-name) " []\n"
                "    '[" (str/join "\n    " (vec nses)) "])") :encoding "UTF-8")))
 
-
 (defn -main [& args]
   ;; binding [*print-length* 10
   ;;          *print-level* 3]
@@ -976,8 +994,8 @@
                                                     (edn/read-string)
                                                     (#(mapv keyword %)))))
                  (cond->
-                     (System/getenv "BUILD_WORKSPACE_DIRECTORY") (assoc :workspace-root (-> (System/getenv "BUILD_WORKSPACE_DIRECTORY") fs/->path))
-                     (:workspace-root opts) (update :workspace-root (comp fs/absolute fs/->path))))
+                  (System/getenv "BUILD_WORKSPACE_DIRECTORY") (assoc :workspace-root (-> (System/getenv "BUILD_WORKSPACE_DIRECTORY") fs/->path))
+                  (:workspace-root opts) (update :workspace-root (comp fs/absolute fs/->path))))
         _ (assert (fs/path? (:workspace-root opts)))
         f (case cmd
             :deps deps

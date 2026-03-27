@@ -1,5 +1,6 @@
 (ns rules-clojure.gen-build-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [clojure.java.io :as io]
             [rules-clojure.gen-build :as gb]
             [rules-clojure.fs :as fs]))
@@ -31,14 +32,9 @@
              :classpath {}}}))
 
 (defn- extract-deps
-  "Given ns-rules output (list of Bazel strings), extract the deps list
-   from the first clojure_library rule."
+  "Given ns-rules output, extract the deps list from the first clojure_library rule."
   [rules-output]
-  (when-let [lib-str (first rules-output)]
-    (->> (re-seq #"\"([^\"]+)\"" lib-str)
-         (map second)
-         (filter #(or (.startsWith % "@deps") (.startsWith % "//")))
-         vec)))
+  (:deps (:attrs (first rules-output))))
 
 (deftest ns-rules-no-cross-platform-deps
   (testing "a .clj file's requires should not be resolved via the CLJS dep map"
@@ -90,5 +86,58 @@
             "cljc require should resolve via CLJ dep map")
         (is (some #(= "@deps//:org_clojure_clojurescript" %) deps)
             "cljc require should resolve via CLJS dep map")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
+(defn- find-rule
+  "Find a rule in ns-rules output by type keyword (e.g. :clojure_binary). Returns attrs map."
+  [rules-output type-kw]
+  (:attrs (some #(when (= type-kw (:type %)) %) rules-output)))
+
+(deftest ns-rules-java-binary-from-metadata
+  (testing "ns with :bazel/clojure_binary metadata emits a clojure_binary target"
+    (let [dir (make-temp-dir)
+          clj-path (write-file dir "benchmark.clj"
+                               (str "(ns example.benchmark\n"
+                                    "  {:bazel/clojure_binary {:jvm_flags [\"-Djdk.attach.allowAttachSelf\"]}}\n"
+                                    "  (:gen-class))"))
+          args (-> (minimal-args dir {:clj {} :cljs {}})
+                   (assoc :deps-bazel {:clojure_library {:jvm_flags ["-Dclojure.main.report=stderr"]}}))
+          result (gb/ns-rules args [clj-path])
+          attrs (find-rule result :clojure_binary)]
+      (try
+        (is (some? attrs) "should emit a clojure_binary target")
+        (is (= "benchmark.bin" (:name attrs)) "target name should use .bin suffix")
+        (is (= "clojure.main" (:main_class attrs)) "should default to clojure.main")
+        (is (= ["-m" "example.benchmark"] (:args attrs)) "should pass -m with ns name")
+        (is (= ["-Dclojure.main.report=stderr" "-Djdk.attach.allowAttachSelf"] (:jvm_flags attrs))
+            "should prepend base jvm flags and append ns-specific")
+        (is (some #{":benchmark"} (:runtime_deps attrs)) "should depend on the library target")
+        (finally
+          (fs/rm-rf (.toPath dir))))))
+
+  (testing "ns without :bazel/clojure_binary metadata does not emit a binary target"
+    (let [dir (make-temp-dir)
+          clj-path (write-file dir "core.clj"
+                               "(ns example.core\n  (:gen-class))")
+          args (minimal-args dir {:clj {} :cljs {}})
+          result (gb/ns-rules args [clj-path])
+          attrs (find-rule result :clojure_binary)]
+      (try
+        (is (nil? attrs) "should not emit a clojure_binary without metadata")
+        (finally
+          (fs/rm-rf (.toPath dir))))))
+
+  (testing "metadata can override main_class"
+    (let [dir (make-temp-dir)
+          clj-path (write-file dir "server.clj"
+                               (str "(ns example.server\n"
+                                    "  {:bazel/clojure_binary {:main_class \"example.server\"}}\n"
+                                    "  (:gen-class))"))
+          args (minimal-args dir {:clj {} :cljs {}})
+          result (gb/ns-rules args [clj-path])
+          attrs (find-rule result :clojure_binary)]
+      (try
+        (is (= "example.server" (:main_class attrs)) "should use overridden main_class")
         (finally
           (fs/rm-rf (.toPath dir)))))))
