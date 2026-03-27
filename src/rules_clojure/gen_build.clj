@@ -18,6 +18,13 @@
 
 (set! *warn-on-reflection* true)
 
+(defn update-existing
+  "Like `update`, but only applies `f` when `k` is present in `m`."
+  [m k f & args]
+  (if (contains? m k)
+    (apply update m k f args)
+    m))
+
 (s/def ::ns-path (s/map-of symbol? ::fs/absolute-path))
 (s/def ::read-deps map?)
 (s/def ::aliases (s/coll-of keyword?))
@@ -581,20 +588,14 @@
           clojure-library-args (get-in deps-bazel [:clojure_library])
           clojure-test-args (get-in deps-bazel [:clojure_test])
           ns-library-meta (some-> (get ns-meta :bazel/clojure_library)
-                                  (as-> m
-                                        (cond-> m
-                                          (:deps m) (update :deps #(mapv name %))
-                                          (:runtime_deps m) (update :runtime_deps #(mapv name %)))))
+                                  (update-existing :deps #(mapv name %))
+                                  (update-existing :runtime_deps #(mapv name %)))
           ns-test-meta (some-> (get ns-meta :bazel/clojure_test)
-                               (as-> m
-                                     (cond-> m
-                                       (:tags m) (update :tags #(mapv name %))
-                                       (:size m) (update :size name)
-                                       (:timeout m) (update :timeout name))))
+                               (update-existing :tags #(mapv name %))
+                               (update-existing :size name)
+                               (update-existing :timeout name))
           ns-binary-meta (some-> (get ns-meta :bazel/clojure_binary)
-                                 (as-> m
-                                       (cond-> m
-                                         (:jvm_flags m) (update :jvm_flags #(mapv name %)))))
+                                 (update-existing :jvm_flags #(mapv name %)))
 
           aot (if (and (or clj? cljc?) (not test?) (get ns-library-meta :aot true))
                 [(str ns-name)]
