@@ -71,20 +71,23 @@
   (->> (find-files-in-dir dir platform)
        (map slurp)))
 
-(defn find-ns-decls-in-dir-
+(def find-ns-decls-with-files-in-dir
   "Searches dir recursively for (ns ...) declarations in Clojure
-  source files; returns the unevaluated ns declarations."
-  {:added "0.2.0"}
-  ([dir platform]
-   {:pre [(string? dir)]}
-   (keep #(ignore-reader-exception
-            (file/read-file-ns-decl % (:read-opts platform)))
-         (find-files-in-dir (io/file dir) platform))))
+  source files; returns [File ns-decl] pairs."
+  (memoize
+   (fn [^File dir platform]
+     (vec
+      (keep (fn [^File file]
+              (when-let [decl (ignore-reader-exception
+                               (file/read-file-ns-decl file (:read-opts platform)))]
+                [file decl]))
+            (find-files-in-dir dir platform))))))
 
-(def find-ns-decls-in-dir (memoize (fn
-                                     [dir platform]
-                                     {:pre [(instance? java.io.File dir)]}
-                                     (find-ns-decls-in-dir- (str dir) platform))))
+(defn find-ns-decls-in-dir
+  "Like find-ns-decls-with-files-in-dir but returns only the ns declarations."
+  [^File dir platform]
+  {:pre [(instance? java.io.File dir)]}
+  (mapv second (find-ns-decls-with-files-in-dir dir platform)))
 
 ;;; Finding namespaces in JAR files
 

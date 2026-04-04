@@ -303,24 +303,37 @@
 
 (s/def ::src-ns->label (s/map-of symbol? string?))
 
-(defn ->src-ns->label [{:keys [basis deps-edn-dir] :as args}]
-  {:pre [(-> basis map?) (-> basis :classpath map?) deps-edn-dir]
-   :post [(map? %)]}
-  (->> basis
-       :classpath
-       (map (fn [[path {:keys [path-key]}]]
-              (when path-key
-                (let [nses (->>
-                            (concat (find/find-namespaces [(fs/path->file path)] find/clj)
-                                    (find/find-namespaces [(fs/path->file path)] find/cljs))
-                            distinct)]
-                  (->> nses
-                       (map (fn [n]
-                              [n (-> (resolve-src-location path n)
-                                     (#(src-path->label (select-keys args [:deps-edn-dir]) %)))]))
-                       (into {}))))))
-       (filter identity)
-       (apply merge)))
+(defn build-src-index
+  "Scan source dirs once and return both src-ns->label and a ns-decl cache.
+  Returns {:src-ns->label {symbol label-str}, :ns-decl-cache {[Path platform-kw] ns-decl}}"
+  [{:keys [basis deps-edn-dir] :as args}]
+  {:pre [(-> basis map?) (-> basis :classpath map?) deps-edn-dir]}
+  (let [label-args (select-keys args [:deps-edn-dir])
+        file-decls (into []
+                      (comp (filter (fn [[_ {:keys [path-key]}]] path-key))
+                            (mapcat (fn [[path _]]
+                                      (let [dir (fs/path->file path)]
+                                        [[path dir :clj find/clj] [path dir :cljs find/cljs]])))
+                            (mapcat (fn [[path dir platform find-platform]]
+                                      (map (fn [[f decl]] [path f platform decl])
+                                           (find/find-ns-decls-with-files-in-dir dir find-platform)))))
+                      (:classpath basis))
+        ns-decl-cache
+        (into {}
+              (map (fn [[_ ^java.io.File f platform decl]]
+                     [[(.toPath f) platform] decl]))
+              file-decls)
+        src-ns->label
+        (into {}
+              (comp (map (fn [[root _ _ decl]]
+                           [root (parse/name-from-ns-decl decl)]))
+                    (distinct)
+                    (map (fn [[root n]]
+                           [n (src-path->label label-args
+                                               (resolve-src-location root n))])))
+              file-decls)]
+    {:src-ns->label src-ns->label
+     :ns-decl-cache ns-decl-cache}))
 
 (s/def ::class->jar (s/map-of symbol? fs/path?))
 (s/fdef ->class->jar :args (s/cat :b ::basis) :ret ::class->jar)
@@ -390,22 +403,6 @@
                     (str deps-repo-tag "//:" label)))]
     (when label
       {:deps [label]})))
-
-(defn get-ns-decl [^Path path platform]
-  (try
-    (with-open [rdr (java.io.PushbackReader. (io/reader (.toFile path)))]
-      (loop []
-        (let [form (clojure.core/read {:read-cond :allow
-                                       :features #{platform}
-                                       :eof ::eof}
-                                      rdr)]
-          (cond
-            (= ::eof form) nil
-            (and (sequential? form) (= 'ns (first form))) form
-            :else (recur)))))
-    (catch Exception e
-      (throw (ex-info (str "while reading " path) {:path path
-                                                   :platform platform} e)))))
 
 (defn get-ns-meta
   "return any metadata attached to the namespace, or nil"
@@ -561,6 +558,7 @@
           cljc? (some cljc-path? paths)
           js? (some js-path? paths)
 
+          ns-decl-cache (:ns-decl-cache args)
           ns-decl-platforms (->>
                              (filter clj*-path? paths)
                              (mapcat (fn [path]
@@ -570,7 +568,8 @@
                                                               (cljc-path? path) #{:clj :cljs})]
                                          (->> file-platforms
                                               (map (fn [platform]
-                                                     [(get-ns-decl path platform) platform])))))))
+                                                     [(get ns-decl-cache [path platform])
+                                                      platform])))))))
           ns-decls (map first ns-decl-platforms)
           ns-name (-> ns-decls first second)
           path (first paths)
@@ -783,10 +782,12 @@
   deps-repo-tag: Bazel workspace repo for deps, typically `@deps`
   "
   [{:keys [deps-edn-path deps-bazel deps-repo-tag basis jar->lib aliases] :as args}]
-  (let [args (merge args
-                    {:src-ns->label (->src-ns->label args)
+  (let [{:keys [src-ns->label ns-decl-cache]} (build-src-index args)
+        args (merge args
+                    {:src-ns->label src-ns->label
                      :dep-ns->label (->dep-ns->label args)
-                     :jar->lib jar->lib})]
+                     :jar->lib jar->lib
+                     :ns-decl-cache ns-decl-cache})]
     (gen-source-paths- args (source-paths (select-keys args [:aliases :basis :deps-edn-dir :deps-bazel])))))
 
 (s/fdef gen-deps-build :args (s/cat :a (s/keys :req-un [::repository-dir ::dep-ns->label ::deps-build-dir ::deps-repo-tag ::jar->lib ::lib->jar ::lib->deps ::deps-bazel])))
