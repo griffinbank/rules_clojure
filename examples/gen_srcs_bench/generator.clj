@@ -8,8 +8,9 @@
 
 (set! *warn-on-reflection* true)
 
-(def default-width 7)
-(def default-depth 5)
+;; These settings generate 19,607 namespaces total (7 + 49 + 343 + 2,401 + 16,807).
+(def width 7)
+(def depth 5)
 
 (defn- alphabet-chars []
   (map char (range (int \a) (inc (int \z)))))
@@ -90,14 +91,14 @@
   (let [ws-root (or (System/getenv "BUILD_WORKSPACE_DIRECTORY") ".")
         out-dir ws-root]
     (println "Generating benchmark src tree...")
-    (println "  width:" default-width)
-    (println "  depth:" default-depth)
+    (println "  width:" width)
+    (println "  depth:" depth)
     (println "  output:" out-dir)
 
-    (let [namespace-count (count-namespaces default-width default-depth)
+    (let [namespace-count (count-namespaces width depth)
           start (System/nanoTime)]
       (println "  namespaces:" namespace-count)
-      (write-project! out-dir default-width default-depth)
+      (write-project! out-dir width depth)
       (let [elapsed-ms (/ (- (System/nanoTime) start) 1e6)]
         (println)
         (println "Generated" namespace-count "namespaces in" (format "%.0f" elapsed-ms) "ms")
