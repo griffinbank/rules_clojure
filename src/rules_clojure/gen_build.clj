@@ -361,11 +361,6 @@
               ;; empty parent means this is a toplevel dep, already covered elsewhere
               dep-map))) {})))
 
-(s/fdef src->label :args (s/cat :a (s/keys :req-un [::deps-edn-dir]) :p fs/path?) :ret string?)
-(defn src->label [{:keys [deps-edn-dir]} path]
-  (let [path (fs/path-relative-to deps-edn-dir path)]
-    (str "//" (fs/dirname path) ":" (str (fs/basename path)))))
-
 (s/fdef jar->label :args (s/cat :a (s/keys :req-un [::jar->lib] :opt-un [::deps-repo-tag]) :p fs/path?) :ret string?)
 (defn jar->label
   "Given a .jar path, return the bazel label. `deps-repo-tag` is the name of the bazel repository where deps are held, e.g `@deps`"
@@ -473,37 +468,26 @@
 
 (s/fdef clj-path? :args (s/cat :p fs/path?) :ret boolean?)
 (defn clj-path? [path]
-  (boolean (re-find #"\.clj$" (str path))))
+  (str/ends-with? (str path) ".clj"))
 
 (defn cljc-path? [path]
-  (boolean (re-find #"\.cljc$" (str path))))
+  (str/ends-with? (str path) ".cljc"))
 
 (defn cljs-path? [path]
-  (boolean (re-find #"\.cljs$" (str path))))
+  (str/ends-with? (str path) ".cljs"))
 
 (defn clj*-path? [path]
-  (or (clj-path? path)
-      (cljc-path? path)
-      (cljs-path? path)))
+  (let [s (str path)]
+    (or (clj-path? s) (cljc-path? s) (cljs-path? s))))
 
 (defn js-path? [path]
-  (re-find #"\.js$" (str path)))
+  (str/ends-with? (str path) ".js"))
 
 (defn test-path? [path]
-  (boolean (re-find #"_test.clj" (str path))))
+  (str/ends-with? (str path) "_test.clj"))
 
 (defn src-path? [path]
   (not (test-path? path)))
-
-(defn path-
-  "given the path to a .clj file, return the namespace"
-  [^Path path]
-  {:post [(symbol? %)]}
-  (-> path
-      .toFile
-      (slurp)
-      (read-string)
-      (second)))
 
 (defn requires-aot?
   [ns-decl]
