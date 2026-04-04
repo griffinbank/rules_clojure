@@ -65,28 +65,59 @@ def aliases_str(aliases):
     return str("[" + " ".join([ (":%s" % (a)) for a in aliases]) + "]")
 
 def _install_scripts(repository_ctx):
+    gen_srcs_args = [
+        "srcs",
+        ":deps-edn-path", str(repository_ctx.path(repository_ctx.attr.deps_edn)),
+        ":repository-dir", str(repository_ctx.path("repository")),
+        ":deps-build-dir", str(repository_ctx.path("")),
+        ":deps-repo-tag", "@" + repository_ctx.attr.name,
+        ":aliases", aliases_str(repository_ctx.attr.aliases),
+    ]
+    # Shell-quote each arg for safe embedding in the wrapper script
+    gen_srcs_args_sh = " ".join(['"%s"' % a for a in gen_srcs_args])
     repository_ctx.file(repository_ctx.path("scripts/BUILD.bazel"),
                         executable = True,
                         content = """
 package(default_visibility = ["//visibility:public"])
 
-java_binary(name="gen_srcs",
+exports_files(["gen_srcs_wrapper.sh"])
+
+java_binary(name="gen_srcs_bin",
     main_class="rules_clojure.gen_build",
     runtime_deps=["@rules_clojure//src/rules_clojure:libgen_build"],
-    args=["srcs",
-          ":deps-edn-path", "{deps_edn_path}",
-          ":repository-dir", "{repository_dir}",
-          ":deps-build-dir", "{deps_build_dir}",
-          ":deps-repo-tag", "{deps_repo_tag}",
-          ":aliases", "\\"{aliases}\\""],
     data=["{deps_edn_label}"])
 
- """.format(deps_repo_tag = "@" + repository_ctx.attr.name,
-            deps_edn_label = repository_ctx.attr.deps_edn,
-            deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
-            repository_dir = repository_ctx.path("repository"),
-            deps_build_dir = repository_ctx.path(""),
-            aliases = aliases_str(repository_ctx.attr.aliases)))
+ """.format(deps_edn_label = repository_ctx.attr.deps_edn))
+
+    repository_ctx.file(repository_ctx.path("scripts/gen_srcs_wrapper.sh"),
+                        executable = True,
+                        content = """#!/usr/bin/env bash
+GEN_SRCS="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+shift
+WS="$BUILD_WORKSPACE_DIRECTORY"
+CACHE="$WS/.gen_srcs.aot"
+CONF="$WS/.gen_srcs.aotconf"
+ARGS=({gen_srcs_args_sh})
+
+if [ ! -f "$CACHE" ]; then
+    "$GEN_SRCS" --wrapper_script_flag=--jvm_flag=-XX:AOTMode=record \\
+                --wrapper_script_flag=--jvm_flag=-XX:AOTConfiguration="$CONF" \\
+                "${{ARGS[@]}}" || true
+    if [ -f "$CONF" ]; then
+        "$GEN_SRCS" --wrapper_script_flag=--jvm_flag=-XX:AOTMode=create \\
+                    --wrapper_script_flag=--jvm_flag=-XX:AOTConfiguration="$CONF" \\
+                    --wrapper_script_flag=--jvm_flag=-XX:AOTCache="$CACHE" \\
+                    || true
+        rm -f "$CONF"
+    fi
+fi
+
+if [ -f "$CACHE" ]; then
+    exec "$GEN_SRCS" --wrapper_script_flag=--jvm_flag=-XX:AOTCache="$CACHE" "${{ARGS[@]}}" "$@"
+else
+    exec "$GEN_SRCS" "${{ARGS[@]}}" "$@"
+fi
+""".format(gen_srcs_args_sh = gen_srcs_args_sh))
 
 def _symlink_repository(repository_ctx):
     repository_ctx.symlink(repository_ctx.os.environ["HOME"] + "/.m2/repository", repository_ctx.path("repository"))
@@ -134,8 +165,19 @@ clojure_tools_deps = repository_rule(
              "_rules_clj_src": attr.label(default="@rules_clojure//:src")})
 
 def clojure_gen_srcs(name):
-    native.alias(name=name,
-                 actual= "@deps//scripts:gen_srcs")
+    """gen_srcs with transparent JVM AOT caching (JEP 483/514).
+
+    On JDK 24+, automatically creates and uses a JVM AOT cache
+    (.gen_srcs.aot) in the workspace root to speed up startup.
+    Falls back to normal startup on older JDKs or if caching fails.
+    Delete .gen_srcs.aot to force re-creation.
+    """
+    native.sh_binary(
+        name = name,
+        srcs = ["@deps//scripts:gen_srcs_wrapper.sh"],
+        args = ["$(rootpath @deps//scripts:gen_srcs_bin)"],
+        data = ["@deps//scripts:gen_srcs_bin"],
+    )
 
 def clojure_gen_namespace_loader(name, output_filename, output_ns_name, output_fn_name, in_dirs, exclude_nses, platform, deps_edn):
     native.java_binary(name=name,
