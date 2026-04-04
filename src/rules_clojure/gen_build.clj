@@ -241,6 +241,9 @@
     (-> path fs/path->file (.isDirectory)) (dir-files path)
     (re-find #".jar$" (str path)) (jar-files path)))
 
+(def classpath-files-memo
+  (memoize classpath-files))
+
 (defn jar-classes
   "given the path to a jar, return a list of classes contained"
   [path]
@@ -259,7 +262,7 @@
   [path ns]
   (let [root-resource (#'clojure.core/root-resource ns)
         class-file (str (.substring ^String root-resource 1) "__init.class")]
-    (some #(= class-file %) (classpath-files path))))
+    (some #(= class-file %) (classpath-files-memo path))))
 
 (def special-namespaces '#{clojure.core clojure.core.specs.alpha})
 
