@@ -76,7 +76,6 @@
 
 (s/fdef kwargs :args (s/cat :x ::bazel-map) :ret kwargs?)
 (defn kwargs [x]
-  (validate! ::bazel-map x)
   (->KeywordArgs x))
 
 (s/def ::bazel-atom (s/or :s string? :k keyword? :p fs/path? :b boolean?))
@@ -140,7 +139,6 @@
 (defn emit-bazel
   "Given a string name and a dictionary of arguments, return a string of bazel"
   [x]
-  (validate! ::bazel x)
   (emit-bazel* x))
 
 (defn resolve-src-location
@@ -186,7 +184,7 @@
 (defn ->jar->lib
   "Return a map of jar path to library name ('org.clojure/clojure)"
   [basis]
-  {:post [(s/valid? ::jar->lib %)]}
+  {:post [(map? %)]}
   (->> basis
        :classpath
        (map (fn [[path {:keys [path-key lib-name]}]]
@@ -277,7 +275,7 @@
 (defn ->dep-ns->label [{:keys [basis deps-bazel deps-repo-tag] :as args}]
   {:pre [(map? basis)
          deps-bazel]
-   :post [(s/valid? ::dep-ns->label %)]}
+   :post [(map? %)]}
   (->> basis
        :classpath
        (map (fn [[path {:keys [lib-name]}]]
@@ -327,7 +325,7 @@
 (defn ->class->jar
   "returns a map of class symbol to jarpath for all jars on the classpath"
   [basis]
-  {:post [(s/valid? ::class->jar %)]}
+  {:post [(map? %)]}
   (into {}
         (mapcat
          (fn [path]
@@ -555,7 +553,7 @@
   Returns a vector of {:type keyword :attrs map} — pure data, no serialization."
   [{:keys [deps-bazel deps-repo-tag] :as args} paths]
   (assert (map? (:src-ns->label args)))
-  (assert (s/valid? (s/coll-of fs/path?) paths))
+  (assert (sequential? paths))
   (try
     (let [clj? (some clj-path? paths)
           cljc? (some cljc-path? paths)
