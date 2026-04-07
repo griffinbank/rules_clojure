@@ -13,59 +13,59 @@ CLJ_VERSIONS_LINUX = {
 clj_install_prefix = "tools.deps"
 clj_path = clj_install_prefix + "/bin/clojure"
 
-def _install_clj_mac(repository_ctx):
-    clj_version = repository_ctx.attr.clj_version
+def _install_clj_mac(ctx):
+    clj_version = ctx.attr.clj_version
 
     url, sha256 = CLJ_VERSIONS_MAC[clj_version]
 
-    repository_ctx.download_and_extract(
+    ctx.download_and_extract(
         auth = {},
         url = url,
         stripPrefix = "clojure-tools",
         output = "tools.deps",
         sha256 = sha256)
 
-    repository_ctx.execute(["mkdir", repository_ctx.path(clj_install_prefix)],
+    ctx.execute(["mkdir", ctx.path(clj_install_prefix)],
                            quiet = False)
-    ret = repository_ctx.execute(["./install.sh", repository_ctx.path(clj_install_prefix)],
-                           # bazel strips the environment, but the install assumes this is defined
-                           environment={"HOMEBREW_RUBY_PATH": "/usr/bin/ruby"},
-                           working_directory="tools.deps/",
-                           quiet = False)
+    ctx.execute(["./install.sh", ctx.path(clj_install_prefix)],
+                # bazel strips the environment, but the install assumes this is defined
+                environment={"HOMEBREW_RUBY_PATH": "/usr/bin/ruby"},
+                working_directory="tools.deps/",
+                quiet = False)
 
-def _install_clj_linux(repository_ctx):
-    clj_version = repository_ctx.attr.clj_version
+def _install_clj_linux(ctx):
+    clj_version = ctx.attr.clj_version
 
     url, sha256 = CLJ_VERSIONS_LINUX[clj_version]
 
-    repository_ctx.download(
+    ctx.download(
         auth = {},
         url = url,
         output = "install.sh",
         executable = True,
         sha256 = sha256)
 
-    repository_ctx.execute(["./install.sh", "--prefix", repository_ctx.path(clj_install_prefix)],
-                           quiet = False)
+    ctx.execute(["./install.sh", "--prefix", ctx.path(clj_install_prefix)],
+                quiet = False)
 
-def _install_tools_deps(repository_ctx):
+def _install_tools_deps(ctx):
     fns = {"linux": _install_clj_linux,
            "mac os x": _install_clj_mac}
-    f = fns[repository_ctx.os.name]
-    f(repository_ctx)
+    f = fns[ctx.os.name]
+    f(ctx)
 
 
-def _add_deps_edn(repository_ctx):
-    # repository_ctx.delete(repository_ctx.path("deps.edn"))
-    repository_ctx.symlink(
-        repository_ctx.path(repository_ctx.attr.deps_edn),
-        repository_ctx.path("deps.edn"))
+def _add_deps_edn(ctx):
+    # ctx.delete(ctx.path("deps.edn"))
+    ctx.symlink(
+        ctx.path(ctx.attr.deps_edn),
+        ctx.path("deps.edn"))
 
 def aliases_str(aliases):
     return str("[" + " ".join([ (":%s" % (a)) for a in aliases]) + "]")
 
-def _install_scripts(repository_ctx):
-    repository_ctx.file(repository_ctx.path("scripts/BUILD.bazel"),
+def _install_scripts(ctx):
+    ctx.file(ctx.path("scripts/BUILD.bazel"),
                         executable = True,
                         content = """
 package(default_visibility = ["//visibility:public"])
@@ -78,40 +78,42 @@ java_binary(name="gen_srcs",
           ":repository-dir", "{repository_dir}",
           ":deps-build-dir", "{deps_build_dir}",
           ":deps-repo-tag", "{deps_repo_tag}",
+          ":root-module-name", "{root_module_name}",
           ":aliases", "\\"{aliases}\\""],
     data=["{deps_edn_label}"])
 
- """.format(deps_repo_tag = "@" + repository_ctx.attr.name,
-            deps_edn_label = repository_ctx.attr.deps_edn,
-            deps_edn_path = repository_ctx.path(repository_ctx.attr.deps_edn),
-            repository_dir = repository_ctx.path("repository"),
-            deps_build_dir = repository_ctx.path(""),
-            aliases = aliases_str(repository_ctx.attr.aliases)))
+ """.format(deps_repo_tag = "@" + (ctx.attr.repo_name or ctx.attr.name),
+            deps_edn_label = ctx.attr.deps_edn,
+            deps_edn_path = ctx.path(ctx.attr.deps_edn),
+            repository_dir = ctx.path("repository"),
+            deps_build_dir = ctx.path(""),
+            root_module_name = ctx.attr.root_module_name,
+            aliases = aliases_str(ctx.attr.aliases)))
 
 def _symlink_repository(repository_ctx):
     repository_ctx.symlink(repository_ctx.os.environ["HOME"] + "/.m2/repository", repository_ctx.path("repository"))
 
-def _run_gen_build(repository_ctx):
-    args = [repository_ctx.path("tools.deps/bin/clojure"),
+def _run_gen_build(ctx):
+    args = [ctx.path("tools.deps/bin/clojure"),
             "-Srepro",
             "-Sdeps", """{:paths ["%s"]
                           :deps {org.clojure/clojure {:mvn/version "1.12.1"}
                                  org.clojure/tools.namespace {:mvn/version "1.1.0"}
                                  org.clojure/tools.deps {:mvn/version "0.28.1578"}}}
-                       """ % repository_ctx.path("../rules_clojure/src"),
+                       """ % ctx.path(ctx.attr._rules_clj_src),
 
             "-J-Dclojure.main.report=stderr",
             "-J-Dorg.slf4j.simpleLogger.log.org.apache.http=warn",
             "-M",
             "-m", "rules-clojure.gen-build",
             "deps",
-            ":deps-edn-path", repository_ctx.path(repository_ctx.attr.deps_edn),
-            ":repository-dir", repository_ctx.path("repository/"),
-            ":deps-build-dir", repository_ctx.path(""),
-            ":deps-repo-tag", "@" + repository_ctx.attr.name,
-            ":workspace-root", repository_ctx.attr.deps_edn.workspace_root,
-            ":aliases", aliases_str(repository_ctx.attr.aliases)]
-    ret = repository_ctx.execute(args, quiet=False, environment=repository_ctx.attr.env)
+            ":deps-edn-path", ctx.path(ctx.attr.deps_edn),
+            ":repository-dir", ctx.path("repository/"),
+            ":deps-build-dir", ctx.path(""),
+            ":workspace-root", ctx.attr.deps_edn.workspace_root,
+            ":root-module-name", ctx.attr.root_module_name,
+            ":aliases", aliases_str(ctx.attr.aliases)]
+    ret = ctx.execute(args, quiet=False, environment=ctx.attr.env)
     if ret.return_code > 0:
         fail("gen build failed:", ret.return_code, ret.stdout, ret.stderr)
 
@@ -121,7 +123,6 @@ def _tools_deps_impl(repository_ctx):
     _run_gen_build(repository_ctx)
     _add_deps_edn(repository_ctx)
     _install_scripts(repository_ctx)
-
     return None
 
 clojure_tools_deps = repository_rule(
@@ -129,6 +130,8 @@ clojure_tools_deps = repository_rule(
     attrs = {"deps_edn": attr.label(allow_single_file = True),
              "aliases": attr.string_list(default = [], doc = "extra aliases in deps.edn to merge in while resolving deps"),
              "clj_version": attr.string(default="1.11.1.1347"),
+             "root_module_name": attr.string(default = "", doc = "name of the root module, used to rewrite labels in dep overrides for bzlmod compatibility"),
+             "repo_name": attr.string(default = "", doc = "apparent repo name for bzlmod (e.g. 'deps'), used instead of canonical name for label generation"),
              "env": attr.string_dict(default = {}),
              "_rules_clj_deps": attr.label(default="@rules_clojure//:deps.edn"),
              "_rules_clj_src": attr.label(default="@rules_clojure//:src")})
