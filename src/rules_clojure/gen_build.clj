@@ -13,6 +13,7 @@
             [rules-clojure.namespace.parse :as parse])
   (:import (clojure.lang IPersistentList IPersistentMap IPersistentVector Keyword Var)
            (java.nio.file Path)
+
            (java.util.jar JarEntry JarFile))
   (:gen-class))
 
@@ -546,8 +547,6 @@
                  (.startsWith ^Path path ^Path (fs/->path deps-edn-dir p))))
        first))
 
-(defn prun [f coll]
-  (mapv deref (mapv #(future (f %)) coll)))
 
 (s/fdef ns-rules :args (s/cat :a (s/keys :req-un [::basis ::deps-edn-dir ::jar->lib ::deps-repo-tag ::deps-bazel]) :p (s/coll-of fs/path?)))
 (defn ns-rules
@@ -727,7 +726,7 @@
                      (distinct)
                      (sort-by (comp count str))
                      (reverse)
-                     (prun (fn [dir]
+                     (pmap (fn [dir]
                              (gen-dir args dir))))]
     (reduce (fn [acc m] (merge-with + acc m))
             {:files 0 :wrote 0 :dirs (count results)}
