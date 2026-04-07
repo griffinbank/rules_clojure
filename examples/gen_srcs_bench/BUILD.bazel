@@ -1,0 +1,27 @@
+load("@rules_clojure//rules:tools_deps.bzl", "clojure_gen_srcs")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "deps.edn",
+])
+
+java_library(
+    name = "generator-src",
+    resources = ["generator.clj"],
+)
+
+java_binary(
+    name = "gen",
+    main_class = "clojure.main",
+    runtime_deps = [
+        ":generator-src",
+        "@deps//:org_clojure_clojure",
+        "@deps//:org_clojure_spec_alpha",
+        "@deps//:org_clojure_core_specs_alpha",
+    ],
+    jvm_flags = ["-Dclojure.main.report=stderr"],
+    args = ["-m", "generator"],
+)
+
+clojure_gen_srcs(name = "gen_srcs")

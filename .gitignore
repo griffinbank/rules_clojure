@@ -3,3 +3,6 @@
 .ijwb/
 .lsp/
 bazel-*
+examples/gen_srcs_bench/src/
+examples/gen_srcs_bench/hyperfine.json
+.nrepl-port
