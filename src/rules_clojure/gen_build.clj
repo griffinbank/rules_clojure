@@ -241,9 +241,6 @@
     (-> path fs/path->file (.isDirectory)) (dir-files path)
     (re-find #".jar$" (str path)) (jar-files path)))
 
-(def classpath-files-memo
-  (memoize classpath-files))
-
 (defn jar-classes
   "given the path to a jar, return a list of classes contained"
   [path]
@@ -259,17 +256,17 @@
               symbol)))))
 
 (defn is-aoted?
-  [path ns]
+  [files-set ns]
   (let [root-resource (#'clojure.core/root-resource ns)
         class-file (str (.substring ^String root-resource 1) "__init.class")]
-    (some #(= class-file %) (classpath-files-memo path))))
+    (contains? files-set class-file)))
 
 (def special-namespaces '#{clojure.core clojure.core.specs.alpha})
 
-(defn should-compile-namespace? [deps-bazel path ns]
+(defn should-compile-namespace? [deps-bazel files-set ns]
   (and (not (contains? special-namespaces ns))
        (not (contains? (get-in deps-bazel [:no-aot]) ns))
-       (not (is-aoted? path ns))))
+       (not (is-aoted? files-set ns))))
 
 (defn ns-matches-path?
   [ns path]
@@ -285,16 +282,17 @@
        :classpath
        (map (fn [[path {:keys [lib-name]}]]
               (when lib-name
-                {:clj (->> (find/find-namespaces [(fs/path->file path)] find/clj)
-                           (map (fn [n]
-                                  [n (if (should-compile-namespace? deps-bazel path n)
-                                       (internal-dep-ns-aot-label lib-name n)
-                                       (library->label lib-name))]))
-                           (into {}))
+                (let [files-set (set (classpath-files path))]
+                  {:clj (->> (find/find-namespaces [(fs/path->file path)] find/clj)
+                             (map (fn [n]
+                                    [n (if (should-compile-namespace? deps-bazel files-set n)
+                                         (internal-dep-ns-aot-label lib-name n)
+                                         (library->label lib-name))]))
+                             (into {}))
                  :cljs (->> (find/find-namespaces [(fs/path->file path)] find/cljs)
                             (map (fn [n]
                                    [n (library->label lib-name)]))
-                            (into {}))})))
+                            (into {}))}))))
        (filter identity)
        (apply merge-with merge)))
 
@@ -811,7 +809,8 @@
                                                extra-args (-> deps-bazel
                                                               (get-in [:deps external-label]))
                                                _ (assert (re-find #".jar$" (str jarpath)) "only know how to handle jars for now")
-                                               jarfile (JarFile. (fs/path->file jarpath))]
+                                               jarfile (JarFile. (fs/path->file jarpath))
+                                               files-set (set (jar-files jarpath))]
                                            (vec
                                             (concat
                                              [(emit-bazel (list 'java_import (kwargs (merge-with into
@@ -831,7 +830,7 @@
                                                      ns-decl))))
                                               (filter
                                                (fn [ns-decl]
-                                                 (should-compile-namespace? deps-bazel jarpath (parse/name-from-ns-decl ns-decl))))
+                                                 (should-compile-namespace? deps-bazel files-set (parse/name-from-ns-decl ns-decl))))
                                               (group-by parse/name-from-ns-decl)
                                               (map (fn [[ns ns-decls]]
                                                      (let [extra-deps (-> deps-bazel (get-in [:deps (str deps-repo-tag "//:" (internal-dep-ns-aot-label lib ns))]))]
