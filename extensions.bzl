@@ -13,6 +13,7 @@ def _module_impl(ctx):
             root_module_name = mod.name
         for attr in mod.tags.install:
             repos.append(attr.repo_name)
+            ctx.watch(attr.deps_edn)
             clojure_tools_deps(name = attr.repo_name,
                                repo_name = attr.repo_name,
                                aliases = attr.aliases,
