@@ -3,6 +3,8 @@
             [clojure.test :refer [deftest is testing]]
             [clojure.java.io :as io]
             [rules-clojure.gen-build :as gb]
+            [rules-clojure.namespace.file :as ns-file]
+            [rules-clojure.namespace.parse :as parse]
             [rules-clojure.fs :as fs]))
 
 (defn- make-temp-dir
@@ -17,19 +19,47 @@
     (spit f content)
     (fs/->path (.getAbsolutePath f))))
 
+(defn- build-ns-decl-cache
+  "Build a ns-decl cache for the given paths, mimicking build-src-index."
+  [paths]
+  (into {}
+        (mapcat (fn [path]
+                  (let [file (.toFile ^java.nio.file.Path path)
+                        s (str path)]
+                    (cond
+                      (str/ends-with? s ".clj")
+                      (when-let [decl (ns-file/read-file-ns-decl file parse/clj-read-opts)]
+                        {[path :clj] decl})
+
+                      (str/ends-with? s ".cljs")
+                      (when-let [decl (ns-file/read-file-ns-decl file parse/cljs-read-opts)]
+                        {[path :cljs] decl})
+
+                      (str/ends-with? s ".cljc")
+                      (merge
+                       (when-let [decl (ns-file/read-file-ns-decl file parse/clj-read-opts)]
+                         {[path :clj] decl})
+                       (when-let [decl (ns-file/read-file-ns-decl file parse/cljs-read-opts)]
+                         {[path :cljs] decl}))))))
+        paths))
+
 (defn- minimal-args
-  "Build a minimal args map for ns-rules with the given dep-ns->label map."
-  [dir dep-ns->label]
-  (let [dir-path (fs/->path (.getAbsolutePath dir))]
-    {:src-ns->label {}
-     :dep-ns->label dep-ns->label
-     :jar->lib {}
-     :class->jar {}
-     :deps-repo-tag "@deps"
-     :deps-bazel {}
-     :deps-edn-dir dir-path
-     :basis {:paths ["src"]
-             :classpath {}}}))
+  "Build a minimal args map for ns-rules with the given dep-ns->label map.
+  Provide paths to build the ns-decl-cache that ns-rules requires."
+  ([dir dep-ns->label]
+   (minimal-args dir dep-ns->label []))
+  ([dir dep-ns->label paths]
+   (let [dir-path (fs/->path (.getAbsolutePath dir))]
+     {:src-ns->label {}
+      :dep-ns->label dep-ns->label
+      :jar->lib {}
+      :class->jar {}
+      :deps-repo-tag "@deps"
+      :deps-bazel {}
+      :deps-edn-dir dir-path
+      :ns-decl-cache (build-ns-decl-cache paths)
+      :basis {:paths ["src"]
+              :classpath {}}})))
 
 (defn- extract-deps
   "Given ns-rules output, extract the deps list from the first clojure_library rule."
@@ -50,7 +80,7 @@
                                 'reagent.core     "ns_reagent_reagent_reagent_core"}
                          :cljs {'reitit.core      "metosin_reitit_core"
                                 'reagent.core     "reagent_reagent"}}
-          args (minimal-args dir dep-ns->label)
+          args (minimal-args dir dep-ns->label [clj-path cljs-path])
           result (gb/ns-rules args [clj-path cljs-path])
           deps (extract-deps result)]
       (try
@@ -77,7 +107,7 @@
                                 "(ns example.shared\n  (:require [clojure.string :as str]))")
           dep-ns->label {:clj  {'clojure.string "ns_org_clojure_clojure_clojure_string"}
                          :cljs {'clojure.string "org_clojure_clojurescript"}}
-          args (minimal-args dir dep-ns->label)
+          args (minimal-args dir dep-ns->label [cljc-path])
           result (gb/ns-rules args [cljc-path])
           deps (extract-deps result)]
       (try
@@ -86,6 +116,38 @@
             "cljc require should resolve via CLJ dep map")
         (is (some #(= "@deps//:org_clojure_clojurescript" %) deps)
             "cljc require should resolve via CLJS dep map")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
+(deftest ns-rules-cljc-splicing-reader-conditional
+  (testing ".cljc with #?@ splicing reader conditional should resolve platform-specific requires"
+    (let [dir (make-temp-dir)
+          cljc-path (write-file dir "machine.cljc"
+                                (str "(ns example.machine\n"
+                                     "  (:require #?@(:clj [[clojure.core.memoize]\n"
+                                     "                      [example.logging :as log]]\n"
+                                     "                :cljs [[taoensso.timbre :as log]])\n"
+                                     "            [clojure.set :as set]))"))
+          dep-ns->label {:clj  {'clojure.core.memoize "ns_org_clojure_core_memoize_clojure_core_memoize"
+                                'clojure.set          "ns_org_clojure_clojure_clojure_set"
+                                'taoensso.timbre      "ns_com_taoensso_timbre_taoensso_timbre"}
+                         :cljs {'clojure.set          "org_clojure_clojurescript"
+                                'taoensso.timbre      "com_taoensso_timbre"}}
+          args (minimal-args dir dep-ns->label [cljc-path])
+          result (gb/ns-rules args [cljc-path])
+          deps (extract-deps result)]
+      (try
+        ;; CLJ branch: clojure.core.memoize
+        (is (some #(= "@deps//:ns_org_clojure_core_memoize_clojure_core_memoize" %) deps)
+            "CLJ splicing branch should resolve clojure.core.memoize")
+        ;; CLJS branch: taoensso.timbre
+        (is (some #(= "@deps//:com_taoensso_timbre" %) deps)
+            "CLJS splicing branch should resolve taoensso.timbre")
+        ;; Common require resolved via both platforms
+        (is (some #(= "@deps//:ns_org_clojure_clojure_clojure_set" %) deps)
+            "common require should resolve via CLJ dep map")
+        (is (some #(= "@deps//:org_clojure_clojurescript" %) deps)
+            "common require should resolve via CLJS dep map")
         (finally
           (fs/rm-rf (.toPath dir)))))))
 
@@ -101,7 +163,7 @@
                                (str "(ns example.benchmark\n"
                                     "  {:bazel/clojure_binary {:jvm_flags [\"-Djdk.attach.allowAttachSelf\"]}}\n"
                                     "  (:gen-class))"))
-          args (-> (minimal-args dir {:clj {} :cljs {}})
+          args (-> (minimal-args dir {:clj {} :cljs {}} [clj-path])
                    (assoc :deps-bazel {:clojure_library {:jvm_flags ["-Dclojure.main.report=stderr"]}}))
           result (gb/ns-rules args [clj-path])
           attrs (find-rule result :clojure_binary)]
@@ -120,7 +182,7 @@
     (let [dir (make-temp-dir)
           clj-path (write-file dir "core.clj"
                                "(ns example.core\n  (:gen-class))")
-          args (minimal-args dir {:clj {} :cljs {}})
+          args (minimal-args dir {:clj {} :cljs {}} [clj-path])
           result (gb/ns-rules args [clj-path])
           attrs (find-rule result :clojure_binary)]
       (try
@@ -134,7 +196,7 @@
                                (str "(ns example.server\n"
                                     "  {:bazel/clojure_binary {:main_class \"example.server\"}}\n"
                                     "  (:gen-class))"))
-          args (minimal-args dir {:clj {} :cljs {}})
+          args (minimal-args dir {:clj {} :cljs {}} [clj-path])
           result (gb/ns-rules args [clj-path])
           attrs (find-rule result :clojure_binary)]
       (try
@@ -147,7 +209,7 @@
     (let [dir (make-temp-dir)
           clj-path (write-file dir "post_test.clj"
                                "(ns example.post-test\n  {:bazel/clojure_test {:timeout :long}}\n  (:require [clojure.test :refer [deftest]]))")
-          args (minimal-args dir {:clj {'clojure.test "org_clojure_clojure"} :cljs {}})
+          args (minimal-args dir {:clj {'clojure.test "org_clojure_clojure"} :cljs {}} [clj-path])
           result (gb/ns-rules args [clj-path])
           attrs (find-rule result :clojure_test)]
       (try
@@ -162,7 +224,7 @@
     (let [dir (make-temp-dir)
           clj-path (write-file dir "large_test.clj"
                                "(ns example.large-test\n  {:bazel/clojure_test {:size :large}}\n  (:require [clojure.test :refer [deftest]]))")
-          args (minimal-args dir {:clj {'clojure.test "org_clojure_clojure"} :cljs {}})
+          args (minimal-args dir {:clj {'clojure.test "org_clojure_clojure"} :cljs {}} [clj-path])
           result (gb/ns-rules args [clj-path])
           attrs (find-rule result :clojure_test)]
       (try
