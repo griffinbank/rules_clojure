@@ -77,7 +77,6 @@
 
 (s/fdef kwargs :args (s/cat :x ::bazel-map) :ret kwargs?)
 (defn kwargs [x]
-  (validate! ::bazel-map x)
   (->KeywordArgs x))
 
 (s/def ::bazel-atom (s/or :s string? :k keyword? :p fs/path? :b boolean?))
@@ -141,7 +140,6 @@
 (defn emit-bazel
   "Given a string name and a dictionary of arguments, return a string of bazel"
   [x]
-  (validate! ::bazel x)
   (emit-bazel* x))
 
 (defn resolve-src-location
@@ -232,7 +230,7 @@
 (defn ->jar->lib
   "Return a map of jar path to library name ('org.clojure/clojure)"
   [basis]
-  {:post [(s/valid? ::jar->lib %)]}
+  {:post [(map? %)]}
   (->> basis
        :classpath
        (map (fn [[path {:keys [path-key lib-name]}]]
@@ -323,7 +321,7 @@
 (defn ->dep-ns->label [{:keys [basis deps-bazel] :as args}]
   {:pre [(map? basis)
          deps-bazel]
-   :post [(s/valid? ::dep-ns->label %)]}
+   :post [(map? %)]}
   (->> basis
        :classpath
        (map (fn [[path {:keys [lib-name]}]]
@@ -373,7 +371,7 @@
 (defn ->class->jar
   "returns a map of class symbol to jarpath for all jars on the classpath"
   [basis]
-  {:post [(s/valid? ::class->jar %)]}
+  {:post [(map? %)]}
   (into {}
         (mapcat
          (fn [path]
@@ -408,11 +406,6 @@
                 (update dep-map parent (fnil conj #{}) child))
               ;; empty parent means this is a toplevel dep, already covered elsewhere
               dep-map))) {})))
-
-(s/fdef src->label :args (s/cat :a (s/keys :req-un [::deps-edn-dir]) :p fs/path?) :ret string?)
-(defn src->label [{:keys [deps-edn-dir]} path]
-  (let [path (fs/path-relative-to deps-edn-dir path)]
-    (str "//" (fs/dirname path) ":" (str (fs/basename path)))))
 
 (s/fdef jar->label :args (s/cat :a (s/keys :req-un [::jar->lib] :opt-un [::deps-repo-tag]) :p fs/path?) :ret string?)
 (defn jar->label
@@ -520,37 +513,28 @@
 
 (s/fdef clj-path? :args (s/cat :p fs/path?) :ret boolean?)
 (defn clj-path? [path]
-  (boolean (re-find #"\.clj$" (str path))))
+  (str/ends-with? (str path) ".clj"))
 
 (defn cljc-path? [path]
-  (boolean (re-find #"\.cljc$" (str path))))
+  (str/ends-with? (str path) ".cljc"))
 
 (defn cljs-path? [path]
-  (boolean (re-find #"\.cljs$" (str path))))
+  (str/ends-with? (str path) ".cljs"))
 
 (defn clj*-path? [path]
-  (or (clj-path? path)
-      (cljc-path? path)
-      (cljs-path? path)))
+  (let [s (str path)]
+    (or (str/ends-with? s ".clj")
+        (str/ends-with? s ".cljc")
+        (str/ends-with? s ".cljs"))))
 
 (defn js-path? [path]
-  (re-find #"\.js$" (str path)))
+  (str/ends-with? (str path) ".js"))
 
 (defn test-path? [path]
-  (boolean (re-find #"_test.clj" (str path))))
+  (str/includes? (str path) "_test.clj"))
 
 (defn src-path? [path]
   (not (test-path? path)))
-
-(defn path-
-  "given the path to a .clj file, return the namespace"
-  [^Path path]
-  {:post [(symbol? %)]}
-  (-> path
-      .toFile
-      (slurp)
-      (read-string)
-      (second)))
 
 (defn requires-aot?
   [ns-decl]
@@ -598,7 +582,7 @@
   Returns a vector of {:type keyword :attrs map} — pure data, no serialization."
   [{:keys [deps-bazel deps-repo-tag] :as args} paths]
   (assert (map? (:src-ns->label args)))
-  (assert (s/valid? (s/coll-of fs/path?) paths))
+  (assert (sequential? paths))
   (try
     (let [clj? (some clj-path? paths)
           cljc? (some cljc-path? paths)
