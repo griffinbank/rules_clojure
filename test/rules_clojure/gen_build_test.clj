@@ -1,9 +1,11 @@
 (ns rules-clojure.gen-build-test
-  (:require [clojure.string :as str]
+  (:require [clojure.java.io :as io]
+            [clojure.java.shell :as shell]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [clojure.java.io :as io]
+            [rules-clojure.fs :as fs]
             [rules-clojure.gen-build :as gb]
-            [rules-clojure.fs :as fs]))
+            [rules-clojure.test-utils :as test-utils]))
 
 (defn- make-temp-dir
   "Create a temp directory with a src/ subdirectory (matching basis :paths)."
@@ -171,3 +173,90 @@
         (is (not (contains? attrs :tags)) "absent :tags should not appear in attrs")
         (finally
           (fs/rm-rf (.toPath dir)))))))
+
+
+;; ---- formatting tests (emit-bazel) ----
+
+(deftest test-emit-bazel-vector-inline
+  (testing "empty vector"
+    (is (= "[]" (gb/emit-bazel []))))
+  (testing "single element"
+    (is (= "[\"a\"]" (gb/emit-bazel ["a"]))))
+  (testing "single element stays inline regardless of length"
+    (is (= "[\"long-element-name\"]" (gb/emit-bazel ["long-element-name"]))))
+  (testing "multi-element standalone vector renders inline with comma+space separator"
+    (is (= "[\"a\", \"b\"]" (gb/emit-bazel ["a" "b"])))))
+
+(deftest test-emit-bazel-function-call-inline
+  (testing "positional args only"
+    (is (= "load(\"@rules_clojure//:rules.bzl\", \"clojure_library\")"
+           (gb/emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library")))))
+  (testing "single kwarg stays inline"
+    (is (= "package(default_visibility = [\"//visibility:public\"])"
+           (gb/emit-bazel (list 'package (gb/kwargs {:default_visibility ["//visibility:public"]})))))))
+
+(deftest test-emit-bazel-function-call-multiline
+  (testing "multiple kwargs go multiline with sorted attrs"
+    (let [result (gb/emit-bazel
+                  (list 'clojure_library
+                        (gb/kwargs {:name "build"
+                                    :deps ["//resources:data_readers"
+                                           "@deps//:org_clojure_clojure"]
+                                    :srcs ["build.clj"]
+                                    :aot ["build"]})))]
+      (is (= (str "clojure_library(\n"
+                  "    name = \"build\",\n"
+                  "    srcs = [\"build.clj\"],\n"
+                  "    aot = [\"build\"],\n"
+                  "    deps = [\n"
+                  "        \"//resources:data_readers\",\n"
+                  "        \"@deps//:org_clojure_clojure\",\n"
+                  "    ],\n"
+                  ")")
+             result)))))
+
+(deftest test-attr-sorting
+  (testing "name first, then by priority, then alphabetical"
+    (let [result (gb/emit-bazel
+                  (list 'clojure_library
+                        (gb/kwargs {:deps ["a"] :name "x" :aot ["b"] :srcs ["c"] :runtime_deps ["d"]})))]
+      (is (str/starts-with? result "clojure_library(\n    name = \"x\",\n    srcs = [\"c\"],"))
+      (is (str/includes? result "    aot = [\"b\"],"))
+      (is (str/includes? result "    runtime_deps = [\"d\"],\n    deps = [\"a\"],")))))
+
+(deftest test-list-sorting
+  (testing "deps are sorted by buildifier phase order (: < // < @)"
+    (let [result (gb/emit-bazel
+                  (list 'clojure_library
+                        (gb/kwargs {:name "x"
+                                    :deps ["@deps//:zzz" ":aaa" "//pkg:lib"]})))]
+      (is (str/includes? result "        \":aaa\",\n        \"//pkg:lib\",\n        \"@deps//:zzz\","))))
+  (testing "aot is NOT sorted (not in sortable set)"
+    (let [result (gb/emit-bazel
+                  (list 'clojure_library
+                        (gb/kwargs {:name "x"
+                                    :aot ["z-ns" "a-ns"]})))]
+      (is (str/includes? result "        \"z-ns\",\n        \"a-ns\",")))))
+
+(deftest test-buildifier-round-trip
+  (testing "generated output is buildifier-stable"
+    (let [buildifier-path (first (test-utils/runfiles-env "BUILDIFIER"))]
+      (is (some? buildifier-path) "BUILDIFIER env var must be set (see :env on the gen-build-test target)")
+      (when buildifier-path
+        (let [content (str "\"\"\"\nTest file.\n\"\"\"\n\n"
+                           (gb/emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library"))
+                           "\n\n"
+                           (gb/emit-bazel (list 'package (gb/kwargs {:default_visibility ["//visibility:public"]})))
+                           "\n\n"
+                           (gb/emit-bazel
+                            (list 'clojure_library
+                                  (gb/kwargs {:name "test"
+                                              :deps ["@deps//:zzz" ":aaa"]
+                                              :srcs ["z.clj" "a.clj"]
+                                              :aot ["z-ns" "a-ns"]
+                                              :runtime_deps ["@deps//:bbb"]})))
+                           "\n")
+              result (shell/sh buildifier-path "--type=build" :in content)]
+          (is (zero? (:exit result)) (str "buildifier failed: " (:err result)))
+          (is (= content (:out result))
+              (str "buildifier produced diff. Expected:\n" content "\nGot:\n" (:out result))))))))
