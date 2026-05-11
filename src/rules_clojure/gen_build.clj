@@ -628,7 +628,7 @@
   (re-find #"\.js$" (str path)))
 
 (defn test-path? [path]
-  (boolean (re-find #"_test.clj" (str path))))
+  (boolean (re-find #"_test\.cljc?$" (str path))))
 
 (defn src-path? [path]
   (not (test-path? path)))
@@ -808,25 +808,29 @@
                      subdirs
                      (filter (fn [p]
                                (some clj*-path? (seq (fs/ls-r p))))))
-        [has-binary? rules] (reduce (fn [[hb? acc] rule]
-                                      [(or hb? (= :clojure_binary (:type rule)))
-                                       (conj acc (emit-rule rule))])
-                                    [false []]
-                                    (->> paths
-                                         (group-by fs/basename)
-                                         (mapcat (fn [[_base paths]]
-                                                   (ns-rules args paths)))))
-
+        [has-binary? has-tests? rules]
+        (reduce (fn [[hb? ht? acc] rule]
+                  [(or hb? (= :clojure_binary (:type rule)))
+                   (or ht? (= :clojure_test (:type rule)))
+                   (conj acc (emit-rule rule))])
+                [false false []]
+                (->> paths
+                     (group-by fs/basename)
+                     (mapcat (fn [[_base paths]]
+                               (ns-rules args paths)))))
+        has-content? (or (seq paths) (seq clj-subdirs))
         content (str (build-file-header "the `//:gen_srcs` target from `rules_clojure`")
-                     (emit-bazel (apply list 'load "@rules_clojure//:rules.bzl"
-                                        (cond-> ["clojure_library" "clojure_test"]
-                                          has-binary? (conj "clojure_binary"))))
-                     "\n\n"
+                     (when has-content?
+                       (str (emit-bazel (apply list 'load "@rules_clojure//:rules.bzl"
+                                               (cond-> ["clojure_library"]
+                                                 has-tests? (conj "clojure_test")
+                                                 has-binary? (conj "clojure_binary"))))
+                            "\n\n"))
                      (emit-bazel (list 'package (kwargs {:default_visibility ["//visibility:public"]})))
                      "\n"
                      (when (seq rules)
                        (str "\n" (str/join "\n\n" rules) "\n"))
-                     (when (or (seq paths) (seq clj-subdirs))
+                     (when has-content?
                        (str "\n"
                             (emit-bazel (list 'clojure_library (kwargs {:name "__clj_lib"
                                                                         :deps (vec

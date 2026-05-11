@@ -20,7 +20,7 @@
     (fs/->path (.getAbsolutePath f))))
 
 (defn- minimal-args
-  "Build a minimal args map for ns-rules with the given dep-ns->label map."
+  "Build a minimal args map for ns-rules / gen-dir with the given dep-ns->label map."
   [dir dep-ns->label]
   (let [dir-path (fs/->path (.getAbsolutePath dir))]
     {:src-ns->label {}
@@ -174,7 +174,6 @@
         (finally
           (fs/rm-rf (.toPath dir)))))))
 
-
 ;; ---- formatting tests (emit-bazel) ----
 
 (deftest test-emit-bazel-vector-inline
@@ -260,3 +259,93 @@
           (is (zero? (:exit result)) (str "buildifier failed: " (:err result)))
           (is (= content (:out result))
               (str "buildifier produced diff. Expected:\n" content "\nGot:\n" (:out result))))))))
+
+;; ---- gen-dir load-symbol pruning ----
+
+(defn- load-symbols
+  "Extract the symbol args of the rules_clojure load() from generated BUILD content.
+   Returns a set of symbol strings, or nil if no rules_clojure load() is present.
+   The first captured string is the bzl path; drop it and keep the symbol names."
+  [content]
+  (when-let [load-call (re-find #"(?s)load\(\"@rules_clojure//:rules.bzl\"[^)]*\)" content)]
+    (set (->> (re-seq #"\"([^\"]+)\"" load-call)
+              (map second)
+              rest))))
+
+(defn- run-gen-dir!
+  "Set up a temp dir with the given relative-path → content files, call gen-dir,
+   and return the BUILD.bazel content (nil if no BUILD was written).
+   Cleans the temp dir via teardown. dep-ns->label defaults to empty per platform."
+  [files & {:keys [dep-ns->label]
+            :or {dep-ns->label {:clj {} :cljs {}}}}]
+  (let [dir (make-temp-dir)
+        src-dir (fs/->path (.getAbsolutePath dir) "src" "example")]
+    (try
+      (doseq [[rel-path content] files]
+        (let [target (io/file (.toFile src-dir) rel-path)]
+          (.mkdirs (.getParentFile target))
+          (spit target content)))
+      (gb/gen-dir (minimal-args dir dep-ns->label) src-dir)
+      (let [build-file (io/file (.toFile src-dir) "BUILD.bazel")]
+        (when (.exists build-file) (slurp build-file)))
+      (finally
+        (fs/rm-rf (.toPath dir))))))
+
+(deftest gen-dir-load-symbols
+  (testing "library only — load includes only clojure_library"
+    (let [content (run-gen-dir! {"core.clj" "(ns example.core)"})]
+      (is (= #{"clojure_library"} (load-symbols content)))))
+
+  (testing "library + .clj test — load includes clojure_test"
+    (let [content (run-gen-dir!
+                   {"core.clj"      "(ns example.core)"
+                    "core_test.clj" "(ns example.core-test (:require [clojure.test :refer [deftest]]))"}
+                   :dep-ns->label {:clj {'clojure.test "org_clojure_clojure"} :cljs {}})]
+      (is (= #{"clojure_library" "clojure_test"} (load-symbols content))
+          "should load clojure_test when .clj test files exist")))
+
+  (testing "library + .cljc test — load includes clojure_test"
+    (let [content (run-gen-dir!
+                   {"core.cljc"      "(ns example.core)"
+                    "core_test.cljc" "(ns example.core-test (:require [clojure.test :refer [deftest]]))"}
+                   :dep-ns->label {:clj {'clojure.test "org_clojure_clojure"} :cljs {}})]
+      (is (= #{"clojure_library" "clojure_test"} (load-symbols content))
+          "should load clojure_test when .cljc test files exist")))
+
+  (testing ".cljs-only test files — load does NOT include clojure_test (ns-rules emits clojure_test only for clj/cljc)"
+    (let [content (run-gen-dir!
+                   {"core.cljs"      "(ns example.core)"
+                    "core_test.cljs" "(ns example.core-test (:require [cljs.test :refer-macros [deftest]]))"}
+                   :dep-ns->label {:clj {} :cljs {'cljs.test "org_clojure_clojurescript"}})]
+      (is (= #{"clojure_library"} (load-symbols content))
+          "should NOT load clojure_test for .cljs-only tests"))))
+
+(deftest gen-dir-includes-clojure-binary-when-ns-has-bazel-clojure-binary-meta
+  (testing "ns with :bazel/clojure_binary metadata adds clojure_binary to the load"
+    (let [content (run-gen-dir!
+                   {"main.clj" (str "(ns example.main\n"
+                                    "  {:bazel/clojure_binary {}}\n"
+                                    "  (:gen-class))")})]
+      (is (contains? (load-symbols content) "clojure_binary")
+          (str "expected clojure_binary in load, got: " (load-symbols content))))))
+
+(deftest gen-dir-skips-load-for-empty-dirs
+  (testing "directory with no clj files: load(), __clj_lib, __clj_files all absent; package() still emitted"
+    (let [content (run-gen-dir! {})]
+      (is (not (re-find #"(?m)^load\(" content))
+          "should not emit load() for empty directories")
+      (is (not (re-find #"name = \"__clj_lib\"" content))
+          "should not emit __clj_lib rule for empty directories")
+      (is (not (re-find #"name = \"__clj_files\"" content))
+          "should not emit __clj_files filegroup for empty directories")
+      (is (re-find #"(?m)^package\(" content)
+          "should still emit package() (matches Gazelle behaviour)"))))
+
+(deftest gen-dir-subdirs-only
+  (testing "dir with no own files but a clj-only subdir still emits load + __clj_lib referencing the subdir"
+    (let [content (run-gen-dir! {"child/core.clj" "(ns example.child.core)"})]
+      (is (= #{"clojure_library"} (load-symbols content)))
+      (is (re-find #"name = \"__clj_lib\"" content)
+          "should emit __clj_lib aggregating subdirs")
+      (is (re-find #"\"//src/example/child:__clj_lib\"" content)
+          "__clj_lib deps should reference the clj subdir"))))

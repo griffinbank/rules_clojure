@@ -1,4 +1,4 @@
-.clj-kondo/
+.clj-kondo/.cache/
 .cpcache/
 .ijwb/
 .lsp/
