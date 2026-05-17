@@ -9,6 +9,7 @@
             [clojure.tools.deps :as deps]
             [clojure.tools.deps.util.concurrent :as concurrent]
             [rules-clojure.fs :as fs]
+            [rules-clojure.namespace.file :as file]
             [rules-clojure.namespace.find :as find]
             [rules-clojure.namespace.parse :as parse])
   (:import (clojure.lang IPersistentList IPersistentMap IPersistentVector Keyword Var)
@@ -530,17 +531,9 @@
       {:deps [label]})))
 
 (defn get-ns-decl [^Path path platform]
+  ;; clojure.core/read does not honour :features for reader conditionals; tools.reader does.
   (try
-    (with-open [rdr (java.io.PushbackReader. (io/reader (.toFile path)))]
-      (loop []
-        (let [form (clojure.core/read {:read-cond :allow
-                                       :features #{platform}
-                                       :eof ::eof}
-                                      rdr)]
-          (cond
-            (= ::eof form) nil
-            (and (sequential? form) (= 'ns (first form))) form
-            :else (recur)))))
+    (file/read-file-ns-decl (.toFile path) {:read-cond :allow :features #{platform}})
     (catch Exception e
       (throw (ex-info (str "while reading " path) {:path path
                                                    :platform platform} e)))))
