@@ -67,8 +67,10 @@ clojure_test(name="persistent-classloader-test",
 
 clojure_test(name="gen-build-test",
              deps=[":test-deps"],
-             data=["@buildifier_prebuilt//:buildifier"],
-             env={"BUILDIFIER": "$(rlocationpath @buildifier_prebuilt//:buildifier)"},
+             data=["@buildifier_prebuilt//:buildifier",
+                   "rollup_rules_fixtures.edn"],
+             env={"BUILDIFIER": "$(rlocationpath @buildifier_prebuilt//:buildifier)",
+                  "ROLLUP_FIXTURES": "$(rlocationpath rollup_rules_fixtures.edn)"},
              test_ns = "rules-clojure.gen-build-test")
 
 clojure_test(name="compile-test",
@@ -78,3 +80,20 @@ clojure_test(name="compile-test",
              test_ns = "rules-clojure.compile-test",
              data=["//src/rules_clojure:bootstrap"],
              env={"TEST_JARS": "$(rlocationpaths //src/rules_clojure:bootstrap)"})
+
+sh_test(
+    name = "gazelle-server-bb-test",
+    srcs = ["run_bb_test.sh"],
+    data = [
+        "gazelle_server_bb_test.bb",
+        "rollup_rules_fixtures.edn",
+        "//src/rules_clojure:gazelle_server.bb",
+        "@multitool//tools/bb",
+    ],
+    env = {
+        "BB_BIN": "$(rlocationpath @multitool//tools/bb)",
+        "GAZELLE_SERVER_BB_TEST": "$(rlocationpath :gazelle_server_bb_test.bb)",
+        "GAZELLE_SERVER_BB": "$(rlocationpath //src/rules_clojure:gazelle_server.bb)",
+        "ROLLUP_FIXTURES": "$(rlocationpath rollup_rules_fixtures.edn)",
+    },
+)
