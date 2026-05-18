@@ -91,6 +91,78 @@
         (finally
           (fs/rm-rf (.toPath dir)))))))
 
+(deftest ns-rules-cljc-reader-conditional-branches-differ
+  (testing "platform-split require in a .cljc file picks the right branch per platform.
+            Regression: clojure.core/read silently returns the :clj branch even when
+            :features #{:cljs} is set, so the cljs-only require was dropped."
+    (let [dir (make-temp-dir)
+          cljc-path (write-file dir "split.cljc"
+                                "(ns example.split (:require #?(:clj  [clojure.spec.alpha :as s]
+                                                                :cljs [cljs.spec.alpha :as s])))")
+          dep-ns->label {:clj  {'clojure.spec.alpha "ns_org_clojure_spec_alpha_clojure_spec_alpha"}
+                         :cljs {'cljs.spec.alpha    "org_clojure_clojurescript"}}
+          args (minimal-args dir dep-ns->label)
+          result (gb/ns-rules args [cljc-path])
+          deps (extract-deps result)]
+      (try
+        (is (some #(= "@deps//:ns_org_clojure_spec_alpha_clojure_spec_alpha" %) deps)
+            ":clj branch require should resolve")
+        (is (some #(= "@deps//:org_clojure_clojurescript" %) deps)
+            ":cljs branch require should resolve")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
+(deftest ns-rules-cljs-clojure-prefix-auto-aliases-to-cljs
+  (testing "clojure.X with no CLJS source falls back to cljs.X (mirror of cljs.analyzer/aliasable-clj-ns?)"
+    (let [dir (make-temp-dir)
+          cljs-path (write-file dir "demo.cljs"
+                                "(ns example.demo (:require [clojure.spec.alpha :as s]))")
+          dep-ns->label {:clj  {}
+                         :cljs {'cljs.spec.alpha "org_clojure_clojurescript"}}
+          args (minimal-args dir dep-ns->label)
+          result (gb/ns-rules args [cljs-path])
+          deps (extract-deps result)]
+      (try
+        (is (some #(= "@deps//:org_clojure_clojurescript" %) deps)
+            "clojure.spec.alpha should auto-alias to cljs.spec.alpha")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
+(deftest ns-rules-cljs-clojure-prefix-no-alias-when-original-present
+  (testing "clojure.X present on cljs side resolves directly, no rewrite"
+    (let [dir (make-temp-dir)
+          cljs-path (write-file dir "demo.cljs"
+                                "(ns example.demo (:require [clojure.set :as set]))")
+          dep-ns->label {:clj  {}
+                         :cljs {'clojure.set "ns_org_clojure_clojurescript_clojure_set"
+                                'cljs.set    "should_not_resolve_to_this"}}
+          args (minimal-args dir dep-ns->label)
+          result (gb/ns-rules args [cljs-path])
+          deps (extract-deps result)]
+      (try
+        (is (some #(= "@deps//:ns_org_clojure_clojurescript_clojure_set" %) deps)
+            "clojure.set is on cljs classpath, resolves directly")
+        (is (not (some #(= "@deps//:should_not_resolve_to_this" %) deps))
+            "must NOT fall through to cljs.set when clojure.set resolves")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
+(deftest ns-rules-clj-clojure-prefix-no-cljs-fallback
+  (testing "auto-alias is CLJS-only; :clj platform never falls through to cljs.X"
+    (let [dir (make-temp-dir)
+          clj-path (write-file dir "demo.clj"
+                               "(ns example.demo (:require [clojure.spec.alpha :as s]))")
+          dep-ns->label {:clj  {}
+                         :cljs {'cljs.spec.alpha "org_clojure_clojurescript"}}
+          args (minimal-args dir dep-ns->label)
+          result (gb/ns-rules args [clj-path])
+          deps (extract-deps result)]
+      (try
+        (is (not (some #(= "@deps//:org_clojure_clojurescript" %) deps))
+            ":clj platform must not pick up the cljs fallback")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
 (defn- find-rule
   "Find a rule in ns-rules output by type keyword (e.g. :clojure_binary). Returns attrs map."
   [rules-output type-kw]

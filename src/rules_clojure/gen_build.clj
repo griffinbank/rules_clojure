@@ -9,6 +9,7 @@
             [clojure.tools.deps :as deps]
             [clojure.tools.deps.util.concurrent :as concurrent]
             [rules-clojure.fs :as fs]
+            [rules-clojure.namespace.file :as file]
             [rules-clojure.namespace.find :as find]
             [rules-clojure.namespace.parse :as parse])
   (:import (clojure.lang IPersistentList IPersistentMap IPersistentVector Keyword Var)
@@ -520,12 +521,29 @@
          (symbol? ns)]}
   (get-in dep-ns->label [platform ns]))
 
+(defn- cljs-auto-alias
+  "Mirror cljs.analyzer/aliasable-clj-ns?: rewrite clojure.X → cljs.X when
+  clojure.X has no CLJS/CLJC source and cljs.X does. Returns the cljs.X
+  symbol, else nil."
+  [src-ns->label dep-ns->label ns]
+  (let [s (str ns)]
+    (when (and (str/starts-with? s "clojure.")
+               (not (get src-ns->label ns))
+               (not (get-dep-ns->label dep-ns->label :cljs ns)))
+      (let [alt (symbol (str "cljs." (subs s (count "clojure."))))]
+        (when (or (get src-ns->label alt)
+                  (get-dep-ns->label dep-ns->label :cljs alt))
+          alt)))))
+
 (s/fdef ns->label :args (s/cat :a (s/keys :req-un [(or ::src-ns->label ::dep-ns->label)]) :n symbol? :p keyword?))
 (defn ns->label
   "given the ns-map and a namespace, return a map of `:src` or `:dep` to the file/jar where it is located"
   [{:keys [src-ns->label dep-ns->label deps-repo-tag] :as args} ns platform]
   {:pre [(keyword? platform)]}
   (let [prefix (if deps-repo-tag (str deps-repo-tag "//") "")
+        ns (or (when (= :cljs platform)
+                 (cljs-auto-alias src-ns->label dep-ns->label ns))
+               ns)
         label (or (get src-ns->label ns)
                   (when-let [label (get-dep-ns->label dep-ns->label platform ns)]
                     (str prefix ":" label)))]
@@ -533,17 +551,9 @@
       {:deps [label]})))
 
 (defn get-ns-decl [^Path path platform]
+  ;; clojure.core/read does not honour :features for reader conditionals; tools.reader does.
   (try
-    (with-open [rdr (java.io.PushbackReader. (io/reader (.toFile path)))]
-      (loop []
-        (let [form (clojure.core/read {:read-cond :allow
-                                       :features #{platform}
-                                       :eof ::eof}
-                                      rdr)]
-          (cond
-            (= ::eof form) nil
-            (and (sequential? form) (= 'ns (first form))) form
-            :else (recur)))))
+    (file/read-file-ns-decl (.toFile path) {:read-cond :allow :features #{platform}})
     (catch Exception e
       (throw (ex-info (str "while reading " path) {:path path
                                                    :platform platform} e)))))
