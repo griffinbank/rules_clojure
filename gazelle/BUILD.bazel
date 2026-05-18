@@ -1,0 +1,66 @@
+load("@gazelle//:def.bzl", "gazelle_binary")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gazelle_lib",
+    srcs = [
+        "configure.go",
+        "generate.go",
+        "lang.go",
+        "resolve.go",
+    ],
+    data = [
+        "//src/rules_clojure:gazelle_server.bb",
+        "@multitool//tools/bb",
+    ],
+    importpath = "github.com/griffinbank/rules_clojure/gazelle",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//gazelle/clojureconfig",
+        "//gazelle/clojureparser",
+        "@gazelle//config:go_default_library",
+        "@gazelle//label:go_default_library",
+        "@gazelle//language:go_default_library",
+        "@gazelle//repo:go_default_library",
+        "@gazelle//resolve:go_default_library",
+        "@gazelle//rule:go_default_library",
+        "@rules_go//go/runfiles:go_default_library",
+    ],
+)
+
+go_test(
+    name = "gazelle_test",
+    srcs = [
+        "configure_test.go",
+        "generate_test.go",
+        "resolve_test.go",
+    ],
+    embed = [":gazelle_lib"],
+    deps = [
+        "//gazelle/clojureconfig",
+        "//gazelle/clojureparser",
+        "@com_github_bazelbuild_buildtools//build:go_default_library",
+        "@gazelle//config:go_default_library",
+        "@gazelle//label:go_default_library",
+        "@gazelle//resolve:go_default_library",
+        "@gazelle//rule:go_default_library",
+    ],
+)
+
+gazelle_binary(
+    name = "gazelle_bin",
+    languages = [":gazelle_lib"],
+    visibility = ["//visibility:public"],
+)
+
+# Re-exposed filegroup for external/downstream consumers who want to
+# reference the bb script directly. The actual data-dep that ships the
+# script in gazelle_bin's runfiles is gazelle_lib's `data = [...]` above;
+# resolveParserScript in configure.go reads it from runfiles via the
+# rules_go runfiles library (which honours RUNFILES_DIR /
+# RUNFILES_MANIFEST_FILE).
+filegroup(
+    name = "gazelle_server_bb",
+    srcs = ["//src/rules_clojure:gazelle_server.bb"],
+    visibility = ["//visibility:public"],
+)
