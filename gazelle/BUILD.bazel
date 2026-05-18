@@ -1,0 +1,48 @@
+load("@gazelle//:def.bzl", "gazelle_binary")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gazelle_lib",
+    srcs = [
+        "configure.go",
+        "generate.go",
+        "lang.go",
+        "resolve.go",
+    ],
+    importpath = "github.com/griffinbank/rules_clojure/gazelle",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//gazelle/clojureconfig",
+        "//gazelle/clojureparser",
+        "@gazelle//config:go_default_library",
+        "@gazelle//label:go_default_library",
+        "@gazelle//language:go_default_library",
+        "@gazelle//repo:go_default_library",
+        "@gazelle//resolve:go_default_library",
+        "@gazelle//rule:go_default_library",
+    ],
+)
+
+go_test(
+    name = "gazelle_test",
+    srcs = [
+        "configure_test.go",
+        "generate_test.go",
+        "resolve_test.go",
+    ],
+    embed = [":gazelle_lib"],
+    deps = [
+        "//gazelle/clojureconfig",
+        "//gazelle/clojureparser",
+        "@com_github_bazelbuild_buildtools//build:go_default_library",
+        "@gazelle//config:go_default_library",
+        "@gazelle//label:go_default_library",
+        "@gazelle//rule:go_default_library",
+    ],
+)
+
+gazelle_binary(
+    name = "gazelle_bin",
+    languages = [":gazelle_lib"],
+    visibility = ["//visibility:public"],
+)
