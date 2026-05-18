@@ -177,11 +177,14 @@
 (defn emit-bazel-kwargs
   "Return a seq of \"k = v\" entry strings, sorted by buildifier attribute priority.
    Sortable list-typed values (per `sortable-list-attrs`) are sorted by `label-sort-key`.
-   Vector values render inline (<=1 element) or multi-line via `emit-vector`."
+   Vector values render inline (<=1 element) or multi-line via `emit-vector`.
+   Entries whose value is an empty collection are dropped — `data = []` /
+   `srcs = []` are noise, not declarations."
   [kwargs]
   {:pre [(map? kwargs)]
    :post [(sequential? %)]}
   (->> (:x kwargs)
+       (remove (fn [[_ v]] (and (coll? v) (empty? v))))
        sort-kwargs-entries
        (map (fn [[k v]]
               (let [v-str (cond

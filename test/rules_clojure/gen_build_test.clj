@@ -214,6 +214,29 @@
                   ")")
              result)))))
 
+(deftest test-empty-collection-attrs-dropped
+  (testing "empty list/map values are omitted from the rendered call"
+    (let [result (gb/emit-bazel
+                  (list 'filegroup
+                        (gb/kwargs {:name "x"
+                                    :srcs ["a.clj"]
+                                    :data []})))]
+      (is (= "filegroup(\n    name = \"x\",\n    srcs = [\"a.clj\"],\n)"
+             result)
+          "data = [] is noise — bazel default is [] anyway — and must not render")))
+  (testing "non-empty values survive"
+    (let [result (gb/emit-bazel
+                  (list 'filegroup
+                        (gb/kwargs {:name "x"
+                                    :srcs ["a.clj"]
+                                    :data ["//b:c"]})))]
+      (is (str/includes? result "data = [\"//b:c\"]"))))
+  (testing "non-collection falsy/zero values are preserved"
+    (is (str/includes?
+         (gb/emit-bazel (list 'rule (gb/kwargs {:name "x" :testonly false})))
+         "testonly = False")
+        "False must render, not be confused with an empty collection")))
+
 (deftest test-attr-sorting
   (testing "name first, then by priority, then alphabetical"
     (let [result (gb/emit-bazel
