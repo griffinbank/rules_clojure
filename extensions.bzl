@@ -22,7 +22,8 @@ def _module_impl(ctx):
                                env = attr.env,
                                root_module_name = root_module_name or "")
     return ctx.extension_metadata(root_module_direct_deps="all",
-                                  root_module_direct_dev_deps=[])
+                                  root_module_direct_dev_deps=[],
+                                  reproducible = True)
 
 deps = module_extension(
   implementation = _module_impl,
