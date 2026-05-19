@@ -1,2 +1,5 @@
 {:linters {:unused-binding {:exclude-destructured-keys-in-fn-args true
-                            :exclude-destructured-as true}}}
+                            :exclude-destructured-as true}
+           ;; Tests in this repo use `(:require [clojure.test :refer :all])`
+           ;; for the conventional shorthand; silence kondo's default warning.
+           :refer-all {:exclude #{clojure.test}}}}
