@@ -19,11 +19,13 @@ maven.install(
         "org.clojure:tools.deps:0.28.1578",
         "org.clojure:tools.namespace:1.1.0",
     ],
-    fail_if_repin_required = True,
     repositories = [
         "https://repo1.maven.org/maven2",
         "https://repo.clojars.org/",
     ],
+    fail_if_repin_required = True,
+    # repin by running `REPIN=1 bazel run @maven_deps//:pin`
+    lock_file = "//:maven_deps_install_lock.json"
 )
 maven.amend_artifact(
     name = "maven_deps",
@@ -56,12 +58,15 @@ maven.install(
     artifacts = [
         "org.clojure:clojure:1.8.0",
     ],
-    fail_if_repin_required = True,
     repositories = [
         "https://repo1.maven.org/maven2",
         "https://repo.clojars.org/",
     ],
+    fail_if_repin_required = True,
+    # repin by running `REPIN=1 bazel run @clojure_old//:pin`
+    lock_file = "//:maven_clojure_old_lock.json"
 )
+
 use_repo(maven, "maven_deps")
 use_repo(maven, "clojure_old")
 
