@@ -21,7 +21,6 @@ maven.install(
     ],
     repositories = [
         "https://repo1.maven.org/maven2",
-        "https://repo.clojars.org/",
     ],
     fail_if_repin_required = True,
     # repin by running `REPIN=1 bazel run @maven_deps//:pin`
@@ -60,7 +59,6 @@ maven.install(
     ],
     repositories = [
         "https://repo1.maven.org/maven2",
-        "https://repo.clojars.org/",
     ],
     fail_if_repin_required = True,
     # repin by running `REPIN=1 bazel run @clojure_old//:pin`
