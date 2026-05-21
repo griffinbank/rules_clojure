@@ -71,6 +71,10 @@ clojure_test(name="gen-build-test",
              env={"BUILDIFIER": "$(rlocationpath @buildifier_prebuilt//:buildifier)"},
              test_ns = "rules-clojure.gen-build-test")
 
+clojure_test(name="gazelle-server-test",
+             deps=[":test-deps"],
+             test_ns = "rules-clojure.gazelle-server-test")
+
 clojure_test(name="compile-test",
              deps=[":test-deps",
                    ":aot-only-fixture",

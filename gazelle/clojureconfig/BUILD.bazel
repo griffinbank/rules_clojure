@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "clojureconfig",
+    srcs = ["config.go"],
+    importpath = "github.com/griffinbank/rules_clojure/gazelle/clojureconfig",
+    visibility = ["//gazelle:__subpackages__"],
+)
+
+go_test(
+    name = "clojureconfig_test",
+    srcs = ["config_test.go"],
+    embed = [":clojureconfig"],
+)
