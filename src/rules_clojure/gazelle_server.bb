@@ -480,11 +480,20 @@
    ns-decl ns-name platform]
   (let [required-nses (disj (deps-from-ns-decl ns-decl) ns-name)
         dep-ns-map (if (= platform :cljs) cljs-ns->label clj-ns->label)
+        ;; goog.* lives as raw JS inside the closure-library jar (no
+        ;; (ns ...) form for scan-jar to index). cljs.core's label
+        ;; transitively depends on closure-library, so route every
+        ;; goog.* cljs require to that.
+        cljs-stdlib-label (get cljs-ns->label 'cljs.core)
         unresolved (atom #{})
         labels (->> required-nses
                     (keep (fn [dep-ns]
                             (let [lookup-ns (cljs-auto-alias src-ns-resolver cljs-ns->label dep-ns platform)]
                               (or (src-ns-resolver lookup-ns)
+                                  (when (and (= platform :cljs)
+                                             cljs-stdlib-label
+                                             (str/starts-with? (name lookup-ns) "goog."))
+                                    (str deps-repo-tag "//:" cljs-stdlib-label))
                                   (ns->dep-label deps-repo-tag dep-ns-map lookup-ns)
                                   (do (swap! unresolved conj dep-ns) nil)))))
                     vec)]

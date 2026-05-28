@@ -416,6 +416,21 @@
       (is (not (some #{"@deps//:should_not_resolve_to_this"} deps))
           "must NOT fall through to cljs.set when clojure.set resolves"))))
 
+(deftest ns-rules-cljs-goog-prefix-routes-to-cljs-stdlib-label
+  ;; goog.* lives as JavaScript inside the closure-library jar, not as
+  ;; (ns ...) forms; scan-jar can't index it directly. Treat any `goog.*`
+  ;; cljs require as resolved by whatever provides cljs.core (which
+  ;; transitively depends on closure-library), so the generated BUILD has
+  ;; an actionable :deps entry rather than emitting nothing.
+  (testing "cljs file requiring goog.string resolves to the cljs.core wrapper label"
+    (let [path (write-temp-file "(ns foo (:require [goog.string :as gstring]))" ".cljs")
+          ctx (assoc-in base-ctx [:cache :cljs-ns->label] {'cljs.core "org_clojure_clojurescript"})
+          parsed [(parse-file path)]
+          rules (ns-rules ctx parsed [path] "src")
+          deps (-> rules first :attrs :deps)]
+      (is (some #{"@deps//:org_clojure_clojurescript"} deps)
+          "goog.* must resolve to cljs.core's label, not silently skip"))))
+
 (deftest ns-rules-clj-clojure-prefix-no-cljs-fallback
   (testing "auto-alias is CLJS-only; :clj platform never falls through to cljs.X"
     (let [path (write-temp-file "(ns foo (:require [clojure.spec.alpha :as s]))" ".clj")
