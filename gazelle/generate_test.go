@@ -11,6 +11,7 @@ import (
 	build "github.com/bazelbuild/buildtools/build"
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
+	"github.com/bazelbuild/bazel-gazelle/rule"
 
 	"github.com/griffinbank/rules_clojure/gazelle/clojureconfig"
 	"github.com/griffinbank/rules_clojure/gazelle/clojureparser"
@@ -396,6 +397,89 @@ func TestGenerateRulesFatalsOnParserDeath(t *testing.T) {
 		return
 	}
 	t.Fatalf("subprocess exited cleanly (err=%v); expected log.Fatalf exit. Output:\n%s", err, out)
+}
+
+// Every managed kind in the existing BUILD whose name isn't in this run's
+// gen must surface in GenerateResult.Empty.
+func TestGenerateRulesEmitsOrphansAsEmpty(t *testing.T) {
+	initResp := `{"type":"init","dep_ns_labels":{"clj":{},"cljs":{}},"deps_bazel":{"deps":{}},"ignore_paths":[],"source_paths":["src"]}`
+	parseResp := `{"type":"parse","namespaces":[{"ns":"my.read_api","file":"read_api.clj","requires":{"clj":[]},"platforms":["clj"],"rules":[{"kind":"clojure_library","attrs":{"name":"read_api","resources":["read_api.clj"],"resource_strip_prefix":"src","aot":["my.read_api"],"srcs":["read_api.clj"]}}]}],"rollup_rules":[]}`
+	stub := writeStubBBMultiResponse(t, initResp, parseResp)
+	runner, err := clojureparser.New(stub)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer runner.Shutdown()
+
+	resp, err := runner.Init(clojureparser.InitRequest{DepsEdnPath: "/dev/null", DepsRepoTag: "@deps"})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	l := &clojureLang{
+		ruleNs:            map[ruleNsKey]string{},
+		hasClojureContent: map[string]bool{},
+		session:           &parserSession{runner: runner, depsIndex: resp},
+	}
+	c := &config.Config{Exts: map[string]interface{}{languageName: clojureconfig.New()}}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "read_api.clj"), []byte("(ns my.read-api)"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Existing BUILD has one rule per managed kind whose source / origin is
+	// gone, plus a `read_api` library that's still backed by source.
+	existing, err := rule.LoadData(
+		filepath.Join(dir, "BUILD.bazel"),
+		"",
+		[]byte(`load("@rules_clojure//:rules.bzl", "clojure_library", "clojure_test", "clojure_binary")
+
+clojure_library(name = "factory", srcs = ["factory.clj"])
+clojure_library(name = "read_api", srcs = ["read_api.clj"])
+clojure_test(name = "stale_test", test_ns = "my.stale-test")
+clojure_binary(name = "stale_bin", main_class = "my.stale-bin")
+java_library(name = "orphan_js", resources = ["orphan.js"])
+filegroup(name = "stale_files", srcs = ["gone.clj"])
+`))
+	if err != nil {
+		t.Fatalf("LoadData: %v", err)
+	}
+	result := l.GenerateRules(language.GenerateArgs{
+		Config:       c,
+		Rel:          "src",
+		RegularFiles: []string{"read_api.clj"},
+		Dir:          dir,
+		File:         existing,
+	})
+	emptyNames := map[string]bool{}
+	for _, r := range result.Empty {
+		emptyNames[r.Kind()+"/"+r.Name()] = true
+	}
+	wantOrphans := []string{
+		"clojure_library/factory",
+		"clojure_test/stale_test",
+		"clojure_binary/stale_bin",
+		"java_library/orphan_js",
+		"filegroup/stale_files",
+	}
+	for _, k := range wantOrphans {
+		if !emptyNames[k] {
+			t.Errorf("Empty missing orphan %s; got %v", k, emptyNames)
+		}
+	}
+	// read_api IS in the freshly-generated set; must NOT appear as orphan.
+	if emptyNames["clojure_library/read_api"] {
+		t.Errorf("Empty must not include re-generated read_api: %v", emptyNames)
+	}
+}
+
+// Orphan deletion needs each kind's NonEmptyAttrs to be mergeable.
+func TestKindsNonEmptyAttrsAreAllMergeable(t *testing.T) {
+	for kind, info := range (&clojureLang{}).Kinds() {
+		for attr := range info.NonEmptyAttrs {
+			if !info.MergeableAttrs[attr] {
+				t.Errorf("kind %q: NonEmptyAttrs[%q] but not in MergeableAttrs; orphan deletion will silently fail", kind, attr)
+			}
+		}
+	}
 }
 
 // TestSubdirHasClojureFilesFatalOnWalkError exercises the log.Fatalf path

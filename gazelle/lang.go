@@ -63,7 +63,9 @@ func (*clojureLang) Kinds() map[string]rule.KindInfo {
 		},
 		"clojure_test": {
 			NonEmptyAttrs: map[string]bool{"test_ns": true},
+			// test_ns mergeable so orphan stubs can clear it.
 			MergeableAttrs: map[string]bool{
+				"test_ns":   true,
 				"env":       true,
 				"tags":      true,
 				"jvm_flags": true,
@@ -75,7 +77,9 @@ func (*clojureLang) Kinds() map[string]rule.KindInfo {
 		},
 		"clojure_binary": {
 			NonEmptyAttrs: map[string]bool{"main_class": true},
+			// main_class mergeable so orphan stubs can clear it.
 			MergeableAttrs: map[string]bool{
+				"main_class":   true,
 				"runtime_deps": true,
 				"args":         true,
 				"jvm_flags":    true,

@@ -259,8 +259,31 @@ func (l *clojureLang) GenerateRules(args language.GenerateArgs) language.Generat
 
 	return language.GenerateResult{
 		Gen:     gen,
-		Empty:   nil,
+		Empty:   orphanRules(args.File, gen),
 		Imports: imports,
 	}
 }
 
+// orphanRules returns stubs for existing managed-kind rules not in gen,
+// so Gazelle's merge deletes them.
+func orphanRules(existing *rule.File, gen []*rule.Rule) []*rule.Rule {
+	if existing == nil {
+		return nil
+	}
+	keep := make(map[string]bool, len(gen))
+	for _, r := range gen {
+		keep[r.Kind()+"/"+r.Name()] = true
+	}
+	var orphans []*rule.Rule
+	for _, r := range existing.Rules {
+		kind := r.Kind()
+		if !validRuleKinds[clojureparser.RuleKind(kind)] {
+			continue
+		}
+		if keep[kind+"/"+r.Name()] {
+			continue
+		}
+		orphans = append(orphans, rule.NewRule(kind, r.Name()))
+	}
+	return orphans
+}
