@@ -304,11 +304,8 @@
 (defn- cache-dir-for [project-root]
   (str (fs/path project-root "target" "gazelle_server_cache")))
 
-;; Bump cache-format-version when the on-disk shape of the transit
-;; files changes (extra fields, different value types). The sha is
-;; mixed into the cache key so a format bump invalidates every cache,
-;; even when deps.edn / @deps/BUILD.bazel are unchanged.
-(def ^:private cache-format-version "v1")
+;; Bump when parse output for the same inputs changes.
+(def ^:private cache-format-version "v2")
 
 (defn- read-cached-data
   "Read a transit file. Throws ex-info on corruption so load-or-build-cache
