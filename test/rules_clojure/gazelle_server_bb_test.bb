@@ -174,6 +174,45 @@
           (is (contains? result :cljs-ns->label)))
         (finally (fs/delete-tree tmp))))))
 
+(deftest parse-deps-build-compact-format
+  ;; rules_clojure's @deps extension generates BUILD.bazel in a compact
+  ;; format: `java_import(name = "...",` on the opening line and
+  ;; `runtime_deps = [...])` closing on the last line, NOT the
+  ;; buildifier-canonical shape with the open/close paren on their own
+  ;; lines. Parser must accept both; banksy's @deps/BUILD.bazel uses the
+  ;; compact form, and previously every block was silently skipped,
+  ;; producing an empty cljs-ns->label and bogus "unresolved" warnings
+  ;; for every CLJS require in the repo.
+  (testing "compact-format java_import block (open paren + args on same line, close paren on last arg line)"
+    (let [tmp (fs/create-temp-dir)
+          build-file (str (fs/path tmp "BUILD.bazel"))
+          jar-path (fs/path tmp "thing.jar")]
+      (try
+        (spit build-file
+              (str "java_import(name = \"thing_thing\",\n"
+                   "\tjars = [\"thing.jar\"],\n"
+                   "\truntime_deps = [\":org_clojure_clojure\"])\n"))
+        (write-jar-with-clj-entries jar-path '[thing.core])
+        (let [{:keys [clj-ns->label]} (parse-deps-build build-file #{})]
+          (is (= "thing_thing" (clj-ns->label 'thing.core))
+              "compact-format block must parse - was previously silently skipped"))
+        (finally (fs/delete-tree tmp)))))
+  (testing "compact-format clojure_library block: AOT entries map to wrapper label"
+    (let [tmp (fs/create-temp-dir)
+          build-file (str (fs/path tmp "BUILD.bazel"))]
+      (try
+        (spit build-file
+              (str "java_import(name = \"raw_jar\",\n"
+                   "\tjars = [\"raw.jar\"])\n"
+                   "clojure_library(name = \"ns_raw_compact\",\n"
+                   "\taot = [\"raw.compact\"],\n"
+                   "\tdeps = [\":raw_jar\"])\n"))
+        (write-jar-with-clj-entries (fs/path tmp "raw.jar") '[raw.compact])
+        (let [{:keys [clj-ns->label]} (parse-deps-build build-file #{})]
+          (is (= "ns_raw_compact" (clj-ns->label 'raw.compact))
+              "compact-format clojure_library AOT entry must surface its wrapper label"))
+        (finally (fs/delete-tree tmp))))))
+
 (deftest parse-deps-build-multi-line-blocks
   (testing "parses block-shaped @deps/BUILD.bazel rules (walks open-paren -> close-paren spans, not a single-line match)"
     (let [tmp (fs/create-temp-dir)

@@ -215,26 +215,30 @@
 
 (defn- parse-deps-build
   "Return {:clj-ns->label :cljs-ns->label :class->label :sha256} from
-  @deps/BUILD.bazel. Assumes buildifier-canonical multi-line shape
-  (clojure_library/java_import each open and close on their own line)."
+  @deps/BUILD.bazel. Handles two shapes:
+    buildifier-canonical (open paren on its own line, close on its own line)
+    rules_clojure compact (open paren + args same line, close on the last arg line)"
   [deps-build-path no-aot-set]
   (let [content (slurp deps-build-path)
         lines (vec (str/split-lines content))
         n (count lines)
         aot-ns->label (atom {})
         jar-imports (atom [])
+        ;; A block ends on the first line whose trailing `)` closes the
+        ;; rule call. `)` at end-of-line covers compact form
+        ;; (`runtime_deps = [...])`); a bare `)` line covers canonical.
         block-end (fn [start]
                     (loop [j start]
                       (cond
-                        (>= j n) j
-                        (re-find #"^\)\s*$" (nth lines j)) j
+                        (>= j n) (dec n)
+                        (re-find #"\)\s*$" (nth lines j)) j
                         :else (recur (inc j)))))]
     (loop [i 0]
       (when (< i n)
         (let [line (nth lines i)]
           (cond
-            (re-find #"^clojure_library\(\s*$" line)
-            (let [end (block-end (inc i))
+            (re-find #"^clojure_library\(" line)
+            (let [end (block-end i)
                   block (str/join "\n" (subvec lines i (min (inc end) n)))
                   cl-name (some-> (re-find #"name\s*=\s*\"([^\"]+)\"" block) second)
                   aot-block (some-> (re-find #"aot\s*=\s*\[([^\]]*)\]" block) second)
@@ -245,8 +249,8 @@
                   (swap! aot-ns->label assoc (symbol aot-ns) cl-name)))
               (recur (inc end)))
 
-            (re-find #"^java_import\(\s*$" line)
-            (let [end (block-end (inc i))
+            (re-find #"^java_import\(" line)
+            (let [end (block-end i)
                   block (str/join "\n" (subvec lines i (min (inc end) n)))
                   ji-name (some-> (re-find #"name\s*=\s*\"([^\"]+)\"" block) second)
                   jars-block (some-> (re-find #"(?s)jars\s*=\s*\[([^\]]*)\]" block) second)]
