@@ -1,7 +1,7 @@
 load("//:rules.bzl", "clojure_library", "clojure_binary")
 
 package(default_visibility = ["//visibility:public"])
-exports_files(glob(["**/*.clj"]))
+exports_files(glob(["**/*.clj"]) + ["gazelle_server.bb"])
 
 filegroup(name="srcs",
           srcs= glob(["*.clj"]) + ["//:deps.edn"])

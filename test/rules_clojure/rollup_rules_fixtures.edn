@@ -1,0 +1,62 @@
+;; Shared parity fixtures for rollup-rules. Loaded by both
+;; gen_build_test (JVM Clojure) and gazelle_server_bb_test (babashka)
+;;: drift between the two rollup-rules implementations causes one
+;; side's test to fail with a concrete shape mismatch, which makes the
+;; "cross-process duplication of rollup-rules" failure mode loud
+;; instead of silent.
+;;
+;; Each fixture: {:name <string>, :input <kwargs map>, :expected <vector>}
+;; where :expected matches the shape rollup-rules returns directly
+;; (a vector of {:type :keyword :attrs {<kw> <val>}}).
+[{:name "empty"
+  :input {:lib-deps [] :src-files [] :clojure-subdir-paths []}
+  :expected []}
+
+ {:name "libs-and-files-no-subdirs"
+  :input {:lib-deps ["core" "util"]
+          :src-files ["core.clj" "util.cljs"]
+          :clojure-subdir-paths []}
+  :expected [{:type :clojure_library
+              :attrs {:name "__clj_lib"
+                      :deps [":core" ":util"]}}
+             {:type :filegroup
+              :attrs {:name "__clj_files"
+                      :srcs ["core.clj" "util.cljs"]}}]}
+
+ {:name "subdirs-only"
+  :input {:lib-deps []
+          :src-files []
+          :clojure-subdir-paths ["src/example/child"]}
+  :expected [{:type :clojure_library
+              :attrs {:name "__clj_lib"
+                      :deps ["//src/example/child:__clj_lib"]}}
+             {:type :filegroup
+              :attrs {:name "__clj_files"
+                      :data ["//src/example/child:__clj_files"]}}]}
+
+ {:name "mixed-libs-files-subdirs"
+  :input {:lib-deps ["webauthn"]
+          :src-files ["webauthn.clj" "webauthn.cljs"]
+          :clojure-subdir-paths ["src/example/api" "src/example/db"]}
+  :expected [{:type :clojure_library
+              :attrs {:name "__clj_lib"
+                      :deps [":webauthn"
+                             "//src/example/api:__clj_lib"
+                             "//src/example/db:__clj_lib"]}}
+             {:type :filegroup
+              :attrs {:name "__clj_files"
+                      :srcs ["webauthn.clj" "webauthn.cljs"]
+                      :data ["//src/example/api:__clj_files"
+                             "//src/example/db:__clj_files"]}}]}
+
+ {:name "libs-only-no-srcs-no-subdirs"
+  :input {:lib-deps ["a"] :src-files [] :clojure-subdir-paths []}
+  :expected [{:type :clojure_library
+              :attrs {:name "__clj_lib"
+                      :deps [":a"]}}]}
+
+ {:name "srcs-only-no-libs-no-subdirs"
+  :input {:lib-deps [] :src-files ["a.clj"] :clojure-subdir-paths []}
+  :expected [{:type :filegroup
+              :attrs {:name "__clj_files"
+                      :srcs ["a.clj"]}}]}]

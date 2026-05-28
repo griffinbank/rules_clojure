@@ -1,0 +1,26 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "clojureparser",
+    srcs = ["parser.go"],
+    importpath = "github.com/griffinbank/rules_clojure/gazelle/clojureparser",
+    visibility = ["//gazelle:__subpackages__"],
+)
+
+go_test(
+    name = "clojureparser_test",
+    srcs = [
+        "lifecycle_test.go",
+        "parser_test.go",
+    ],
+    data = [
+        "//src/rules_clojure:gazelle_server.bb",
+        "@multitool//tools/bb",
+    ],
+    embed = [":clojureparser"],
+    env = {
+        "GAZELLE_CLOJURE_BB": "$(rlocationpath @multitool//tools/bb)",
+        "GAZELLE_CLOJURE_PARSER": "$(rlocationpath //src/rules_clojure:gazelle_server.bb)",
+    },
+    deps = ["@rules_go//go/runfiles:go_default_library"],
+)
