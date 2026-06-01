@@ -565,3 +565,11 @@
           "should emit __clj_lib aggregating subdirs")
       (is (re-find #"\"//src/example/child:__clj_lib\"" content)
           "__clj_lib deps should reference the clj subdir"))))
+
+(deftest gen-dir-rules-sorted-lexically
+  (testing "library rules emit in lexical basename order (>8 files forces a hash map)"
+    (let [names ["f0" "f1" "f2" "f3" "f4" "f5" "f6" "f7" "f8" "f9" "f10" "f11"]
+          content (run-gen-dir! (into {} (map (fn [n] [(str n ".clj") (str "(ns example." n ")")])) names))
+          lib-order (->> (re-seq #"name = \"(f[0-9]+)\"" content) (mapv second))]
+      (is (= (sort lib-order) lib-order)
+          (str "library rules must be lexically ordered; got " lib-order)))))

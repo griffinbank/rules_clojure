@@ -841,6 +841,8 @@
                 [false false []]
                 (->> paths
                      (group-by fs/basename)
+                     ;; group-by orders by hash; sort lexically
+                     (sort-by key)
                      (mapcat (fn [[_base paths]]
                                (ns-rules args paths)))))
         has-content? (or (seq paths) (seq clj-subdirs))
