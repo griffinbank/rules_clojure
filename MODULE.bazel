@@ -18,13 +18,14 @@ maven.install(
         "org.clojure:data.json:2.4.0",
         "org.clojure:tools.deps:0.28.1578",
         "org.clojure:tools.namespace:1.1.0",
-    ],
-    repositories = [
-        "https://repo1.maven.org/maven2",
+        "org.clojure:test.check:1.1.1",
     ],
     fail_if_repin_required = True,
     # repin by running `REPIN=1 bazel run @maven_deps//:pin`
-    lock_file = "//:maven_deps_install_lock.json"
+    lock_file = "//:maven_deps_install_lock.json",
+    repositories = [
+        "https://repo1.maven.org/maven2",
+    ],
 )
 maven.amend_artifact(
     name = "maven_deps",
@@ -57,14 +58,13 @@ maven.install(
     artifacts = [
         "org.clojure:clojure:1.8.0",
     ],
+    fail_if_repin_required = True,
+    # repin by running `REPIN=1 bazel run @clojure_old//:pin`
+    lock_file = "//:maven_clojure_old_lock.json",
     repositories = [
         "https://repo1.maven.org/maven2",
     ],
-    fail_if_repin_required = True,
-    # repin by running `REPIN=1 bazel run @clojure_old//:pin`
-    lock_file = "//:maven_clojure_old_lock.json"
 )
-
 use_repo(maven, "maven_deps")
 use_repo(maven, "clojure_old")
 

@@ -224,13 +224,16 @@
   (str "[" (->> x (map emit-bazel*) (str/join ", ")) "]"))
 
 (defmethod emit-bazel* IPersistentMap [x]
-  ;; Buildifier-canonical dict literal: `{"k": "v"}` (no space before colon).
-  (str "{"
-       (->> x
-            (map (fn [[k v]]
-                   (str (emit-bazel* k) ": " (emit-bazel* v))))
-            (str/join ", "))
-       "}"))
+  ;; Dict literal matching gazelle's renderer: empty is {}, any non-empty dict
+  ;; breaks one entry per line (buildifier accepts inline single-entry too, but
+  ;; gazelle always multi-lines, so we match it). Key-sorted for determinism.
+  ;; Fixed indentation assumes the dict is a depth-1 kwarg value (e.g. env={...}).
+  (let [entries (->> x
+                     (sort-by (comp emit-bazel* key))
+                     (mapv (fn [[k v]] (str (emit-bazel* k) ": " (emit-bazel* v)))))]
+    (if (empty? entries)
+      "{}"
+      (str "{\n        " (str/join ",\n        " entries) ",\n    }"))))
 
 (s/fdef emit-bazel :args (s/cat :x ::bazel) :ret string?)
 (defn emit-bazel

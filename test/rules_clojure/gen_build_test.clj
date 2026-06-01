@@ -3,6 +3,9 @@
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.test.check.generators :as gen]
+            [clojure.test.check.properties :as prop]
             [rules-clojure.fs :as fs]
             [rules-clojure.gen-build :as gb]
             [rules-clojure.test-utils :as test-utils]))
@@ -416,6 +419,24 @@
                                     :aot ["z-ns" "a-ns"]})))]
       (is (str/includes? result "        \"z-ns\",\n        \"a-ns\",")))))
 
+(def ^:private gen-bazel-string
+  "Non-empty alphanumeric strings: the realistic domain for dict keys/values
+   (env var names/values), free of pr-str escaping or embedded-colon concerns."
+  (gen/not-empty gen/string-alphanumeric))
+
+(defspec emit-bazel-dict-structure 200
+  (prop/for-all [m (gen/map gen-bazel-string gen-bazel-string)]
+                (let [result (gb/emit-bazel m)
+                      keys-in-output (mapv second (re-seq #"\"([^\"]+)\":" result))
+                      pairs-in-output (into {} (map (fn [[_ k v]] [k v]))
+                                            (re-seq #"\"([^\"]+)\": \"([^\"]+)\"" result))]
+                  (and (is (= (str/includes? result "\n") (pos? (count m)))
+                           "non-empty dicts render multi-line (gazelle); {} stays inline")
+                       (is (= keys-in-output (sort keys-in-output))
+                           "keys emitted in sorted order")
+                       (is (= pairs-in-output m)
+                           "every key→value pair preserved")))))
+
 (deftest test-buildifier-round-trip
   (testing "generated output is buildifier-stable"
     (let [buildifier-path (first (test-utils/runfiles-env "BUILDIFIER"))]
@@ -438,6 +459,22 @@
           (is (zero? (:exit result)) (str "buildifier failed: " (:err result)))
           (is (= content (:out result))
               (str "buildifier produced diff. Expected:\n" content "\nGot:\n" (:out result))))))))
+
+(defspec emit-bazel-dict-is-buildifier-stable 50
+  ;; A rule whose dict attr holds any string→string map renders to text that
+  ;; buildifier leaves byte-for-byte unchanged (i.e. it is already canonical).
+  (prop/for-all [m (gen/map gen-bazel-string gen-bazel-string)]
+                (let [buildifier-path (first (test-utils/runfiles-env "BUILDIFIER"))
+                      content (str "\"\"\"\nTest file.\n\"\"\"\n\n"
+                                   (gb/emit-bazel
+                                    (list 'clojure_test
+                                          (gb/kwargs {:name "t"
+                                                      :test_ns "example.t"
+                                                      :env m})))
+                                   "\n")
+                      result (shell/sh buildifier-path "--type=build" :in content)]
+                  (and (zero? (:exit result))
+                       (= content (:out result))))))
 
 ;; ---- gen-dir load-symbol pruning ----
 
