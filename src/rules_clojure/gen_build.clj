@@ -521,6 +521,12 @@
          (symbol? ns)]}
   (get-in dep-ns->label [platform ns]))
 
+(defn- goog-ns?
+  "True if `ns` is a Google Closure Library namespace (`goog` or `goog.*`)."
+  [ns]
+  (let [s (str ns)]
+    (or (= s "goog") (str/starts-with? s "goog."))))
+
 (defn- cljs-auto-alias
   "Mirror cljs.analyzer/aliasable-clj-ns?: rewrite clojure.X → cljs.X when
   clojure.X has no CLJS/CLJC source and cljs.X does. Returns the cljs.X
@@ -541,9 +547,12 @@
   [{:keys [src-ns->label dep-ns->label deps-repo-tag] :as args} ns platform]
   {:pre [(keyword? platform)]}
   (let [prefix (if deps-repo-tag (str deps-repo-tag "//") "")
-        ns (or (when (= :cljs platform)
-                 (cljs-auto-alias src-ns->label dep-ns->label ns))
-               ns)
+        ns (cond
+             ;; goog.* (Closure Library) ships transitively with ClojureScript;
+             ;; resolve it to cljs.core's label.
+             (and (= :cljs platform) (goog-ns? ns)) 'cljs.core
+             (= :cljs platform) (or (cljs-auto-alias src-ns->label dep-ns->label ns) ns)
+             :else ns)
         label (or (get src-ns->label ns)
                   (when-let [label (get-dep-ns->label dep-ns->label platform ns)]
                     (str prefix ":" label)))]

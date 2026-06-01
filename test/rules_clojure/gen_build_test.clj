@@ -163,6 +163,90 @@
         (finally
           (fs/rm-rf (.toPath dir)))))))
 
+(deftest ns-rules-cljs-goog-requires-route-to-clojurescript
+  (testing "goog.* requires in a .cljs file resolve to cljs.core's label (Closure Library ships with ClojureScript)"
+    (let [dir (make-temp-dir)
+          cljs-path (write-file dir "ui.cljs"
+                                "(ns example.ui (:require [goog.string :as gstr] [goog.dom :as dom]))")
+          dep-ns->label {:clj  {}
+                         :cljs {'cljs.core "org_clojure_clojurescript"}}
+          args (minimal-args dir dep-ns->label)
+          result (gb/ns-rules args [cljs-path])
+          deps (extract-deps result)]
+      (try
+        (is (some #(= "@deps//:org_clojure_clojurescript" %) deps)
+            "goog.* should resolve to ClojureScript's label, not be dropped")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
+(deftest ns-rules-cljs-goog-no-clojurescript-on-classpath
+  (testing "goog.* resolves to nothing when ClojureScript isn't on the classpath (no spurious dep)"
+    (let [dir (make-temp-dir)
+          cljs-path (write-file dir "ui.cljs"
+                                "(ns example.ui (:require [goog.string :as gstr]))")
+          args (minimal-args dir {:clj {} :cljs {}})
+          result (gb/ns-rules args [cljs-path])
+          deps (extract-deps result)]
+      (try
+        (is (not (some #(str/includes? % "clojurescript") deps))
+            "no ClojureScript dep should be invented when cljs.core is unresolvable")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
+(deftest ns-rules-clj-goog-require-not-routed
+  (testing "goog.* on the :clj platform is never routed to ClojureScript (Closure is cljs-only)"
+    (let [dir (make-temp-dir)
+          clj-path (write-file dir "core.clj"
+                               "(ns example.core (:require [goog.string :as gstr]))")
+          dep-ns->label {:clj  {}
+                         :cljs {'cljs.core "org_clojure_clojurescript"}}
+          args (minimal-args dir dep-ns->label)
+          result (gb/ns-rules args [clj-path])
+          deps (extract-deps result)]
+      (try
+        (is (not (some #(= "@deps//:org_clojure_clojurescript" %) deps))
+            ":clj platform must not route goog.* to ClojureScript")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
+(deftest ns-rules-cljs-goog-ns-boundary
+  (testing "bare goog routes to ClojureScript, but google.* (a non-Closure ns) resolves normally"
+    (let [dir (make-temp-dir)
+          cljs-path (write-file dir "ui.cljs"
+                                "(ns example.ui (:require [goog :as g] [google.maps :as gmaps]))")
+          dep-ns->label {:clj  {}
+                         :cljs {'cljs.core   "org_clojure_clojurescript"
+                                'google.maps "ns_google_maps"}}
+          args (minimal-args dir dep-ns->label)
+          result (gb/ns-rules args [cljs-path])
+          deps (extract-deps result)]
+      (try
+        (is (some #(= "@deps//:org_clojure_clojurescript" %) deps)
+            "bare goog should route to ClojureScript")
+        (is (some #(= "@deps//:ns_google_maps" %) deps)
+            "google.* must resolve to its own label, not be collapsed onto cljs.core")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
+(deftest ns-rules-cljc-goog-reader-conditional
+  (testing "goog.* in a .cljc :cljs reader conditional routes to ClojureScript"
+    (let [dir (make-temp-dir)
+          cljc-path (write-file dir "split.cljc"
+                                "(ns example.split (:require #?(:clj  [clojure.spec.alpha :as s]
+                                                                :cljs [goog.string :as gstr])))")
+          dep-ns->label {:clj  {'clojure.spec.alpha "ns_org_clojure_spec_alpha"}
+                         :cljs {'cljs.core "org_clojure_clojurescript"}}
+          args (minimal-args dir dep-ns->label)
+          result (gb/ns-rules args [cljc-path])
+          deps (extract-deps result)]
+      (try
+        (is (some #(= "@deps//:ns_org_clojure_spec_alpha" %) deps)
+            ":clj branch require should resolve")
+        (is (some #(= "@deps//:org_clojure_clojurescript" %) deps)
+            "goog.* in the :cljs reader conditional should route to ClojureScript")
+        (finally
+          (fs/rm-rf (.toPath dir)))))))
+
 (defn- find-rule
   "Find a rule in ns-rules output by type keyword (e.g. :clojure_binary). Returns attrs map."
   [rules-output type-kw]
