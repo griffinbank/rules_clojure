@@ -90,6 +90,8 @@ clojure_test(
 
 Delegates to `java_test`, using `rules-clojure.testrunner` as the main class. `clojure_test` uses `clojure.test` to run all tests in a single namespace. Note that bazel defines a test as a script that returns exit code 0, so each `clojure_test` is a separate JVM, which makes startup time relevant.
 
+When bazel sets `XML_OUTPUT_FILE` (it does for every test action), the runner also writes a JUnit XML report there, with one `<testcase>` per `deftest` (including per-test timing) and `<failure>`/`<error>` detail. This means callers (e.g. CI) get structured, per-test results to display, rather than just relying on bazel's bare pass/fail exit code.
+
 ## tools.deps dependencies (optional)
 In your WORKSPACE:
 ```

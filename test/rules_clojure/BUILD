@@ -27,7 +27,7 @@ clojure_library(name="aot-only-fixture",
                 deps=ClojureJars)
 
 clojure_library(name="test-deps",
-                resources=glob(["*.clj"], exclude=["aot_only_fixture.clj"]),
+                resources=glob(["*.clj", "testrunner_fixtures/*.clj"], exclude=["aot_only_fixture.clj"]),
                 resource_strip_prefix="test/",
                 deps=["//src/rules_clojure:libworker",
                       "//src/rules_clojure:libcompile",
@@ -78,3 +78,7 @@ clojure_test(name="compile-test",
              test_ns = "rules-clojure.compile-test",
              data=["//src/rules_clojure:bootstrap"],
              env={"TEST_JARS": "$(rlocationpaths //src/rules_clojure:bootstrap)"})
+
+clojure_test(name="testrunner-test",
+             deps=[":test-deps"],
+             test_ns = "rules-clojure.testrunner-test")
