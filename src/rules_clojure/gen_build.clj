@@ -224,13 +224,16 @@
   (str "[" (->> x (map emit-bazel*) (str/join ", ")) "]"))
 
 (defmethod emit-bazel* IPersistentMap [x]
-  ;; Buildifier-canonical dict literal: `{"k": "v"}` (no space before colon).
-  (str "{"
-       (->> x
-            (map (fn [[k v]]
-                   (str (emit-bazel* k) ": " (emit-bazel* v))))
-            (str/join ", "))
-       "}"))
+  ;; Dict literal matching gazelle's renderer: empty is {}, any non-empty dict
+  ;; breaks one entry per line (buildifier accepts inline single-entry too, but
+  ;; gazelle always multi-lines, so we match it). Key-sorted for determinism.
+  ;; Fixed indentation assumes the dict is a depth-1 kwarg value (e.g. env={...}).
+  (let [entries (->> x
+                     (mapv (fn [[k v]] (str (emit-bazel* k) ": " (emit-bazel* v))))
+                     sort)]
+    (if (empty? entries)
+      "{}"
+      (str "{\n        " (str/join ",\n        " entries) ",\n    }"))))
 
 (s/fdef emit-bazel :args (s/cat :x ::bazel) :ret string?)
 (defn emit-bazel
@@ -521,6 +524,12 @@
          (symbol? ns)]}
   (get-in dep-ns->label [platform ns]))
 
+(defn- goog-ns?
+  "True if `ns` is a Google Closure Library namespace (`goog` or `goog.*`)."
+  [ns]
+  (let [s (str ns)]
+    (or (= s "goog") (str/starts-with? s "goog."))))
+
 (defn- cljs-auto-alias
   "Mirror cljs.analyzer/aliasable-clj-ns?: rewrite clojure.X → cljs.X when
   clojure.X has no CLJS/CLJC source and cljs.X does. Returns the cljs.X
@@ -535,15 +544,23 @@
                   (get-dep-ns->label dep-ns->label :cljs alt))
           alt)))))
 
+(defn- resolve-cljs-ns
+  "Rewrite a :cljs require: goog.* → cljs.core (Closure ships inside the
+  ClojureScript jar), else clojure.X → cljs.X auto-alias. Returns `ns` unchanged
+  when neither applies."
+  [ns src-ns->label dep-ns->label]
+  (if (goog-ns? ns)
+    'cljs.core
+    (or (cljs-auto-alias src-ns->label dep-ns->label ns) ns)))
+
 (s/fdef ns->label :args (s/cat :a (s/keys :req-un [(or ::src-ns->label ::dep-ns->label)]) :n symbol? :p keyword?))
 (defn ns->label
   "given the ns-map and a namespace, return a map of `:src` or `:dep` to the file/jar where it is located"
   [{:keys [src-ns->label dep-ns->label deps-repo-tag] :as args} ns platform]
   {:pre [(keyword? platform)]}
   (let [prefix (if deps-repo-tag (str deps-repo-tag "//") "")
-        ns (or (when (= :cljs platform)
-                 (cljs-auto-alias src-ns->label dep-ns->label ns))
-               ns)
+        ns (cond-> ns
+             (= :cljs platform) (resolve-cljs-ns src-ns->label dep-ns->label))
         label (or (get src-ns->label ns)
                   (when-let [label (get-dep-ns->label dep-ns->label platform ns)]
                     (str prefix ":" label)))]
@@ -827,10 +844,10 @@
                    (or ht? (= :clojure_test (:type rule)))
                    (conj acc (emit-rule rule))])
                 [false false []]
+                ;; paths are str-sorted above, so same-basename files are adjacent
                 (->> paths
-                     (group-by fs/basename)
-                     (mapcat (fn [[_base paths]]
-                               (ns-rules args paths)))))
+                     (partition-by fs/basename)
+                     (mapcat (fn [paths] (ns-rules args paths)))))
         has-content? (or (seq paths) (seq clj-subdirs))
         content (str (build-file-header "the `//:gen_srcs` target from `rules_clojure`")
                      (when has-content?

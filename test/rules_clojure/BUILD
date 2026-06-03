@@ -66,7 +66,8 @@ clojure_test(name="persistent-classloader-test",
              test_ns = "rules-clojure.persistent-classloader-test")
 
 clojure_test(name="gen-build-test",
-             deps=[":test-deps"],
+             deps=[":test-deps",
+                   "@maven_deps//:org_clojure_test_check"],
              data=["@buildifier_prebuilt//:buildifier"],
              env={"BUILDIFIER": "$(rlocationpath @buildifier_prebuilt//:buildifier)"},
              test_ns = "rules-clojure.gen-build-test")
