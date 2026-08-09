@@ -2,6 +2,11 @@ module(name = "example-simple")
 
 bazel_dep(name = "rules_clojure", version = "0.5")
 
+# Bazel 9 stubs the native java_* rules, so the BUILD files here load them from
+# rules_java. This module must declare that dependency itself — it is a
+# separate module, so the root repo's bazel_dep is not visible to it.
+bazel_dep(name = "rules_java", version = "9.7.1")
+
 local_path_override(module_name = "rules_clojure",
                     path = "../..")
 

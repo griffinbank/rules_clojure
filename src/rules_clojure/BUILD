@@ -1,4 +1,7 @@
 load("//:rules.bzl", "clojure_library", "clojure_binary")
+# Bazel 9 stubs the native java_* rules with a reduced attribute set
+# (no main_class/runtime_deps/jvm_flags/resources); they must come from rules_java.
+load("@rules_java//java:defs.bzl", "java_binary", "java_import", "java_library")
 
 package(default_visibility = ["//visibility:public"])
 exports_files(glob(["**/*.clj"]))

@@ -1,3 +1,7 @@
+# Bazel 9 removed JavaInfo/java_common from the Starlark globals; they must
+# now be loaded from rules_java. Without this the rules fail to load with
+# "name 'JavaInfo' is not defined".
+load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 ### rule to start a clojure repl. We don't use `java_binary` because
 ### we want to support adding directories to the classpath (and in the
 ### future, possibly running from the source tree rather than `bazel-bin`), both in support of

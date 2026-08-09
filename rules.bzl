@@ -1,5 +1,10 @@
 load("//rules:jar.bzl", _clojure_jar_impl = "clojure_jar_impl")
 load("//rules:repl.bzl", _clojure_repl_impl = "clojure_repl_impl")
+# Bazel 9 removed JavaInfo/java_common from the Starlark globals; they must
+# now be loaded from rules_java. Without this the rules fail to load with
+# "name 'JavaInfo' is not defined".
+load("@rules_java//java/common:java_info.bzl", "JavaInfo")
+load("@rules_java//java:defs.bzl", "java_binary", "java_test")
 
 clojure_library = rule(
     doc = "Define a clojure library",
@@ -27,7 +32,7 @@ def clojure_binary(name, **kwargs):
     deps = kwargs.pop("deps", [])
     runtime_deps = kwargs.pop("runtime_deps", [])
 
-    native.java_binary(name=name,
+    java_binary(name=name,
                        runtime_deps = deps + runtime_deps,
                        **kwargs)
 
@@ -49,7 +54,7 @@ def clojure_test(name, *, test_ns, deps=[], runtime_deps=[], main_class="rules_c
     # ideally the library name and the bin name would be the same. They can't be.
     # clojure src files would like to depend on `foo_test`, so mangle the test binary, not the src jar name
 
-    native.java_test(name=name,
+    java_test(name=name,
                      runtime_deps = deps + runtime_deps + ["@rules_clojure//src/rules_clojure:testrunner"],
                      use_testrunner = False,
                      main_class=main_class,
@@ -100,7 +105,7 @@ _cljs_library = rule(
 
 def cljs_library(name, deps=[],**kwargs):
     clj_binary="%s_clj_binary" % name
-    native.java_binary(name=clj_binary,
+    java_binary(name=clj_binary,
                        main_class = "clojure.main",
                        jvm_flags=["-Dclojure.main.report=stderr"],
                        runtime_deps=deps,

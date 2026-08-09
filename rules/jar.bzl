@@ -1,3 +1,8 @@
+# Bazel 9 removed JavaInfo/java_common from the Starlark globals; they must
+# now be loaded from rules_java. Without this the rules fail to load with
+# "name 'JavaInfo' is not defined".
+load("@rules_java//java/common:java_info.bzl", "JavaInfo")
+load("@rules_java//java/common:java_common.bzl", "java_common")
 def contains(lst, item):
     for x in lst:
         if x == item:

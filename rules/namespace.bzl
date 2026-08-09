@@ -1,4 +1,8 @@
 load("//rules:common.bzl", "CljInfo")
+# Bazel 9 removed JavaInfo/java_common from the Starlark globals; they must
+# now be loaded from rules_java. Without this the rules fail to load with
+# "name 'JavaInfo' is not defined".
+load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 
 def clojure_ns_impl(ctx):
     runfiles = ctx.runfiles()
