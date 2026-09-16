@@ -26,8 +26,45 @@ jobs:
           name: stress tests
           command: cd examples/stress && bazel test //...
 
+  # Publishes a vX.Y.Z tag to the Bazel Central Registry. See RELEASING.md.
+  publish-to-bcr:
+    docker:
+      - image: cimg/base:2025.01
+    steps:
+      - checkout
+      - run:
+          name: install bazelisk and gh
+          command: |
+            curl -OL https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-amd64.deb
+            sudo dpkg -i bazelisk-amd64.deb
+            (type -p wget >/dev/null || sudo apt-get install -y wget) \
+              && sudo mkdir -p -m 755 /etc/apt/keyrings \
+              && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+              && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+              && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+              && sudo apt-get update && sudo apt-get install -y gh
+      - run:
+          name: publish to BCR
+          command: tools/publish_to_bcr.sh "$CIRCLE_TAG"
 
 workflows:
   test-workflow:
     jobs:
       - test
+  release:
+    jobs:
+      - test:
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/
+      - publish-to-bcr:
+          requires:
+            - test
+          context: github-bcr-publish
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/
