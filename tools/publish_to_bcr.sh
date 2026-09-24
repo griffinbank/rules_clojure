@@ -114,11 +114,11 @@ cat > "$WORK/module.json" <<EOF
   "build_file": null,
   "presubmit_yml": "$SRC_ROOT/.bcr/presubmit.yml",
   "build_targets": [],
-  "test_module_path": null,
+  "test_module_path": "examples/simple",
   "test_module_build_targets": [],
-  "test_module_test_targets": [],
-  "matrix_bazel_versions": [],
-  "matrix_platforms": []
+  "test_module_test_targets": ["//..."],
+  "matrix_bazel_versions": ["8.x"],
+  "matrix_platforms": ["macos", "debian10", "ubuntu2004"]
 }
 EOF
 
