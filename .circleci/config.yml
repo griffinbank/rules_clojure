@@ -62,7 +62,7 @@ workflows:
       - publish-to-bcr:
           requires:
             - test
-          context: github-bcr-publish
+          context: github-bazel-central-repo-publish
           filters:
             tags:
               only: /^v\d+\.\d+\.\d+$/
