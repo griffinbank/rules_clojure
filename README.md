@@ -1,6 +1,6 @@
 # Yet Another Clojure rules for [Bazel](https://bazel.build)
 
-Status: Stable. [Griffin](https://www.griffin.com) is using it production
+Status: Stable. [Griffin](https://www.griffin.com) is using it in production
 
 # Why Bazel?
 
@@ -18,26 +18,31 @@ Bazel can cache test results, so bazel only executes tests that depend on files 
 
 ## Setup
 
-Add the following to your `WORKSPACE`:
+Add the following to your `MODULE.bazel`:
 
 ```skylark
-RULES_CLOJURE_SHA = $CURRENT_SHA1
-http_archive(name = "rules_clojure",
-             strip_prefix = "rules_clojure-%s" % RULES_CLOJURE_SHA,
-             url = "https://github.com/griffinbank/rules_clojure/archive/%s.zip" % RULES_CLOJURE_SHA)
+bazel_dep(name = "rules_clojure", version = "0.0")
 
-load("@rules_clojure//:repositories.bzl", "rules_clojure_deps")
-rules_clojure_deps()
+RULES_CLOJURE_SHA = "$CURRENT_SHA"
 
-load("@rules_clojure//:setup.bzl", "rules_clojure_setup")
-rules_clojure_setup()
+archive_override(
+    module_name = "rules_clojure",
+    integrity = "sha256-CnH+WNQ9f0gljplMYXPzsvfdfS7NRdecksCYn1OsxCc=",
+    strip_prefix = "rules_clojure-%s" % RULES_CLOJURE_SHA,
+    urls = ["https://github.com/griffinbank/rules_clojure/archive/%s.zip" % RULES_CLOJURE_SHA],
+)
+
+deps = use_extension("@rules_clojure//:extensions.bzl", "deps")
+deps.install(
+    aliases = [
+        "dev",
+        "test",
+    ],
+    deps_edn = "//:deps.edn",
+    repo_name = "deps",
+)
 ```
 
-Differs from [simuons/rules_clojure](https://github.com/simuons/rules_clojure) that it uses `java_library` and `java_binary` as much as possible.
-
-`clojure_binary`, and `clojure_test` are macros that delegate to `java_binary`. `clojure_library` is new code.
-
-For fast compilation, `clojure_library` is a Bazel persistent worker.
 
 ```
 clojure_library(
@@ -45,7 +50,7 @@ clojure_library(
     srcs = ["bbq.clj"],
     deps = ["foo"],
     runtime_deps = ["bar"],
-    resource_strip_prefix = ["src"],
+    resource_strip_prefix = "src",
     aot = ["foo.bbq"])
 ```
 
@@ -53,7 +58,7 @@ It is likely you're interested in using Bazel because you have large projects wi
 
 `clojure_library` produces a jar.
 
-- `srcs` are files that should be on the classpath while AOTing. The resulting classfiles will be added to the jar, but `srcs` will not. If you want the .clj to be present in the final jar, add it in `resources`
+- `srcs` are files that should be on the classpath while AOTing. The resulting classfiles will be added to the jar, but `srcs` will not. If you want the .clj to be present in the final jar, add it in `resources`.
 - `deps` may be `clojure_library` or any bazel JavaInfo target (`java_library`, etc).
 - `runtime_deps` works the same as `java_library`
 - `aot` is a list of namespaces to compile.
@@ -71,9 +76,10 @@ Note that AOT will determine whether a library should appear in `deps` or `runti
 clojure_repl(
   name = "foo_repl",
   main_class = "clojure.main",
-  main_args = ["-e", "foo.main"],
+  args = ["-e", "foo.main"],
   runtime_deps = [":foo", "@deps//:__all"],
-  classpath_dirs = ["src", "dev", "test"],
+  classpath_dirs = ["//:src", "//:dev", "//:test"],
+  tags = ["no-sandbox"],
   data = [])
 ```
 
@@ -85,10 +91,10 @@ Like `java_binary`, the repl process runs from the bazel-bin package directory. 
 clojure_test(
   name = "bar_test.test",
   test_ns = "foo.bar-test",
-  srcs = ["bar_test"])
+  deps = [":bar_test"])
 ```
 
-Delegates to `java_test`, using `rules-clojure.testrunner` as the main class. `clojure_test` uses `clojure.test` to run all tests in a single namespace. Note that bazel defines a test as a script that returns exit code 0, so each `clojure_test` is a separate JVM, which makes startup time relevant.
+Delegates to `java_test`, using `rules_clojure.testrunner` as the main class. `clojure_test` uses `clojure.test` to run all tests in a single namespace. Note that bazel defines a test as a script that returns exit code 0, so each `clojure_test` is a separate JVM, which makes startup time relevant.
 
 When bazel sets `XML_OUTPUT_FILE` (it does for every test action), the runner also writes a JUnit XML report there, with one `<testcase>` per `deftest` (including per-test timing) and `<failure>`/`<error>` detail. This means callers (e.g. CI) get structured, per-test results to display, rather than just relying on bazel's bare pass/fail exit code.
 
@@ -98,25 +104,10 @@ It should write a JUnit XML report to `$XML_OUTPUT_FILE` and exit with 0 for a p
 See the [default runner](https://github.com/griffinbank/rules_clojure/blob/e3eabc6621ebc3280410da2a20b56929d63e76ae/src/rules_clojure/testrunner.clj) for inspiration.
 
 ## tools.deps dependencies (optional)
-In your WORKSPACE:
-```
-load("@rules_clojure//:repositories.bzl", "rules_clojure_dependencies")
-rules_clojure_dependencies()
-
-load("@rules_clojure//:setup.bzl", "rules_clojure_setup")
-rules_clojure_setup()
-
-load("@rules_clojure//rules:tools_deps.bzl", "clojure_tools_deps", "clojure_gen_srcs")
-
-clojure_tools_deps(
-  name = "deps",
-  deps_edn = "//:deps.edn",
-  aliases = ["dev", "test"])
-```
 
 `clojure_tools_deps` use `tools.deps` to resolve dependencies from a deps.edn file and write BUILD files containing `java_import` targets for all maven dependencies. Targets follow the same naming rules as `rules_jvm_external`, i.e. `@deps//:org_clojure_clojure`.
 
-For each clojure namespace in the library, an additional target will be generated, which produces an AOT jar consisting of a non-transitive compile of just that namespace. The target has the name `@deps//:org_clojure_clojure_clojure_core`, i.e. `$packagename_$namespace`. libraries generated by `gen_src` (below), depend on the per-namespace targets. These per-namespace jars contain only .classfiles, and do not contain any resources in the original jar.
+For each clojure namespace in the library, an additional target will be generated, which produces an AOT jar consisting of a non-transitive compile of just that namespace. The target has the name `@deps//:ns_org_clojure_clojure_clojure_core`, i.e. `ns_$packagename_$namespace`. libraries generated by `gen_src` (below), depend on the per-namespace targets. These per-namespace jars contain only .classfiles, and do not contain any resources in the original jar.
 
 Note that tools.deps is only used for downloading jars, and creating the BUILD.bazel file with relationships between jars. Once the jars are downloaded, they behave like normal bazel java dependencies, and `clojure_library` participates in Bazel's normal java rules.
 
@@ -145,15 +136,23 @@ Adding
 
 Adding the key `:bazel/clojure_library` to the namespace metadata will `merge` any fields into the generated `clojure_library` definition.
 
+
+```
+(ns foo.bbq
+  {:bazel/clojure_binary {}}
+  (:require ...)
+```
+
+Will produce a `clojure_binary` target that can be run with `bazel run //src/foo:bbq.bin`
+
 ### Tests
 
 For files with paths matching `_test.clj`, gen-src defines both a `clojure_library` and `clojure_test`:
 
 ```
 clojure_library(name = "bar_test",
-	srcs = ["bar_test.clj"],
-	deps = [...],
-	testonly = True)
+	resources = ["bar_test.clj"],
+	deps = [...])
 
 clojure_test(name = "bar_test.test",
 	test_ns = "foo.bar-test",
@@ -161,7 +160,7 @@ clojure_test(name = "bar_test.test",
 
 ```
 
-Because Bazel requires target names to be unique within the same directory, the namespace target always matches the `ns`, while the `test` target is `$ns.test`, so the binary test target is `foo_test.test`. ¯\\\_(ツ)_/¯
+Because Bazel requires target names to be unique within the same directory, the namespace target always matches the `ns`, while the `test` target is `$ns.test`, so the binary test target is `bar_test.test`. ¯\\\_(ツ)_/¯
 
 ```
 (ns foo.bar-test
@@ -192,15 +191,13 @@ put `:bazel {:deps {}}` at the top level of your deps.edn file. `:deps` will be 
 :bazel {:no-aot #{foo.bar}}
 ```
 
-Instructs gen-build to not AOT that namespace. Note that this doesn't affect 3rd party dependencies yet.
+Instructs gen-build to not AOT that namespace. Note that this only applies to `deps` dependencies.
 
 ### Coarse dependencies
 
 Fine grained dependencies are ideal from an efficiency perspective, but it isn't always possible to make them work.
 
-`gen_srcs` also creates a few extra targets in every directory on the deps.edn search path. It will produce `clojure_library` targets named `__clj_lib`  containing all source files in the directory (non-AOT'd), and all subpackages. `//src:__clj_files` includes all src files under `src`. These targets are useful for e.g. static analysis tools like clj-kondo.
-
-`__clj_lib` does not include dependencies. Use `@deps//:__all` to pull in all dependencies.
+`gen_srcs` also creates a few extra targets in every directory on the deps.edn search path. It will produce targets named `__clj_files` (containing all source files) and `__clj_lib`  containing all compiled libraries. `//src:__clj_files` includes all src files under `src`. These targets are useful for e.g. static analysis tools like clj-kondo.
 
 Use `__clj_lib`, `__clj_files` and `@deps//:__all` sparingly. By necessity they will be dirty any time _any_ src file or dependency changes, leading to increased build and test times.
 
@@ -210,7 +207,7 @@ Use `__clj_lib`, `__clj_files` and `@deps//:__all` sparingly. By necessity they 
 
 You probably want to create your own java_library targets for `resources`.
 
-By default, `resources` is on the tools.deps classpath. By default, `clojure_tools_deps` and `gen_srcs` operate on every directory under under `:paths`. When `clojure_tools_deps` runs, it will overwrite any existing BUILD.bazel files. To tell gen-build to ignore those libraries:
+By default, `resources` is on the tools.deps classpath. By default, `clojure_tools_deps` and `gen_srcs` operate on every directory under `:paths`. When `gen_srcs` runs, it will overwrite any existing BUILD.bazel files. To tell gen-build to ignore those libraries:
 
 ```clojure
 :bazel {:ignore ["resources", "test-resources"]}
@@ -222,7 +219,7 @@ gen-build will not produce BUILD.bazel files for any path under `:ignore`
 
 ```clojure
 :bazel {:clojure_library {:deps ["//resources:data_readers"]}
-        :clojure_test {:jvm_flags ["-Xmx=2g"]}}
+        :clojure_test {:jvm_flags ["-Xmx2g"]}}
 ```
 
 In deps.edn, any fields under :clojure_library and :clojure_test will be added to _every_ library and test generated by gen_build
