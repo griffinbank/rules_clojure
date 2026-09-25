@@ -29,6 +29,7 @@ GH_OWNER=griffinbank
 GH_REPO="$GH_OWNER/$MODULE"
 BCR_UPSTREAM=bazelbuild/bazel-central-registry
 BCR_FORK="$GH_OWNER/bazel-central-registry"
+GH_TOKEN="$GITHUB_TOKEN"
 
 TAG="${1:-${CIRCLE_TAG:-}}"
 if [[ -z "$TAG" ]]; then
