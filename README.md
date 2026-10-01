@@ -27,7 +27,6 @@ RULES_CLOJURE_SHA = "$CURRENT_SHA"
 
 archive_override(
     module_name = "rules_clojure",
-    integrity = "sha256-CnH+WNQ9f0gljplMYXPzsvfdfS7NRdecksCYn1OsxCc=",
     strip_prefix = "rules_clojure-%s" % RULES_CLOJURE_SHA,
     urls = ["https://github.com/griffinbank/rules_clojure/archive/%s.zip" % RULES_CLOJURE_SHA],
 )
