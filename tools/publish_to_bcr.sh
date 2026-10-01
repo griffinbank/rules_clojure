@@ -125,7 +125,14 @@ EOF
 # Runs bcr_validation --check=rules_clojure@VERSION --fix as its last step, which
 # fills in metadata.json's versions list.
 bazel run //tools:add_module -- --input="$WORK/module.json"
-bazel run //tools:bcr_validation -- "--check=$MODULE@$VERSION"
+# Exit 42 means validation passed but a BCR maintainer must review the PR
+# (always true for a module's first version); that's expected, not a failure.
+rc=0
+bazel run //tools:bcr_validation -- "--check=$MODULE@$VERSION" || rc=$?
+if [[ "$rc" != 0 && "$rc" != 42 ]]; then
+  echo "bcr_validation failed (exit $rc)" >&2
+  exit "$rc"
+fi
 
 # --- 4. PR -------------------------------------------------------------------
 git add "modules/$MODULE"
