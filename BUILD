@@ -1,8 +1,9 @@
 load(":rules.bzl", "clojure_repl")
+load("@rules_java//java:defs.bzl", "java_binary")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["deps.edn"])
+exports_files(["deps.edn", "rules.bzl"])
 
 java_binary(name="repl",
             main_class="clojure.main",

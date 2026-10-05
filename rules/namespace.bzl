@@ -1,3 +1,4 @@
+load("@rules_java//java:defs.bzl", "JavaInfo")
 load("//rules:common.bzl", "CljInfo")
 
 def clojure_ns_impl(ctx):

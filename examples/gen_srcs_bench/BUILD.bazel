@@ -1,4 +1,5 @@
 load("@rules_clojure//rules:tools_deps.bzl", "clojure_gen_srcs")
+load("@rules_java//java:defs.bzl", "java_binary", "java_library")
 
 package(default_visibility = ["//visibility:public"])
 

@@ -1,3 +1,4 @@
+load("@rules_java//java:defs.bzl", "JavaInfo")
 ### rule to start a clojure repl. We don't use `java_binary` because
 ### we want to support adding directories to the classpath (and in the
 ### future, possibly running from the source tree rather than `bazel-bin`), both in support of

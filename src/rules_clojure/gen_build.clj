@@ -838,12 +838,13 @@
                      subdirs
                      (filter (fn [p]
                                (some clj*-path? (seq (fs/ls-r p))))))
-        [has-binary? has-tests? rules]
-        (reduce (fn [[hb? ht? acc] rule]
+        [has-binary? has-tests? has-java-library? rules]
+        (reduce (fn [[hb? ht? hj? acc] rule]
                   [(or hb? (= :clojure_binary (:type rule)))
                    (or ht? (= :clojure_test (:type rule)))
+                   (or hj? (= :java_library (:type rule)))
                    (conj acc (emit-rule rule))])
-                [false false []]
+                [false false false []]
                 ;; paths are str-sorted above, so same-basename files are adjacent
                 (->> paths
                      (partition-by fs/basename)
@@ -855,7 +856,10 @@
                                                (cond-> ["clojure_library"]
                                                  has-tests? (conj "clojure_test")
                                                  has-binary? (conj "clojure_binary"))))
-                            "\n\n"))
+                            "\n"
+                            (when has-java-library?
+                              (str (emit-bazel (list 'load "@rules_java//java:defs.bzl" "java_library")) "\n"))
+                            "\n"))
                      (emit-bazel (list 'package (kwargs {:default_visibility ["//visibility:public"]})))
                      "\n"
                      (when (seq rules)
@@ -963,6 +967,7 @@
         (str (build-file-header "`rules_clojure`")
              (str/join "\n\n" (concat
                           [(emit-bazel (list 'load "@rules_clojure//:rules.bzl" "clojure_library"))
+                           (emit-bazel (list 'load "@rules_java//java:defs.bzl" "java_import" "java_library"))
                            (emit-bazel (list 'package (kwargs {:default_visibility ["//visibility:public"]})))]
                           (->> jar->lib
                                (sort-by (fn [[k v]] (library->label v)))

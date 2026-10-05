@@ -1,4 +1,5 @@
 load("//:rules.bzl", "clojure_library", "clojure_binary")
+load("@rules_java//java:defs.bzl", "java_binary", "java_import", "java_library")
 
 package(default_visibility = ["//visibility:public"])
 exports_files(glob(["**/*.clj"]))
