@@ -1,5 +1,5 @@
 # Copied verbatim into modules/rules_clojure/<version>/presubmit.yml in the BCR
-# by tools/publish_to_bcr.sh. Run by BCR CI on every registry PR for this module.
+# by `bb publish-to-bcr`. Run by BCR CI on every registry PR for this module.
 # See https://github.com/bazelbuild/bazel-central-registry/tree/main/docs#presubmit
 matrix:
   platform: ["ubuntu2204", "macos"]
