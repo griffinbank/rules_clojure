@@ -1,3 +1,4 @@
+load("@rules_java//java:defs.bzl", "JavaInfo", "java_common")
 def contains(lst, item):
     for x in lst:
         if x == item:

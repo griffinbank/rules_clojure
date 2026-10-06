@@ -1,3 +1,4 @@
+load("@rules_java//java:defs.bzl", "JavaInfo", "java_binary", "java_test")
 load("//rules:jar.bzl", _clojure_jar_impl = "clojure_jar_impl")
 load("//rules:repl.bzl", _clojure_repl_impl = "clojure_repl_impl")
 
@@ -27,9 +28,9 @@ def clojure_binary(name, **kwargs):
     deps = kwargs.pop("deps", [])
     runtime_deps = kwargs.pop("runtime_deps", [])
 
-    native.java_binary(name=name,
-                       runtime_deps = deps + runtime_deps,
-                       **kwargs)
+    java_binary(name=name,
+                runtime_deps = deps + runtime_deps,
+                **kwargs)
 
 clojure_repl = rule(
     doc = "Define a clojure repl",
@@ -49,12 +50,12 @@ def clojure_test(name, *, test_ns, deps=[], runtime_deps=[], main_class="rules_c
     # ideally the library name and the bin name would be the same. They can't be.
     # clojure src files would like to depend on `foo_test`, so mangle the test binary, not the src jar name
 
-    native.java_test(name=name,
-                     runtime_deps = deps + runtime_deps + ["@rules_clojure//src/rules_clojure:testrunner"],
-                     use_testrunner = False,
-                     main_class=main_class,
-                     args = [test_ns],
-                     **kwargs)
+    java_test(name=name,
+              runtime_deps = deps + runtime_deps + ["@rules_clojure//src/rules_clojure:testrunner"],
+              use_testrunner = False,
+              main_class=main_class,
+              args = [test_ns],
+              **kwargs)
 
 def cljs_impl(ctx):
 
@@ -100,11 +101,11 @@ _cljs_library = rule(
 
 def cljs_library(name, deps=[],**kwargs):
     clj_binary="%s_clj_binary" % name
-    native.java_binary(name=clj_binary,
-                       main_class = "clojure.main",
-                       jvm_flags=["-Dclojure.main.report=stderr"],
-                       runtime_deps=deps,
-                       data=kwargs.get("data",[]))
+    java_binary(name=clj_binary,
+                main_class = "clojure.main",
+                jvm_flags=["-Dclojure.main.report=stderr"],
+                runtime_deps=deps,
+                data=kwargs.get("data",[]))
 
     _cljs_library(name=name,
                   clj_binary=clj_binary,

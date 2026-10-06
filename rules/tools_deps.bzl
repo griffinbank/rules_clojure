@@ -1,4 +1,5 @@
 load("//:rules.bzl", "clojure_library", "clojure_binary")
+load("@rules_java//java:defs.bzl", "java_binary")
 
 CLJ_VERSIONS_MAC = {
     "1.10.3.1087": ("https://download.clojure.org/install/clojure-tools-1.10.3.1087.tar.gz", "a6b3b3547adc6da6ca5cfe10e037f1fde88a78f948372bb598ef4d0859da3e94"),
@@ -68,6 +69,8 @@ def _install_scripts(ctx):
     ctx.file(ctx.path("scripts/BUILD.bazel"),
                         executable = True,
                         content = """
+load("@rules_java//java:defs.bzl", "java_binary")
+
 package(default_visibility = ["//visibility:public"])
 
 java_binary(name="gen_srcs",
@@ -144,14 +147,14 @@ def clojure_gen_srcs(name, deps_repo_name = "deps"):
                  actual = "@" + deps_repo_name + "//scripts:gen_srcs")
 
 def clojure_gen_namespace_loader(name, output_filename, output_ns_name, output_fn_name, in_dirs, exclude_nses, platform, deps_edn):
-    native.java_binary(name=name,
-                       runtime_deps=["@rules_clojure//src/rules_clojure:libgen_build"],
-                       data=[deps_edn],
-                       main_class="rules_clojure.gen_build",
-                       args=["ns-loader",
-                           ":output-filename", output_filename,
-                           ":output-ns-name", output_ns_name,
-                           ":output-fn-name", output_fn_name,
-                           ":in-dirs", "[%s]" % " ".join(["\\\"%s\\\"" % d for d in in_dirs]),
-                           ":exclude-nses", "'[%s]'" % " ".join(exclude_nses),
-                           ":platform", platform])
+    java_binary(name=name,
+                runtime_deps=["@rules_clojure//src/rules_clojure:libgen_build"],
+                data=[deps_edn],
+                main_class="rules_clojure.gen_build",
+                args=["ns-loader",
+                    ":output-filename", output_filename,
+                    ":output-ns-name", output_ns_name,
+                    ":output-fn-name", output_fn_name,
+                    ":in-dirs", "[%s]" % " ".join(["\\\"%s\\\"" % d for d in in_dirs]),
+                    ":exclude-nses", "'[%s]'" % " ".join(exclude_nses),
+                    ":platform", platform])
