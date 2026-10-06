@@ -1,0 +1,11 @@
+{:paths ["tools"]
+ :tasks
+ {release-version
+  {:doc "Print the release version X.Y.N for a commit on main (default HEAD). See RELEASING.md."
+   :requires ([release.version])
+   :task (apply release.version/-main *command-line-args*)}
+
+  publish-to-bcr
+  {:doc "Publish a commit on main (default $CIRCLE_SHA1, else HEAD) to the Bazel Central Registry. See RELEASING.md."
+   :requires ([release.publish])
+   :task (apply release.publish/-main *command-line-args*)}}}
