@@ -23,10 +23,20 @@ jobs:
           name: example tests
           command: cd examples/simple && bazel test //...
       - run:
+          # The extra flags BCR presubmit runs examples/simple with. Use these flags because BCR tests against them
+          name: example tests (BCR incompatible flags)
+          command: |
+            cd examples/simple && bazel test //... \
+              --incompatible_config_setting_private_default_visibility \
+              --incompatible_disable_starlark_host_transitions \
+              --incompatible_disable_native_repo_rules \
+              --incompatible_autoload_externally= \
+              --incompatible_strict_action_env
+      - run:
           name: stress tests
           command: cd examples/stress && bazel test //...
 
-  # Publishes a vX.Y.Z tag to the Bazel Central Registry. See RELEASING.md.
+  # Publishes the commit as vX.Y.N to the Bazel Central Registry. See RELEASING.md.
   publish-to-bcr:
     docker:
       - image: cimg/base:2025.01
@@ -45,26 +55,27 @@ jobs:
               && sudo apt-get update && sudo apt-get install -y gh
       - run:
           name: publish to BCR
-          command: tools/publish_to_bcr.sh "$CIRCLE_TAG"
+          command: tools/publish_to_bcr.sh "$CIRCLE_SHA1"
 
 workflows:
   test-workflow:
     jobs:
-      - test
+      - test:
+          filters:
+            branches:
+              ignore: main
   release:
     jobs:
       - test:
           filters:
-            tags:
-              only: /^v\d+\.\d+\.\d+$/
             branches:
-              ignore: /.*/
+              only: main
       - publish-to-bcr:
           requires:
             - test
           context: github-bazel-central-repo-publish
+          # Publish one commit at a time, in order.
+          serial-group: << pipeline.project.slug >>/publish-to-bcr
           filters:
-            tags:
-              only: /^v\d+\.\d+\.\d+$/
             branches:
-              ignore: /.*/
+              only: main

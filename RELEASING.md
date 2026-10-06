@@ -1,41 +1,70 @@
 # Releasing rules_clojure
 
-Releases are published to the [Bazel Central Registry](https://github.com/bazelbuild/bazel-central-registry)
-(BCR) by CircleCI whenever a `vX.Y.Z` tag is pushed. Consumers then use:
+Every commit to `main` is released to the
+[Bazel Central Registry](https://github.com/bazelbuild/bazel-central-registry)
+(BCR) by CircleCI. Consumers then use:
 
 ```starlark
-bazel_dep(name = "rules_clojure", version = "X.Y.Z")
+bazel_dep(name = "rules_clojure", version = "X.Y.N")
 ```
 
-## Cutting a release
+## Versions
 
-1. Bump `version` in `MODULE.bazel` to the new semver (e.g. `0.5.0`). The tag
-   must be `v` + that exact string, or the publish job fails.
-2. Merge to `main`, then tag and push:
+`MODULE.bazel` holds only `X.Y` (e.g. `version = "0.5"`). To bump the major or
+minor version, change it in a PR; nothing else needs doing by hand.
 
-   ```sh
-   git checkout main && git pull
-   git tag v0.5.0
-   git push origin v0.5.0
-   ```
+CI computes the patch number `N` with `tools/compute_version.sh`: the number of
+commits on `main` (first-parent) since `X.Y` last changed. The commit that
+changes `X.Y` is released as `X.Y.0`, and each later merge as the next `N`. A
+given commit always gets the same version, so you can check one locally:
 
-3. CircleCI runs the `release` workflow: tests, then `publish-to-bcr`, which
-   runs `tools/publish_to_bcr.sh`. That script:
-   - builds `rules_clojure-X.Y.Z.tar.gz` with `git archive` and attaches it to
-     a GitHub release for the tag (BCR prefers release assets over
-     `archive/refs/tags/...` URLs because tag archives aren't byte-stable);
-   - clones the BCR and generates `modules/rules_clojure/X.Y.Z/` with the BCR's
-     own `add_module` and `bcr_validation` tools, using `.bcr/presubmit.yml`
-     and (first release only) `.bcr/metadata.json` from this repo;
-   - pushes a branch to the `griffinbank/bazel-central-registry` fork and opens
-     a PR against upstream.
-4. Watch the BCR PR. BCR CI builds `examples/simple` against the new entry. A
-   maintainer listed in `.bcr/metadata.json` approves, then the `bazel-io`
-   bot merges. The version is usually resolvable within an hour.
+```sh
+tools/compute_version.sh origin/main
+```
 
-If the job fails partway, fix the cause and re-run it from CircleCI. The script
-is idempotent: it reuses an existing GitHub release and force-pushes the fork
-branch.
+`N` has gaps when a commit isn't released (see below), which semver allows.
+
+## Skipping a release
+
+Put `[skip release]` in the commit message (for a merge commit, the PR title
+works, since GitHub includes it in the message). The commit still uses up its
+`N`.
+
+## What happens on each commit
+
+CircleCI runs the `release` workflow: tests, then `publish-to-bcr`, which runs
+`tools/publish_to_bcr.sh <commit>`. That script:
+
+- computes `X.Y.N` and builds `rules_clojure-X.Y.N.tar.gz` with `git archive`,
+  with `MODULE.bazel`'s version rewritten to `X.Y.N` (BCR requires the archive's
+  `MODULE.bazel` to match the registry's). The tarball is reproducible;
+- creates a GitHub release for it, which also creates the `vX.Y.N` tag on the
+  commit (BCR prefers release assets over `archive/refs/tags/...` URLs because
+  tag archives aren't byte-stable). Tag pushes don't trigger CircleCI
+  workflows;
+- clones the BCR and generates `modules/rules_clojure/X.Y.N/` with the BCR's
+  own `add_module` and `bcr_validation` tools, using `.bcr/presubmit.yml` and
+  (first release only) `.bcr/metadata.json` from this repo;
+- pushes a branch to the `griffinbank/bazel-central-registry` fork and opens a
+  PR against upstream.
+
+Publishes run one at a time, in order. BCR CI then builds `examples/simple`
+against the new entry. A maintainer listed in `.bcr/metadata.json` approves,
+then the `bazel-io` bot merges. The version is usually resolvable within an
+hour.
+
+The `test` job runs `examples/simple` with the same extra flags BCR presubmit
+uses, so most BCR failures show up on the PR instead of after merge.
+
+## When a publish fails
+
+Fix the cause if it's in CI, and re-run the job from CircleCI. Re-running is
+safe: the version comes from history, an existing release and tarball are
+reused as-is (never replaced, since BCR records the tarball's hash), and the
+fork branch is force-pushed.
+
+If the BCR PR fails because of a bug in rules_clojure, merge the fix to `main`;
+that commit is released as the next version. Close the failed BCR PR.
 
 ## Maintainers
 
@@ -55,11 +84,10 @@ publish a fixed version.
 
 BCR validation only accepts `https://github.com/griffinbank/rules_clojure/...`
 archive URLs, so there's no fully offline mode. You can run everything except
-the fork push and PR:
+the fork push and PR, for a commit on `main`:
 
 ```sh
-git tag v0.5.0 && git push origin v0.5.0     # the real tag; delete it afterwards if this is only a test
-GITHUB_TOKEN=<token> DRY_RUN=1 tools/publish_to_bcr.sh v0.5.0
+GITHUB_TOKEN=<token> DRY_RUN=1 tools/publish_to_bcr.sh <commit>
 ```
 
 This creates the GitHub release, generates and validates the registry entry,
@@ -74,11 +102,9 @@ bazel build --registry=file:///path/printed/by/the/script/bcr \
     --registry=https://bcr.bazel.build --lockfile_mode=off //some:target
 ```
 
-If this was a throwaway test, remove the tag and release before the real one:
+The dry run creates the real GitHub release and `vX.Y.N` tag. That's fine for a
+commit CI will publish anyway, since CI reuses them. Otherwise, remove them:
 
 ```sh
-gh release delete v0.5.0 --repo griffinbank/rules_clojure --cleanup-tag --yes
+gh release delete vX.Y.N --repo griffinbank/rules_clojure --cleanup-tag --yes
 ```
-
-Re-running without `DRY_RUN` reuses an existing release and force-pushes the
-fork branch, so a dry run followed by the real run for the same tag is fine.
