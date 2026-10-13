@@ -176,6 +176,8 @@
 
 (defn -main [& args]
   (set-uncaught-exception-handler!)
+  ;; stop instrumented dep classes writing jacoco.exec under `bazel coverage`
+  (System/setProperty "jacoco-agent.output" "none")
   (-> (Runtime/getRuntime) (.addShutdownHook (Thread. ^Runnable (fn []
                                                                   (doseq [d @temp-dirs]
                                                                     (fs/rm-rf d))))))

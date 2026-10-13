@@ -112,6 +112,31 @@ The main entrypoint will be called with one argument: The Clojure namespace to t
 It should write a JUnit XML report to `$XML_OUTPUT_FILE` and exit with 0 for a pass and non-zero for failure.
 See the [default runner](https://github.com/griffinbank/rules_clojure/blob/main/src/rules_clojure/testrunner.clj) for inspiration.
 
+### Coverage
+
+`bazel coverage` uses the standard Bazel JaCoCo pipeline:
+
+```
+bazel coverage --combined_report=lcov --instrumentation_filter=//src //test/...
+```
+
+Each test writes an LCOV report to `bazel-testlogs/<target>/coverage.dat`. Bazel writes the
+combined report to `bazel-out/_coverage/_coverage_report.dat`. Use `genhtml` to make an HTML
+report. The line data refers to the `.clj` and `.cljc` source files.
+
+Under coverage, the rules instrument the output jar of each `clojure_library` that matches
+`--instrumentation_filter`. The jar has the same shape as a `java_library` jar, and `java_test`
+collects the data. Coverage does not change builds that are not coverage builds.
+
+Limits:
+
+- The report includes only AOT-compiled namespaces (`srcs` with `aot`). Clojure compiles
+  resource namespaces in memory at runtime, so the rules cannot instrument them.
+- A `defn` line shows as covered when the namespace loads. A body line shows as covered only
+  when a test calls the function.
+- Branch data (`BRDA`) shows JVM bytecode branches, not Clojure forms. Use the line data.
+- The JaCoCo version comes from the `jacocorunner` of the Java toolchain.
+
 ## tools.deps dependencies (optional)
 
 The `deps` module extension (`deps.install`, see Setup) uses `tools.deps` to resolve dependencies from a deps.edn file and generates the `@deps` repo, with BUILD files containing `java_import` targets for all maven dependencies. Targets follow the same naming rules as `rules_jvm_external`, i.e. `@deps//:org_clojure_clojure`.

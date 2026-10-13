@@ -7,12 +7,19 @@ java_library(name="src",
              resources=glob(["*.clj"]),
              resource_strip_prefix="src")
 
+clojure_library(name="util",
+                srcs=["util.clj"],
+                resource_strip_prefix="src",
+                aot=["example.util"],
+                deps=["@deps//:org_clojure_clojure"])
+
 clojure_library(name="core",
                 srcs=["core.clj"],
                 resource_strip_prefix="src",
                 # resources=[],
                 aot=["example.core"],
-                deps=["@deps//:org_clojure_clojure"])
+                deps=[":util",
+                      "@deps//:org_clojure_clojure"])
 
 java_binary(name="uberjar",
             runtime_deps=["core"])

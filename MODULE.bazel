@@ -67,6 +67,22 @@ maven.install(
 use_repo(maven, "maven_deps")
 use_repo(maven, "clojure_old")
 
+maven_dev = use_extension("@rules_jvm_external//:extensions.bzl", "maven", dev_dependency = True)
+maven_dev.install(
+    name = "maven_test_deps",
+    artifacts = [
+        "junit:junit:4.13.2",
+        "org.ow2.asm:asm:9.7.1",
+    ],
+    fail_if_repin_required = True,
+    # repin by running `REPIN=1 bazel run @maven_test_deps//:pin`
+    lock_file = "//:maven_test_deps_install_lock.json",
+    repositories = [
+        "https://repo1.maven.org/maven2",
+    ],
+)
+use_repo(maven_dev, "maven_test_deps")
+
 bazel_dep(name = "example-simple", version = "0.0.0", dev_dependency = True)
 local_path_override(
     module_name = "example-simple",
