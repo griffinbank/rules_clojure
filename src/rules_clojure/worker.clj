@@ -16,13 +16,15 @@
 (s/def ::resources (s/coll-of string?)) ;; seq of paths to include in the jar
 (s/def ::aot-nses (s/coll-of string?)) ;; seq of namespaces to AOT
 (s/def ::classpath (s/coll-of string?)) ;; seq of jars to put on compile classpath
+(s/def ::jacoco-runtime (s/coll-of string?)) ;; under `bazel coverage`, jars that hold the JaCoCo offline runtime
 
 (s/def ::compile-request (s/keys :req-un [::output-jar
                                           ::classpath
                                           ::aot-nses]
                                  :opt-un [::resources
                                           ::srcs
-                                          ::src-dir]))
+                                          ::src-dir
+                                          ::jacoco-runtime]))
 
 (s/def ::arguments (s/cat :c ::compile-req))
 
@@ -57,7 +59,11 @@
           req (-> req
                   (update :classpath conj (str classes-dir))
                   (assoc :classes-dir (str classes-dir)))
-          cl (pcl/build classloader-strategy (select-keys req [:classpath :input-map :aot-nses]))]
+          parent (if-let [rt (seq (:jacoco-runtime req))]
+                   (pcl/jacoco-runtime-loader (vec rt))
+                   (pcl/default-parent))
+          cl (pcl/build classloader-strategy (-> (select-keys req [:classpath :input-map :aot-nses])
+                                                 (assoc :parent parent)))]
       (jar/compile! cl req)
       (jar/create-jar-json req)
       (swap! temp-dirs conj classes-dir))
