@@ -25,6 +25,12 @@ jobs:
       - run:
           name: stress tests
           command: cd examples/stress && bazel test //...
+      - run:
+          name: coverage
+          command: bash tools/coverage/e2e_smoke.sh
+      - store_artifacts:
+          path: bazel-out/_coverage/_coverage_report.dat
+          destination: coverage/coverage_report.dat
 
   # Publishes a vX.Y.Z tag to the Bazel Central Registry. See RELEASING.md.
   publish-to-bcr:
