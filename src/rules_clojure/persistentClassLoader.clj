@@ -1,7 +1,11 @@
 (ns rules-clojure.persistentClassLoader
   (:require [rules-clojure.util :as util])
   (:import [java.lang.reflect Method]
-           [clojure.lang DynamicClassLoader])
+           [java.net JarURLConnection URL]
+           [java.security CodeSource]
+           [java.security.cert Certificate]
+           [clojure.lang DynamicClassLoader]
+           [rules_clojure DeterministicPatches])
   (:gen-class
    :state state
    :constructors {["[Ljava.net.URL;" "java.lang.ClassLoader"] ["[Ljava.net.URL;" "java.lang.ClassLoader"]
@@ -9,7 +13,8 @@
    :extends java.net.URLClassLoader
    :exposes-methods {findClass parentFindClass
                      findLoadedClass parentFindLoadedClass
-                     getResource parentGetResource}))
+                     getResource parentGetResource
+                     defineClass parentDefineClass}))
 
 
 ;; Context
@@ -66,10 +71,34 @@
       (.findInMemoryClass loader name))))
 (set! *warn-on-reflection* true)
 
+(defn- code-source
+  "The classpath entry `class-url` was loaded from, so the patched class
+  reports the same location (e.g. for `.getCodeSource`) as an unpatched one"
+  ^CodeSource [^URL class-url ^String resource-name]
+  (let [entry (if (= "jar" (.getProtocol class-url))
+                (.getJarFileURL ^JarURLConnection (.openConnection class-url))
+                (let [s (str class-url)]
+                  (URL. (subs s 0 (- (count s) (count resource-name))))))]
+    (CodeSource. entry ^"[Ljava.security.cert.Certificate;" (make-array Certificate 0))))
+
+(defn patched-find-class
+  "If `name` is one of the clojure.jar classes patched for deterministic
+  compiles, define it from patched
+  bytes. Returns nil if it isn't, or isn't on our classpath."
+  [^rules_clojure.persistentClassLoader this ^String name]
+  (when (DeterministicPatches/isPatched name)
+    (let [resource-name (str (.replace name \. \/) ".class")]
+      (when-let [url (.findResource this resource-name)]
+        (let [bs (with-open [in (.openStream url)]
+                   (.readAllBytes in))
+              bs (DeterministicPatches/patch name bs)]
+          (.parentDefineClass this name bs (int 0) (int (alength bs)) (code-source url resource-name)))))))
+
 (defn -findClass
   [^rules_clojure.persistentClassLoader this ^String name]
   (locking this
     (or
+     (patched-find-class this name)
      (.parentFindClass this name)
      (clojure-find-class this name))))
 

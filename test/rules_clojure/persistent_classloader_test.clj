@@ -81,3 +81,49 @@
       (System/gc)
       (Thread/sleep 100))
     (is (nil? (WeakReference/.get @*cl)))))
+
+(deftest patches-clojure-for-deterministic-ids
+  (let [jars (test-utils/runfiles-jars "CLOJURE_JARS")
+        cl (pcl/new-classloader- jars)
+        ;; initialize RT with the context classloader set, so it loads clojure.core from `cl`
+        _ (util/shim-init cl)
+        rt (.loadClass cl "clojure.lang.RT")
+        ^ThreadLocal override (.get (.getField rt "idOverride") nil)
+        lb (.loadClass cl "clojure.lang.Compiler$LocalBinding")]
+    (is (some #(= "hashCode" (.getName ^java.lang.reflect.Method %)) (.getDeclaredMethods lb)))
+    (is (= (.getLocation (.getCodeSource (.getProtectionDomain rt)))
+           (.toURL (io/file (first (filter #(re-find #"clojure-1[^/]*\.jar$" %) jars)))))
+        "patched RT reports the clojure jar as its location")
+    (testing "nextID uses the override when set, the global counter otherwise"
+      (let [next-id #(.invoke (.getMethod rt "nextID" (into-array Class [])) nil (object-array 0))]
+        (.set override (java.util.concurrent.atomic.AtomicInteger. 1000))
+        (try
+          (is (= [1000 1001] [(next-id) (next-id)]))
+          (finally
+            (.set override nil)))
+        (is (< (next-id) 1000))))))
+
+(defn- compile-classes
+  "Compile `ns` in a fresh classloader, after burning `burn` ids from the
+  global counter. Returns a map of class file path to bytes"
+  [ns burn]
+  (let [compile-path (fs/new-temp-dir "classes")
+        classpath (conj (test-utils/runfiles-jars "COMPILE_CLASSPATH") (str compile-path))
+        cl (pcl/new-classloader- classpath)]
+    (util/with-context-classloader cl
+      (util/shim-eval cl (str "(dotimes [_ " burn "] (gensym))"))
+      (util/shim-require cl 'rules-clojure.compile)
+      (util/shim-invoke cl "rules-clojure.compile" "compile!" (str compile-path) (into-array String [(str ns)]) *out*))
+    (->> (fs/ls-r compile-path)
+         (filter (fn [^java.nio.file.Path p]
+                   (.endsWith (str p) ".class")))
+         (map (fn [^java.nio.file.Path p]
+                [(str (.relativize compile-path p)) (vec (java.nio.file.Files/readAllBytes p))]))
+         (into {}))))
+
+(deftest compiles-are-deterministic
+  (let [a (compile-classes 'rules-clojure.deterministic-fixture 0)
+        b (compile-classes 'rules-clojure.deterministic-fixture 7777)]
+    (is (seq a))
+    (is (= (sort (keys a)) (sort (keys b))))
+    (is (= a b))))

@@ -296,8 +296,6 @@ cljs_library(
 
 # Known Issues
 
-- builds are non-reproducible for one reason:
-  - there isn't a public API to reset the ID clojure uses for naming anonymous functions, which means anonymous AOT function names are non-deterministic
 - When generating the `@deps` repo, I haven't found a way to identify :provided dependencies. Those have to be added by hand for now
 
 # Compatibility
