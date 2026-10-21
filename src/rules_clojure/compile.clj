@@ -8,7 +8,8 @@
    [rules-clojure.namespace.parse :as parse]
    [rules-clojure.fs :as fs]
    [rules-clojure.util :refer [shasum debug]])
-  (:import [java.util.concurrent CompletableFuture ExecutorService Executors]))
+  (:import [java.util.concurrent CompletableFuture ExecutorService Executors]
+           [java.util.concurrent.atomic AtomicInteger]))
 
 (set! *warn-on-reflection* true)
 
@@ -371,6 +372,43 @@
         (debug "WARNING cycle:" a "->" b)
         false))))
 
+;; RT.nextID() is a process-wide counter, so in a parallel,
+;; multiplexed compile the fn class names and gensyms a namespace gets
+;; depend on what else is compiling. rules-clojure.persistentClassLoader
+;; patches RT with a ThreadLocal override (see
+;; rules_clojure.DeterministicPatches); give each namespace load its own
+;; counter so its output only depends on its source. nil when running
+;; under an unpatched RT.
+(def ^:private ^ThreadLocal id-override
+  (try
+    (.get (.getField clojure.lang.RT "idOverride") nil)
+    (catch NoSuchFieldException _
+      nil)))
+
+(defn ns-id-seed
+  "Starting value for `ns`'s counter. Deterministic, and spread out so
+  gensyms from different namespaces are less likely to match. Kept to
+  5 digits, the same width as a typical global-counter id: nested fn
+  class names contain every enclosing fn's id, and deeply nested `for`s
+  already come close to the 255 byte filename limit"
+  [ns]
+  (+ 10000 (* 1000 (mod (.hashCode (str ns)) 90))))
+
+(defn call-with-ns-ids [ns f]
+  (if-let [tl id-override]
+    (let [prev (.get tl)]
+      (.set tl (AtomicInteger. (ns-id-seed ns)))
+      (try
+        (f)
+        (finally
+          (.set tl prev))))
+    (f)))
+
+(defmacro with-ns-ids
+  "Run body with RT.nextID() counting from `ns`'s seed on this thread"
+  [ns & body]
+  `(call-with-ns-ids ~ns (fn [] ~@body)))
+
 (defn pcompile
   "From namespace `parent`, compile `ns`, in parallel"
   [parent ns]
@@ -382,30 +420,31 @@
     (if (or (not parent) (track-dep! parent ns))
       (binding [*parallel* parallel?]
         (send ns (fn []
-                   (if (not (src-available? ns))
-                     ;; No source on classpath (e.g. pre-built AOT jar).
-                     ;; Can't resolve deps via ns-deps, so just require
-                     ;; directly. If class files are also missing, this
-                     ;; will fail with a clear classpath error.
-                     (do (real-require ns) true)
-                     (let [compile? (and (not (contains? no-compile ns))
-                                         (not (compiled? ns)))
-                           deps (ns-deps ns)]
-                       (->> deps
-                            (mapv (fn [d]
-                                    (let [cycle? (not (track-dep! ns d))
-                                          *f (pcompile ns d)]
-                                      (when (not cycle?)
-                                        ;; don't deref the compile that
-                                        ;; cause cycles, the other
-                                        ;; thread will take care of it
-                                        *f))))
-                            (filter identity)
-                            (mapv deref))
-                       (if compile?
-                         (compile- ns)
-                         (real-require ns))
-                       true)))))
+                   (with-ns-ids ns
+                     (if (not (src-available? ns))
+                       ;; No source on classpath (e.g. pre-built AOT jar).
+                       ;; Can't resolve deps via ns-deps, so just require
+                       ;; directly. If class files are also missing, this
+                       ;; will fail with a clear classpath error.
+                       (do (real-require ns) true)
+                       (let [compile? (and (not (contains? no-compile ns))
+                                           (not (compiled? ns)))
+                             deps (ns-deps ns)]
+                         (->> deps
+                              (mapv (fn [d]
+                                      (let [cycle? (not (track-dep! ns d))
+                                            *f (pcompile ns d)]
+                                        (when (not cycle?)
+                                          ;; don't deref the compile that
+                                          ;; cause cycles, the other
+                                          ;; thread will take care of it
+                                          *f))))
+                              (filter identity)
+                              (mapv deref))
+                         (if compile?
+                           (compile- ns)
+                           (real-require ns))
+                         true))))))
       (do
         (debug "compile parent cycle" parent :-> ns)
         (CompletableFuture/completedFuture true)))))

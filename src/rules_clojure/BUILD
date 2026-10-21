@@ -36,11 +36,17 @@ java_library(
                "util.clj"],
 
     resource_strip_prefix="src",
-    runtime_deps=["@maven_deps//:org_clojure_clojure",
+    runtime_deps=[":deterministic_patches",
+                  "@maven_deps//:org_clojure_clojure",
                   "@maven_deps//:org_clojure_spec_alpha",
                   "@maven_deps//:org_clojure_core_specs_alpha",
                   "@maven_deps//:org_clojure_data_json",
                   "@maven_deps//:org_clojure_tools_deps"])
+
+java_library(
+    name="deterministic_patches",
+    srcs=["DeterministicPatches.java"],
+    deps=["@maven_deps//:org_clojure_clojure"])
 
 java_binary(
     name="bootstrap-bin",
@@ -96,7 +102,8 @@ genrule(
 
 java_import(name="libworker",
             jars=["libworker.jar"],
-            runtime_deps=["@maven_deps//:org_clojure_clojure",
+            runtime_deps=[":deterministic_patches",
+                          "@maven_deps//:org_clojure_clojure",
                           "@maven_deps//:org_clojure_spec_alpha",
                           "@maven_deps//:org_clojure_core_specs_alpha"],
             data=[":bootstrap-worker"])
