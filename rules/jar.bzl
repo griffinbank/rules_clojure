@@ -1,4 +1,7 @@
 load("@rules_java//java:defs.bzl", "JavaInfo", "java_common")
+
+CLOJURE_SOURCE_EXTENSIONS = ["clj", "cljc"]
+
 def contains(lst, item):
     for x in lst:
         if x == item:
@@ -80,6 +83,39 @@ def printable_label(label):
     return "%s.%s" % (label.package.replace("/","_").replace("@",""),
                       label.name)
 
+def _jacoco_runtime_jars(ctx, java_toolchain):
+    if not ctx.configuration.coverage_enabled:
+        return []
+    if not java_toolchain.jacocorunner:
+        fail("bazel coverage needs a java toolchain with a jacocorunner")
+    return [java_toolchain.jacocorunner.executable]
+
+def _instrument_jar(ctx, java_toolchain, jacoco_runtime_jars, input_jar):
+    instr_jar = ctx.actions.declare_file("%s-instr.jar" % ctx.label.name)
+    instrumenter_jars = ctx.attr._jacoco_instrumenter[JavaInfo].runtime_output_jars
+    java_runtime = java_toolchain.java_runtime
+
+    jvm_args = ctx.actions.args()
+    jvm_args.add_joined("-cp", instrumenter_jars + jacoco_runtime_jars, join_with = ctx.configuration.host_path_separator)
+    jvm_args.add("rules_clojure.coverage.JacocoInstrumenter")
+
+    instr_args = ctx.actions.args()
+    instr_args.set_param_file_format("multiline")
+    instr_args.use_param_file("@%s", use_always = True)
+    instr_args.add(input_jar)
+    instr_args.add(instr_jar)
+    instr_args.add_all([f for f in ctx.files.srcs if f.extension in CLOJURE_SOURCE_EXTENSIONS])
+
+    ctx.actions.run(
+        executable = java_runtime.java_executable_exec_path,
+        tools = java_runtime.files,
+        arguments = [jvm_args, instr_args],
+        inputs = [input_jar] + instrumenter_jars + jacoco_runtime_jars,
+        outputs = [instr_jar],
+        mnemonic = "ClojureJacocoInstrument",
+        progress_message = "Instrumenting %s for coverage" % ctx.label)
+    return instr_jar
+
 def clojure_jar_impl(ctx):
 
     if (len(ctx.attr.srcs) > 0 and len(ctx.attr.aot) == 0):
@@ -107,17 +143,6 @@ def clojure_jar_impl(ctx):
 
     compile_info = java_common.merge(compile_deps)
 
-    java_info = JavaInfo(
-        output_jar = output_jar,
-        compile_jar = output_jar,
-        source_jar = None,
-        deps = compile_deps,
-        runtime_deps = runtime_deps)
-
-    default_info = DefaultInfo(
-        files = depset([output_jar]),
-        runfiles = runfiles)
-
     aot_nses = list(ctx.attr.aot)
 
     input_files = ctx.files.srcs + ctx.files.resources
@@ -130,6 +155,9 @@ def clojure_jar_impl(ctx):
     compile_classpath = compile_info.transitive_runtime_jars.to_list() + ctx.files.compiledeps
     compile_classpath = [f.path for f in compile_classpath]
     compile_classpath = compile_classpath + [p for p in [src_dir] if p]
+
+    java_toolchain = ctx.toolchains["@bazel_tools//tools/jdk:toolchain_type"].java
+    jacoco_runtime_jars = _jacoco_runtime_jars(ctx, java_toolchain)
 
     native_libs = []
     for f in runfiles.files.to_list():
@@ -147,13 +175,16 @@ def clojure_jar_impl(ctx):
                     "resources": [_target_path(s, ctx.attr.resource_strip_prefix) for s in ctx.files.resources],
                     "aot-nses": aot_nses,
                     "classpath": compile_classpath}
+    if jacoco_runtime_jars:
+        # instrumented deps call the JaCoCo runtime when they load
+        compile_args["jacoco-runtime"] = [f.path for f in jacoco_runtime_jars]
 
     args_file = ctx.actions.declare_file(argsfile_name(ctx.label))
     ctx.actions.write(
         output = args_file,
         content = json.encode(compile_args))
 
-    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_runtime_jars.to_list() + native_libs + [args_file] + worker_classpath_depset.to_list()
+    inputs = ctx.files.srcs + ctx.files.resources + compile_info.transitive_runtime_jars.to_list() + native_libs + [args_file] + worker_classpath_depset.to_list() + jacoco_runtime_jars
 
     worker_classpath_str = ":".join([d.path for d in worker_classpath_depset.to_list()])
 
@@ -161,6 +192,8 @@ def clojure_jar_impl(ctx):
         executable= ctx.executable._clojureworker_binary,
         arguments=
         ["--jvm_flags=" + f for f in ctx.attr.jvm_flags] +
+        # stop instrumented deps writing jacoco.exec into the execroot
+        (["--jvm_flags=-Djacoco-agent.output=none"] if jacoco_runtime_jars else []) +
         ["-m", "rules-clojure.worker",
          "@%s" % args_file.path],
         outputs = [output_jar],
@@ -171,7 +204,29 @@ def clojure_jar_impl(ctx):
                                 "supports-multiplex-workers": "1",
                                 "requires-worker-protocol": "json"})
 
+    final_jar = output_jar
+    if ctx.coverage_instrumented() and ctx.files.srcs:
+        final_jar = _instrument_jar(ctx, java_toolchain, jacoco_runtime_jars, output_jar)
+
+    java_info = JavaInfo(
+        output_jar = final_jar,
+        compile_jar = output_jar,
+        source_jar = None,
+        deps = compile_deps,
+        runtime_deps = runtime_deps)
+
+    default_info = DefaultInfo(
+        files = depset([final_jar]),
+        runfiles = runfiles)
+
+    instrumented_files_info = coverage_common.instrumented_files_info(
+        ctx,
+        source_attributes = ["srcs"],
+        dependency_attributes = ["deps", "runtime_deps", "data", "compiledeps"],
+        extensions = CLOJURE_SOURCE_EXTENSIONS)
+
     return [
         default_info,
-        java_info
+        java_info,
+        instrumented_files_info,
     ]

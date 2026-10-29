@@ -1,18 +1,18 @@
 (ns rules-clojure.persistent-classloader
   (:require [clojure.data]
             [clojure.java.io :as io]
-            [clojure.spec.alpha :as s]
             [clojure.set :as set]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
-            [rules-clojure.persistentClassLoader]
             [rules-clojure.fs :as fs]
             [rules-clojure.namespace.parse :as parse]
+            [rules-clojure.persistentClassLoader]
             [rules-clojure.util :as util :refer [debug]])
-  (:import java.net.URL
-           rules_clojure.persistentClassLoader
+  (:import [java.io InputStream PushbackReader]
+           [java.lang.ref SoftReference Reference]
+           [java.net URL URLClassLoader]
            [java.util.jar JarFile JarEntry]
-           [java.io InputStream PushbackReader]
-           [java.lang.ref SoftReference Reference]))
+           rules_clojure.persistentClassLoader))
 
 ;; We want a clean, deterministic build. The naive way to do that is
 ;; to construct a new URLClassloader containing exactly what the user
@@ -56,9 +56,60 @@
 (defn classloader? [x]
   (instance? ClassLoader x))
 
+(defn default-parent []
+  (.getParent (ClassLoader/getSystemClassLoader)))
+
+;; Under `bazel coverage`, instrumented classes call the JaCoCo offline
+;; runtime. The first call registers a JVM shutdown hook that holds the
+;; runtime's classloader. If each compile classloader loaded its own
+;; copy of the runtime, no compile classloader could be GC'd. All
+;; compile classloaders share this parent instead, so the worker has
+;; one runtime and one hook. It loads only the runtime classes, and not
+;; the other classes in the jacocorunner jar.
+
+(defn- jacoco-offline-class
+  "The runtime's package name contains a version hash, so find it in the jar."
+  [paths]
+  (some (fn [path]
+          (with-open [jar (JarFile. (io/file path))]
+            (some (fn [^JarEntry e]
+                    (some-> (re-matches #"(org/jacoco/agent/rt/internal_[^/]+/Offline)\.class" (.getName e))
+                            second
+                            (str/replace "/" ".")))
+                  (enumeration-seq (.entries jar)))))
+        paths))
+
+(defn- start-jacoco-runtime!
+  "The hook is a Thread, and a new Thread keeps the context classloader of
+  the thread that makes it. Start the runtime here, so the hook does not
+  keep a compile classloader."
+  [^ClassLoader runtime paths]
+  (let [offline (.loadClass runtime (jacoco-offline-class paths))
+        thread (Thread/currentThread)
+        context (.getContextClassLoader thread)]
+    (.setContextClassLoader thread runtime)
+    (try
+      (.invoke (.getMethod offline "getProbes" (into-array Class [Long/TYPE String Integer/TYPE]))
+               nil
+               (object-array [(long 0) "rules_clojure/worker" (int 0)]))
+      (finally
+        (.setContextClassLoader thread context)))))
+
+(defn- jacoco-runtime-loader- [paths]
+  (let [runtime (URLClassLoader. (into-array URL (map #(.toURL (io/file %)) paths))
+                                 (default-parent))]
+    (start-jacoco-runtime! runtime paths)
+    (proxy [ClassLoader] [(default-parent)]
+      (findClass [^String name]
+        (if (str/starts-with? name "org.jacoco.agent.rt.")
+          (.loadClass runtime name)
+          (throw (ClassNotFoundException. name)))))))
+
+(def jacoco-runtime-loader (memoize jacoco-runtime-loader-))
+
 (defn new-classloader-
   ([cp]
-   (new-classloader- cp (.getParent (ClassLoader/getSystemClassLoader))))
+   (new-classloader- cp (default-parent)))
   ([cp parent]
    {:pre [(every? string? cp)
           (classloader? parent)]}
@@ -66,8 +117,8 @@
    (doseq [p cp]
      (assert (.exists (io/file p)) (str "classpath path" p "not found")))
    (persistentClassLoader.
-    (into-array URL (map #(.toURL (io/file %)) cp))
-    parent)))
+     (into-array URL (map #(.toURL (io/file %)) cp))
+     parent)))
 
 (defn add-url [cl p]
   {:pre [p]}
@@ -87,9 +138,9 @@ will vary in e.g. caching and reuse strategies"))
   "Use a new classloader for every compile. Works. Slow."
   []
   (reify ClassLoaderFactory
-    (build [_this {:keys [classpath]}]
+    (build [_this {:keys [classpath parent]}]
       (assert (seq classpath))
-      (new-classloader- classpath))))
+      (new-classloader- classpath (or parent (default-parent))))))
 
 (defn dirty-fast
   "Use a single classloader for all compiles, and always use. Works as
@@ -142,8 +193,8 @@ long as all jar sets are compatible with each other"
                       (.isFile (fs/path->file path)))))
        (pmap (fn [path]
                (with-open [rdr (PushbackReader.
-                                (io/reader
-                                 (fs/path->file path)))]
+                                 (io/reader
+                                   (fs/path->file path)))]
                  (when-let [name (parse/name-from-ns-decl (parse/read-ns-decl rdr))]
                    [name (with-meta [(bazelsum path)]
                            {:src dir})]))))
@@ -176,8 +227,8 @@ long as all jar sets are compatible with each other"
                    [(.getRealName entry)
                     (with-meta
                       [(-> (.getInputStream jarfile entry)
-                          InputStream/.readAllBytes
-                          fs/bazel-hash)]
+                           InputStream/.readAllBytes
+                           fs/bazel-hash)]
                       {:src jar})]))
            (into {})))))
 
@@ -250,8 +301,10 @@ long as all jar sets are compatible with each other"
 
 (defn get-best-classpath
   "Given a seq of existing cached classloaders, return the best match, or nil if none are compatible"
-  [cached input-map aot-nses]
+  [cached input-map aot-nses parent]
   (let [desired-in (explode-inputs input-map)
+        cached (filter (fn [[_in cache]]
+                         (identical? parent (:parent cache))) cached)
         cache (some->> cached
                        (filter (fn [[in cache]]
                              ;; TODO conflicting source files are
@@ -317,31 +370,31 @@ long as all jar sets are compatible with each other"
   (let [caches (sort-by (fn [[k _]] (count k)) caches)]
     (into {} (drop (- (count caches) n) caches))))
 
-(defn ensure-classloader [*caches desired-cp input-map aot-nses]
+(defn ensure-classloader [*caches desired-cp input-map aot-nses parent]
   (let [*cl (promise)]
     (locking *caches
       (swap! *caches (fn [caches]
                        ;; sanity check to prevent unbounded caching
                        ;; {:post [(< (count %) 5)]}
                        (let [caches (deref-cache caches)
-                             [in cache] (get-best-classpath caches input-map aot-nses)]
+                             [in cache] (get-best-classpath caches input-map aot-nses parent)]
                          (soft-ref-cache
-                          (if cache
-                            (let [cache-cp (:classpath cache)
-                                  desired-cp (set desired-cp)
-                                  new-paths (set/difference desired-cp cache-cp)
-                                  _ (assert (seq new-paths))
-                                  new-in (merge in (explode-inputs input-map))
-                                  cl (:classloader cache)]
-                              (doseq [p new-paths]
-                                (add-url cl p))
-                              (deliver *cl cl)
-                              (-> caches
-                                  (dissoc in)
-                                  (assoc new-in (update cache :classpath set/union new-paths))))
-                            (let [cl (new-classloader- desired-cp)
-                                  in (explode-inputs input-map)]
-                              (debug "new cl" (inc (count caches)))
+                           (if cache
+                             (let [cache-cp (:classpath cache)
+                                   desired-cp (set desired-cp)
+                                   new-paths (set/difference desired-cp cache-cp)
+                                   _ (assert (seq new-paths))
+                                   new-in (merge in (explode-inputs input-map))
+                                   cl (:classloader cache)]
+                               (doseq [p new-paths]
+                                 (add-url cl p))
+                               (deliver *cl cl)
+                               (-> caches
+                                   (dissoc in)
+                                   (assoc new-in (update cache :classpath set/union new-paths))))
+                             (let [cl (new-classloader- desired-cp parent)
+                                   in (explode-inputs input-map)]
+                               (debug "new cl" (inc (count caches)))
                                 ;; imagine
                               ;; (shim-require 'rules-clojure.compile)
                               ;; (shim-eval 'compile/compile!)
@@ -358,11 +411,12 @@ long as all jar sets are compatible with each other"
                               ;; `rules-clojure.compile/compile!` var
                               ;; hasn't been loaded yet. Load it here
                               ;; so we don't have to lock later.
-                              (util/shim-require cl 'rules-clojure.compile)
-                              (deliver *cl cl)
-                              (-> caches
-                                  (assoc in {:classpath (set desired-cp)
-                                             :classloader cl})))))))))
+                               (util/shim-require cl 'rules-clojure.compile)
+                               (deliver *cl cl)
+                               (-> caches
+                                   (assoc in {:classpath (set desired-cp)
+                                              :classloader cl
+                                              :parent parent})))))))))
     @*cl))
 
 (defn caching
@@ -371,5 +425,5 @@ long as all jar sets are compatible with each other"
   ;; (atom-of (map-of input-map (soft-ref classloader))).
   (let [*caches (atom {})]
     (reify ClassLoaderFactory
-      (build [_ {:keys [classpath input-map aot-nses]}]
-        (ensure-classloader *caches classpath input-map aot-nses)))))
+      (build [_ {:keys [classpath input-map aot-nses parent]}]
+        (ensure-classloader *caches classpath input-map aot-nses (or parent (default-parent)))))))

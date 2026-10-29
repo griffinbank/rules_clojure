@@ -112,6 +112,53 @@ The main entrypoint will be called with one argument: The Clojure namespace to t
 It should write a JUnit XML report to `$XML_OUTPUT_FILE` and exit with 0 for a pass and non-zero for failure.
 See the [default runner](https://github.com/griffinbank/rules_clojure/blob/main/src/rules_clojure/testrunner.clj) for inspiration.
 
+### Coverage
+
+`bazel coverage` uses the standard Bazel JaCoCo pipeline:
+
+```
+bazel coverage --combined_report=lcov --instrumentation_filter=//src //test/...
+```
+
+Each test writes an LCOV report to `bazel-testlogs/<target>/coverage.dat`. Bazel writes the
+combined report to `bazel-out/_coverage/_coverage_report.dat`. The line data refers to the
+`.clj` and `.cljc` source files.
+
+To make an HTML report with lcov 2.x `genhtml`, first remove the records that it rejects.
+Bazel writes `FN` records with line `-1` for the `invoke` methods that the Clojure compiler
+makes, and some `DA`/`BRDA` records with line `0`:
+
+```
+grep -v -E '^FN(DA|F|H)?:|^(DA|BRDA):0,' bazel-out/_coverage/_coverage_report.dat > coverage.dat
+genhtml coverage.dat -o coverage-html --branch-coverage --ignore-errors inconsistent,inconsistent
+```
+
+`--ignore-errors inconsistent` is necessary because a line can be hit while no branch on that
+line ran.
+
+Under coverage, the rules instrument the output jar of each `clojure_library` that matches
+`--instrumentation_filter`. The jar has the same shape as a `java_library` jar, and `java_test`
+collects the data. Coverage does not change builds that are not coverage builds.
+
+Limits:
+
+- The report includes only AOT-compiled namespaces (`srcs` with `aot`). Clojure compiles
+  resource namespaces in memory at runtime, so the rules cannot instrument them.
+- A `defn` line shows as covered when the namespace loads. A body line shows as covered only
+  when a test calls the function.
+- A covered line (`DA:<line>,1`) means only that some part of the line ran. It does not show
+  that each branch ran. The last branch of an `if` at the end of a function always shows as
+  covered, because its line also holds the return. Use the branch data (`BRDA`) to check
+  branches. A Clojure `if` gives 4 branches: 2 for the `nil` check and 2 for the `false` check.
+  The then branch is the 3rd. The else branch is the 2nd (`nil`) or the 4th (`false`).
+- The report does not include method bodies of `defrecord`, `deftype` and `gen-class :name`
+  classes. Bazel finds the source file of a class from its package and source file name, and
+  for these classes the package is one level too deep (`foo/core/Rec` for `foo/core.clj`).
+- The JaCoCo version comes from the `jacocorunner` of the Java toolchain. On JDK 27 and later,
+  use java_tools v22.0 or later. Earlier versions of the Bazel coverage runner cannot read the
+  JDK 27 classpath. On Bazel 9 and earlier, every coverage test then fails with
+  `ZipException: zip END header not found` ([bazelbuild/bazel#28637](https://github.com/bazelbuild/bazel/issues/28637)).
+
 ## tools.deps dependencies (optional)
 
 The `deps` module extension (`deps.install`, see Setup) uses `tools.deps` to resolve dependencies from a deps.edn file and generates the `@deps` repo, with BUILD files containing `java_import` targets for all maven dependencies. Targets follow the same naming rules as `rules_jvm_external`, i.e. `@deps//:org_clojure_clojure`.
