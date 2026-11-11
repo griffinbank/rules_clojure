@@ -67,6 +67,32 @@
                   b #{c}
                   c #{d}} 'd 'b)))
 
+(deftest export-symbols-deps-test
+  (testing "finds the source namespace of each export-symbols form"
+    (is (= '#{a.b c.d}
+           (c/export-symbols-deps
+            "(export-symbols a.b x y)\n(foo (export-symbols c.d z))"))))
+  (testing "finds qualified calls"
+    (is (= '#{a.b}
+           (c/export-symbols-deps
+            "(tech.v3.datatype.export-symbols/export-symbols a.b x)"))))
+  (testing "ignores the macro definition and other uses of the name"
+    (is (= #{}
+           (c/export-symbols-deps
+            "(defmacro export-symbols [src-ns & syms])\n(export-symbols-foo a.b)")))))
+
+(deftest ns-deps-includes-export-symbols-sources
+  (let [deps (#'c/ns-deps- 'rules-clojure.export-symbols-fixture)]
+    (testing "declared deps are kept"
+      (is (contains? deps 'clojure.set)))
+    (testing "export-symbols sources are dependencies"
+      (is (contains? deps 'clojure.string))
+      (is (contains? deps 'clojure.walk)))
+    (testing "namespaces without source on the classpath are dropped"
+      (is (not (contains? deps 'no.such.namespace.exists))))
+    (testing "the namespace is not its own dependency"
+      (is (not (contains? deps 'rules-clojure.export-symbols-fixture))))))
+
 (deftest load->ns
   (are [in out] (= out (c/load->ns in))
     "/clojure/tools/deps/extensions/maven" 'clojure.tools.deps.extensions.maven))

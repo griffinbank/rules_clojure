@@ -215,13 +215,34 @@
       io/reader
       java.io.PushbackReader.))
 
+(defn export-symbols-deps
+  "Namespaces named by `(export-symbols src-ns ...)` forms in `src`
+  (a string of Clojure source).
+
+  dtype-next's `export-symbols` loads `src-ns` from the body of the
+  namespace, not from its `ns` form, and does so holding the global
+  `tech.v3.datatype.export-symbols/load-lib-lock`. Under rules-clojure
+  that load blocks on another thread's compile while holding the lock,
+  and that thread can in turn be waiting for a namespace whose compile
+  needs the lock. Listing these namespaces as dependencies makes
+  `pcompile` finish them before the body runs, so the load inside the
+  lock finds them already loaded and never blocks."
+  [src]
+  (->> (re-seq #"\(\s*(?:[\w.\-]+/)?export-symbols\s+([^\s()\[\]{}\"]+)" src)
+       (map (comp symbol second))
+       set))
+
 (defn ns-deps- [ns]
-  (-> ns
-      src-resource
-      reader
-      parse/read-ns-decl
-      parse/deps-from-ns-decl
-      (disj ns)))
+  (let [resource (src-resource ns)
+        decl-deps (-> resource
+                      reader
+                      parse/read-ns-decl
+                      parse/deps-from-ns-decl)
+        body-deps (->> (export-symbols-deps (slurp resource))
+                       (filter src-available?))]
+    (-> decl-deps
+        (into body-deps)
+        (disj ns))))
 
 (def ns-deps (memoize ns-deps-))
 
