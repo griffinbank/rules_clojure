@@ -1,9 +1,7 @@
 (ns rules-clojure.deadlock-fixtures.lock
   "Stands in for tech.v3.datatype.export-symbols: a global lock held around
-  `load-lib` in the init of each exported var.
-
-  Unlike the real macro, the exported value is resolved at run time, so the
-  importing namespace compiles without its source already being loaded."
+  `load-lib` in the init of each exported var, and a `requiring-resolve` of the
+  source namespace at macroexpansion time, outside the lock."
   (:import [java.util.concurrent CountDownLatch]
            [java.util.concurrent.locks ReentrantLock]))
 
@@ -25,6 +23,13 @@
 
 (defmacro export-symbols
   [src-ns & syms]
+  ;; Like the real macro, load the source namespace while expanding. This is
+  ;; why compiling the importer from source never deadlocks: by the time a
+  ;; def's init takes the lock, `load-lib` has nothing left to load. Loading
+  ;; an already-compiled importer skips macroexpansion, so it does.
+  (doseq [sym syms]
+    (when-not (requiring-resolve (symbol (name src-ns) (name sym)))
+      (throw (ex-info "not found" {:ns src-ns :sym sym}))))
   `(do
      ~@(for [sym syms]
          `(def ~sym

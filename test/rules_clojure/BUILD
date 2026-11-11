@@ -88,10 +88,10 @@ clojure_library(name="deadlock-fixtures",
 
 clojure_test(name="deadlock-test",
              deps=[":test-deps"],
-             data=["//src/rules_clojure:libcompile",
+             data=["//src/rules_clojure:bootstrap",
                    ":deadlock-fixtures",
                    ":clojure"],
-             env={"TEST_JARS": "$(rlocationpaths //src/rules_clojure:libcompile) $(rlocationpaths :clojure) $(rlocationpaths :deadlock-fixtures)"},
+             env={"TEST_JARS": "$(rlocationpaths //src/rules_clojure:bootstrap) $(rlocationpaths :clojure) $(rlocationpaths :deadlock-fixtures)"},
              test_ns = "rules-clojure.deadlock-test")
 
 clojure_test(name="testrunner-test",

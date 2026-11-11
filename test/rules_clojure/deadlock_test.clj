@@ -1,84 +1,103 @@
 (ns rules-clojure.deadlock-test
-  "End-to-end check that a namespace which loads another from its body, while
-  holding a global lock, doesn't deadlock the parallel compile.
+  "A namespace that loads another from its body while holding a global lock
+  must not deadlock the parallel compile.
 
-  This is the shape of dtype-next's `export-symbols`: each exported var runs
-  `(.lock load-lib-lock) (load-lib nil 'src-ns) (.unlock load-lib-lock)`.
-  Under rules-clojure `load-lib` waits on another thread's compile of
-  `src-ns`, with the lock held.
+  This is the shape of dtype-next's `export-symbols`: the init of each exported
+  var runs `(.lock load-lib-lock) (load-lib nil 'src-ns) (.unlock ...)`. Under
+  rules-clojure, `load-lib` waits on another thread's compile of `src-ns` while
+  the lock is held.
 
-  See test/rules_clojure/deadlock_fixtures for the namespaces:
+  The fixtures are in test/rules_clojure/deadlock_fixtures:
 
-    importer  loads src from its body, under the lock
+    importer  `(export-symbols src answer)`, loads src under the lock
     src       requires waiter, so loading it waits for waiter's compile
-    waiter    wants the lock, after importer has taken it
+    waiter    asks for the lock once importer holds it
+    top       requires importer
 
   importer holds the lock and waits for src, src waits for waiter, and waiter
-  waits for the lock. Both importer and waiter are compiled at once, as
-  top-level aot namespaces."
-  (:require [clojure.data.json :as json]
+  waits for the lock. top and waiter are compiled at the same time.
+
+  The importer must already be AOT-compiled. Compiling it from source expands
+  `export-symbols`, which loads src outside the lock and avoids the problem.
+  An already-compiled importer skips macroexpansion, so loading it takes the
+  lock first. Each step runs in its own JVM, as a script: compile! needs the
+  DynamicClassLoader that clojure.main sets up for scripts."
+  (:require [clojure.string :as str]
             [clojure.test :refer :all]
-            [rules-clojure.test-utils :as test-utils]
-            [rules-clojure.util :as util]
-            [rules-clojure.worker :as worker])
-  (:import [java.io InputStreamReader PipedInputStream PipedOutputStream OutputStreamWriter]
-           [clojure.lang LineNumberingPushbackReader]))
+            [rules-clojure.test-utils :as test-utils])
+  (:import [java.io File]
+           [java.nio.file Files]
+           [java.nio.file.attribute FileAttribute]
+           [java.util.concurrent TimeUnit]))
 
-(def fixture-ns-prefix "rules-clojure.deadlock-fixtures.")
+(def fixture-prefix "rules-clojure.deadlock-fixtures.")
 
-(def request
-  {:classes-dir "classes"
-   :output-jar (str "/tmp/rules-clojure-deadlock-test" (System/currentTimeMillis) ".jar")
-   :classpath (test-utils/runfiles-jars "TEST_JARS")
-   :aot-nses [(str fixture-ns-prefix "importer")
-              (str fixture-ns-prefix "waiter")]})
+(defn java-bin []
+  (str (System/getProperty "java.home") "/bin/"))
 
-(defn print-stuck-threads
-  "Print the frames of threads that are inside the fixtures, to show what a
-  deadlock is waiting on."
-  []
-  (doseq [[^Thread t frames] (Thread/getAllStackTraces)
-          :let [relevant (filter (fn [^StackTraceElement f]
-                                   (re-find #"deadlock_fixtures|rules_clojure\.compile\$(spy_load|ns_send|pcompile)"
-                                            (str (.getClassName f))))
-                                 frames)]
-          :when (seq relevant)]
-    (println (str "STUCK " (.getName t) " " (.getState t)))
-    (doseq [^StackTraceElement f (take 40 frames)
-            :when (not (re-find #"^(clojure\.(lang|core)|java\.util\.concurrent\.(Executors|FutureTask|ThreadPool))" (.getClassName f)))]
-      (println "   " (str f)))))
+(defn run-java
+  "Run `code` as a script with `java -cp classpath clojure.main`. Returns {:exit :out}, with
+  :exit ::timeout and a thread dump in :out if it doesn't finish in
+  `timeout-ms`."
+  [classpath code timeout-ms]
+  (let [script (doto (File/createTempFile "deadlock-test" ".clj")
+                 (.deleteOnExit)
+                 (spit code))
+        pb (doto (ProcessBuilder. ^java.util.List [(str (java-bin) "java")
+                                                   "-cp" classpath
+                                                   "clojure.main" (str script)])
+             (.redirectErrorStream true))
+        proc (.start pb)
+        out (future (slurp (.getInputStream proc)))]
+    (if (.waitFor proc timeout-ms TimeUnit/MILLISECONDS)
+      {:exit (.exitValue proc) :out @out}
+      (let [dump (try
+                   (let [p (.start (doto (ProcessBuilder. ^java.util.List [(str (java-bin) "jcmd")
+                                                                           (str (.pid proc))
+                                                                           "Thread.print"])
+                                     (.redirectErrorStream true)))]
+                     (slurp (.getInputStream p)))
+                   (catch Exception e (str "no thread dump: " e)))]
+        (.destroyForcibly proc)
+        {:exit ::timeout :out (str @out dump)}))))
 
-(defn run-worker
-  "Run `req` through the persistent worker. Returns the worker's response, or
-  ::timeout if the compile doesn't finish within `timeout-ms`."
-  [req timeout-ms]
-  (let [work-req {:arguments [(json/write-str req)]
-                  :requestId 1
-                  :inputs (map (fn [p]
-                                 {:path p :digest (str (hash p))}) (util/classpath))}
-        in-reader (LineNumberingPushbackReader.
-                   (InputStreamReader.
-                    (java.io.ByteArrayInputStream.
-                     (.getBytes (json/write-str work-req) "UTF-8"))))
-        pipe-in (PipedInputStream.)
-        pipe-out (PipedOutputStream.)
-        _ (.connect pipe-in pipe-out)
-        out-reader (LineNumberingPushbackReader. (InputStreamReader. pipe-in))
-        out-writer (OutputStreamWriter. pipe-out)
-        resp-f (future (binding [*in* out-reader] (read-line)))
-        worker-f (future (binding [*in* in-reader
-                                   *out* out-writer]
-                           (worker/process-persistent)))
-        done (deref worker-f timeout-ms ::timeout)]
-    (if (= ::timeout done)
-      (do (print-stuck-threads)
-          ::timeout)
-      (some-> (deref resp-f 10000 nil)
-              (json/read-str :key-fn keyword)))))
+(defn temp-dir ^File []
+  (.toFile (Files/createTempDirectory "rules-clojure-deadlock" (make-array FileAttribute 0))))
+
+(defn aot-compile-importer!
+  "AOT-compile the importer into `dir`, keeping only its class files, so the
+  other fixtures are loaded from source."
+  [classpath dir]
+  (let [resp (run-java classpath
+                       (str "(binding [*compile-path* " (pr-str (str dir)) "]"
+                            " (compile '" fixture-prefix "importer))")
+                       60000)]
+    (is (zero? (:exit resp)) (:out resp))
+    (doseq [^File f (file-seq dir)
+            :when (.isFile f)]
+      (if (str/starts-with? (.getName f) "importer")
+        ;; Clojure loads a class only if it is newer than the source. Bazel
+        ;; dates the source in the fixtures jar 2038.
+        (.setLastModified f (.toEpochMilli (java.time.Instant/parse "2040-01-01T00:00:00Z")))
+        (.delete f)))))
 
 (deftest export-symbols-style-load-does-not-deadlock
-  (let [resp (run-worker request 60000)]
-    (is (not= ::timeout resp)
-        "compile did not finish: importer holds the lock and waits for src, src waits for waiter, waiter waits for the lock")
-    (when (map? resp)
-      (is (zero? (:exitCode resp)) (:output resp)))))
+  (let [jars (map str (test-utils/runfiles-jars "TEST_JARS"))
+        aot-dir (temp-dir)
+        classpath (str/join File/pathSeparator (cons (str aot-dir) jars))]
+    (aot-compile-importer! (str/join File/pathSeparator jars) aot-dir)
+    (is (some #(= "importer__init.class" (.getName ^File %)) (file-seq aot-dir))
+        "importer was compiled")
+    (let [resp (run-java classpath
+                         (str "(require 'rules-clojure.compile)"
+                              "(rules-clojure.compile/compile! "
+                              (pr-str (str (temp-dir)))
+                              " [" (pr-str (str fixture-prefix "top")) " "
+                              (pr-str (str fixture-prefix "waiter")) "] *out*)"
+                              "(shutdown-agents)"
+                              "(System/exit 0)")
+                         60000)]
+      (is (not= ::timeout (:exit resp))
+          (str "compile did not finish: importer holds the lock and waits for src, "
+               "src waits for waiter, waiter waits for the lock\n" (:out resp)))
+      (is (= 0 (:exit resp)) (:out resp)))))
