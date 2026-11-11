@@ -81,6 +81,19 @@ clojure_test(name="compile-test",
              data=["//src/rules_clojure:bootstrap"],
              env={"TEST_JARS": "$(rlocationpaths //src/rules_clojure:bootstrap)"})
 
+clojure_library(name="deadlock-fixtures",
+                resources=glob(["deadlock_fixtures/*.clj"]),
+                resource_strip_prefix="test/",
+                deps=ClojureJars)
+
+clojure_test(name="deadlock-test",
+             deps=[":test-deps"],
+             data=["//src/rules_clojure:libcompile",
+                   ":deadlock-fixtures",
+                   ":clojure"],
+             env={"TEST_JARS": "$(rlocationpaths //src/rules_clojure:libcompile) $(rlocationpaths :clojure) $(rlocationpaths :deadlock-fixtures)"},
+             test_ns = "rules-clojure.deadlock-test")
+
 clojure_test(name="testrunner-test",
              deps=[":test-deps"],
              test_ns = "rules-clojure.testrunner-test")
